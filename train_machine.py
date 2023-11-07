@@ -41,7 +41,7 @@ big_training_param_matrix = np.array(big_training_param_matrix)
 
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
-rank = 20
+rank = 40
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
 S_pseudo = np.diag(1 / S_full[:rank])
@@ -64,8 +64,8 @@ tic = time.perf_counter()
 learning_rate = 0.1
 nn_param2image = NeuralNetwork(big_training_param_matrix[0],big_training_image_matrix[0],learning_rate,20)
 training_error_param2image = nn_param2image.train(big_training_param_matrix, big_training_image_matrix, 10000)
-#nn_image2param = NeuralNetwork(big_training_image_matrix[0],big_training_param_matrix[0],learning_rate,20)
-#training_error_image2param = nn_image2param.train(big_training_image_matrix, big_training_param_matrix, 10000)
+nn_image2param = NeuralNetwork(big_training_image_matrix[0],big_training_param_matrix[0],learning_rate,20)
+training_error_image2param = nn_image2param.train(big_training_image_matrix, big_training_param_matrix, 10000)
 toc = time.perf_counter()
 print (f'Neural Network training completed in {toc - tic:0.4f} seconds')
 
@@ -87,22 +87,29 @@ axbig.plot(training_error_param2image)
 fig.savefig(f'{ctapipe_output}/output_plots/training_error_param2image.png',bbox_inches='tight')
 axbig.remove()
 
-#fig.clf()
-#axbig = fig.add_subplot()
-#label_x = 'Iterations'
-#label_y = 'Error'
-#axbig.set_xlabel(label_x)
-#axbig.set_ylabel(label_y)
-#axbig.plot(training_error_image2param)
-#fig.savefig(f'{ctapipe_output}/output_plots/training_error_image2param.png',bbox_inches='tight')
-#axbig.remove()
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Iterations'
+label_y = 'Error'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.plot(training_error_image2param)
+fig.savefig(f'{ctapipe_output}/output_plots/training_error_image2param.png',bbox_inches='tight')
+axbig.remove()
 
 output_filename = f'{ctapipe_output}/output_machines/svd_param2image.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(svd_param2image, file)
 
+output_filename = f'{ctapipe_output}/output_machines/svd_image2param.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(svd_image2param, file)
+
 output_filename = f'{ctapipe_output}/output_machines/nn_param2image.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(nn_param2image, file)
 
+output_filename = f'{ctapipe_output}/output_machines/nn_image2param.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(nn_image2param, file)
 

@@ -17,9 +17,6 @@ from ctapipe.visualization import CameraDisplay
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
-min_energy = 0.1
-max_energy = 100.0
-
 
 def find_brightest_pixels(tel_array):
     brightest_tel_array = []
@@ -273,7 +270,7 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training, max_evt=1e10):
+def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     id_list = []
     truth_shower_position_matrix = []
@@ -474,8 +471,9 @@ def load_training_samples(training_sample_path, is_training, max_evt=1e10):
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
                 big_image_matrix += [analysis_image_rotate_1d]
-                big_param_matrix += [[evt_truth_energy,1./pow(evt_truth_impact/1000.,1),evt_truth_height]]
-                truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y]]
+                #big_param_matrix += [[evt_truth_energy,1./pow(evt_truth_impact/1000.,1),evt_truth_height]]
+                big_param_matrix += [[evt_truth_energy/pow(evt_truth_impact/1000.,1),evt_truth_height]]
+                truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
 
         
