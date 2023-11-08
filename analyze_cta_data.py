@@ -307,6 +307,7 @@ def predict_image_parameters(evt_image_1d,cam_axes,geom,image2param_mtx,machine,
 
     evt_image_rotate = np.zeros_like(evt_image_2d)
     angle_rad = np.arctan2(avg_y,avg_x)+np.pi
+    if math.isnan(angle_rad): angle_rad = 0.
     evt_image_rotate = image_rotation(evt_image_center, cam_axes[0], cam_axes[1], -angle_rad)
 
     #fig.clf()
@@ -350,7 +351,7 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
     shower_impact = pow(pow(shower_impact_x,2)+pow(shower_impact_y,2),0.5)
     shower_impact = 1./pow(shower_impact/1000.,1)
     #evt_param = np.array([shower_energy,shower_impact,shower_height])
-    evt_param = np.array([shower_energy*shower_impact,shower_height])
+    evt_param = np.array([shower_energy*shower_impact])
 
     #tic = time.perf_counter()
     evt_image = None
@@ -375,6 +376,7 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
 
     evt_image_derotate = np.zeros_like(evt_image_square)
     angle_rad = np.arctan2(shower_impact_y,shower_impact_x)
+    if math.isnan(angle_rad): angle_rad = 0.
     evt_image_derotate = image_rotation(evt_image_square, cam_axes[0], cam_axes[1], angle_rad)
 
     evt_image_decenter = np.zeros_like(evt_image_square)
@@ -758,7 +760,7 @@ def individual_fit_template_to_image(image_1d_matrix,init_params,bounds,telesc_p
 
 
 print ('loading testing data... ')
-testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.5,max_energy=5.0,max_evt=10)
+testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.5,max_energy=1.0,one_evt=1e10)
 
 
 print ('loading svd pickle data... ')
@@ -832,7 +834,7 @@ for img in range(0,len(testing_id_list)):
         truth_shower_core_x = truth_shower_position_matrix[0][2]
         truth_shower_core_y = truth_shower_position_matrix[0][3]
         truth_shower_energy = truth_shower_position_matrix[0][4]
-        truth_shower_height = testing_param_matrix[0][1]
+        truth_shower_height = 20000.
 
         truth_array_coord = [truth_shower_alt,truth_shower_az,truth_shower_core_x,truth_shower_core_y]
         truth_tel_coord = convert_array_coord_to_tel_coord(truth_array_coord,tel_info)
@@ -868,6 +870,7 @@ for img in range(0,len(testing_id_list)):
             init_core_x = float(simult_2d_solution[2])
             init_core_y = float(simult_2d_solution[3])
             print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print (f'current_event = {current_event}')
             print (f'truth_cam_x      = {truth_cam_x:0.3f}')
             print (f'truth_cam_y      = {truth_cam_y:0.3f}')
             print (f'init_cam_x      = {init_cam_x:0.3f}')
@@ -886,6 +889,7 @@ for img in range(0,len(testing_id_list)):
         fit_all_evt_alt = fit_all_array_coord[0]
         fit_all_evt_az = fit_all_array_coord[1]
         print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print (f'current_event = {current_event}')
         print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
         print (f'truth_shower_alt      = {truth_shower_alt*rad2deg:0.3f} deg')
         print (f'fit_indiv_evt_alt      = {fit_indiv_evt_alt*rad2deg:0.3f} deg')
@@ -918,16 +922,13 @@ for img in range(0,len(testing_id_list)):
             evt_impact = pow(pow(fit_all_evt_core_x-tel_x,2)+pow(fit_all_evt_core_y-tel_y,2),0.5)/1000.
             nn_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,nn_image2param,'nn',evt_cam_x,evt_cam_y)
             nn_evt_energy = float(nn_evt_params[0])*evt_impact
-            nn_evt_height = float(nn_evt_params[1])
             svd_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,svd_image2param,'svd',evt_cam_x,evt_cam_y)
             svd_evt_energy = float(svd_evt_params[0])*evt_impact
-            svd_evt_height = float(svd_evt_params[1])
             print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print (f'current_event = {current_event}')
             print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
             print (f'svd_evt_energy = {svd_evt_energy:0.2f} TeV')
-            print (f'svd_evt_height = {svd_evt_height:0.2f} m')
             print (f'nn_evt_energy = {nn_evt_energy:0.2f} TeV')
-            print (f'nn_evt_height = {nn_evt_height:0.2f} m')
             print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
         #init_energy = 1.
@@ -969,13 +970,17 @@ for img in range(0,len(testing_id_list)):
             tel_x = telesc_position_matrix[i][2]
             tel_y = telesc_position_matrix[i][3]
 
-            fit_shower_energy = 10.*truth_shower_energy
+            fit_shower_energy = truth_shower_energy
             fit_shower_height = truth_shower_height
 
-            fit_shower_cam_x = truth_cam_x
-            fit_shower_cam_y = truth_cam_y
-            fit_shower_core_x = truth_shower_core_x
-            fit_shower_core_y = truth_shower_core_y
+            #fit_shower_cam_x = truth_cam_x
+            #fit_shower_cam_y = truth_cam_y
+            #fit_shower_core_x = truth_shower_core_x
+            #fit_shower_core_y = truth_shower_core_y
+            fit_shower_cam_x = fit_all_evt_cam_x
+            fit_shower_cam_y = fit_all_evt_cam_y
+            fit_shower_core_x = fit_all_evt_core_x
+            fit_shower_core_y = fit_all_evt_core_y
 
             analysis_image_1d = testing_image_matrix[i]
             analysis_image_square = geom.image_to_cartesian_representation(analysis_image_1d)
@@ -1048,29 +1053,29 @@ for img in range(0,len(testing_id_list)):
         fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
         axbig.remove()
 
-        #fig.clf()
-        #axbig = fig.add_subplot()
-        #label_x = 'X'
-        #label_y = 'Y'
-        #axbig.set_xlabel(label_x)
-        #axbig.set_ylabel(label_y)
-        #im = axbig.imshow(image_sum_truth,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        #line_x = np.linspace(xmin, xmax, 100)
-        #for tel in range(0,len(testing_image_matrix)):
-        #    tel_x = telesc_position_matrix[tel][2]
-        #    tel_y = telesc_position_matrix[tel][3]
-        #    evt_impact_x = fit_all_evt_core_x - tel_x
-        #    evt_impact_y = fit_all_evt_core_y - tel_y
-        #    a, b = construct_line_on_focalplane(fit_all_evt_cam_x,fit_all_evt_cam_y,evt_impact_x,evt_impact_y)
-        #    line_y = -(a*line_x + b)
-        #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-        #axbig.set_xlim(xmin,xmax)
-        #axbig.set_ylim(ymin,ymax)
-        #axbig.scatter(fit_all_evt_cam_x, -fit_all_evt_cam_y, s=90, c='r', marker='+')
-        #cbar = fig.colorbar(im)
-        #cbar.set_label('PE')
-        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_simult_lines.png',bbox_inches='tight')
-        #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(image_sum_truth,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        line_x = np.linspace(xmin, xmax, 100)
+        for tel in range(0,len(testing_image_matrix)):
+            tel_x = telesc_position_matrix[tel][2]
+            tel_y = telesc_position_matrix[tel][3]
+            evt_impact_x = fit_all_evt_core_x - tel_x
+            evt_impact_y = fit_all_evt_core_y - tel_y
+            a, b = construct_line_on_focalplane(fit_all_evt_cam_x,fit_all_evt_cam_y,evt_impact_x,evt_impact_y)
+            line_y = -(a*line_x + b)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        axbig.set_xlim(xmin,xmax)
+        axbig.set_ylim(ymin,ymax)
+        axbig.scatter(fit_all_evt_cam_x, -fit_all_evt_cam_y, s=90, c='r', marker='+')
+        cbar = fig.colorbar(im)
+        cbar.set_label('PE')
+        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_simult_lines.png',bbox_inches='tight')
+        axbig.remove()
 
         fig.clf()
         axbig = fig.add_subplot()

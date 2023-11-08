@@ -270,7 +270,7 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., max_evt=1e10):
+def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., one_evt=1e10):
 
     id_list = []
     truth_shower_position_matrix = []
@@ -306,7 +306,8 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
         for event in source:
         
             event_id = event.index['event_id']
-            #if event_id!=7003: continue
+            if one_evt!=1e10:
+                if event_id!=one_evt: continue
     
             ntel = len(event.r0.tel)
         
@@ -472,14 +473,12 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
                 big_image_matrix += [analysis_image_rotate_1d]
                 #big_param_matrix += [[evt_truth_energy,1./pow(evt_truth_impact/1000.,1),evt_truth_height]]
-                big_param_matrix += [[evt_truth_energy/pow(evt_truth_impact/1000.,1),evt_truth_height]]
+                big_param_matrix += [[evt_truth_energy/pow(evt_truth_impact/1000.,1)]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
 
         
             evt_idx += 1
-            if not is_training:
-                if evt_idx==max_evt: break
 
     return id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix
 

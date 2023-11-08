@@ -41,7 +41,7 @@ big_training_param_matrix = np.array(big_training_param_matrix)
 
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
-rank = 40
+rank = 30
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
 S_pseudo = np.diag(1 / S_full[:rank])
