@@ -24,12 +24,14 @@ from load_cta_data import load_training_samples
 from load_cta_data import rank_brightest_telescope
 from load_cta_data import image_translation
 from load_cta_data import image_rotation
+from load_cta_data import smooth_map
 from load_cta_data import NeuralNetwork
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean.sh'])
 
 testing_sample_path = []
+#testing_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
 testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
@@ -333,7 +335,6 @@ def predict_image_parameters(evt_image_1d,cam_axes,geom,image2param_mtx,machine,
 
 def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine):
 
-    #big_tic = time.perf_counter()
     shower_energy = float(shower_params[0])
     shower_height = float(shower_params[1])
     shower_cam_x = float(shower_params[2])
@@ -350,22 +351,15 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
 
     shower_impact = pow(pow(shower_impact_x,2)+pow(shower_impact_y,2),0.5)
     shower_impact = 1./pow(shower_impact/1000.,1)
-    #evt_param = np.array([shower_energy,shower_impact,shower_height])
     evt_param = np.array([shower_energy*shower_impact])
 
-    #tic = time.perf_counter()
     evt_image = None
     if machine=='svd':
         evt_image = evt_param @ param2image_mtx
     elif machine=='nn':
         evt_image = param2image_mtx.predict(evt_param)[:,0]
-    #toc = time.perf_counter()
-    #print (f'evt_param @ param2image_mtx in {toc - tic:0.4f} seconds')
 
-    #tic = time.perf_counter()
     evt_image_square = geom.image_to_cartesian_representation(evt_image)
-    #toc = time.perf_counter()
-    #print (f'image_to_cartesian_representation in {toc - tic:0.4f} seconds')
 
     num_rows, num_cols = evt_image_square.shape
 
@@ -384,32 +378,37 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
     shift_y = shower_cam_y
     evt_image_decenter = image_translation(evt_image_derotate, cam_axes[0], cam_axes[1], shift_x, shift_y)
 
-    #tic = time.perf_counter()
-    analysis_image_1d = geom.image_from_cartesian_representation(evt_image_decenter)
-    #toc = time.perf_counter()
-    #print (f'image_from_cartesian_representation in {toc - tic:0.4f} seconds')
+    return evt_image_decenter
 
-    #big_toc = time.perf_counter()
-    #print (f'Image created in {big_toc - big_tic:0.4f} seconds')
+    #analysis_image_1d = geom.image_from_cartesian_representation(evt_image_decenter)
+    #return analysis_image_1d
 
-    return analysis_image_1d
 
-def sum_sqaure_difference_between_images(params,tel_pos,all_cam_axes,geom,image_1d_matrix,energy,height,core_x,core_y):
+def sum_sqaure_difference_between_images(params,tel_pos,all_cam_axes,geom,image_2d_matrix,param2image,energy,height,core_x,core_y):
 
     cam_x = params[0]
     cam_y = params[1]
 
     sum_chi2 = 0.
-    for tel in range(0,len(image_1d_matrix)):
+    #sum_dist_sq = 0.
+    for tel in range(0,len(image_2d_matrix)):
         evt_param = [energy,height,cam_x,cam_y,core_x,core_y]
         evt_param = np.array(evt_param)
-        svd_image_1d = create_svd_image(evt_param,tel_pos[tel],all_cam_axes[tel],geom,svd_param2image,'svd')
-        data_image_1d = image_1d_matrix[tel]
-        for pix in range(0,len(data_image_1d)):
-            diff = svd_image_1d[pix] - data_image_1d[pix]
-            sum_chi2 += diff*diff
+        svd_image_2d = create_svd_image(evt_param,tel_pos[tel],all_cam_axes[tel],geom,param2image,'svd')
+        data_image_2d = image_2d_matrix[tel]
+        n_rows, n_cols = data_image_2d.shape
+        #sum_w = 0.
+        for row in range(0,n_rows):
+            for col in range(0,n_cols):
+                diff = svd_image_2d[row,col] - data_image_2d[row,col]
+                sum_chi2 += diff*diff
+                #sum_w += svd_image_2d[row,col]+data_image_2d[row,col]
+        #svg_avg_x, svd_avg_y = get_image_center(svd_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        #data_avg_x, data_avg_y = get_image_center(data_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        #sum_dist_sq += sum_w*sum_w*(pow(svg_avg_x-data_avg_x,2)+pow(svd_avg_y-data_avg_y,2))
      
     return sum_chi2
+    #return sum_dist_sq
 
 def shower_image_chi2(data_image_matrix,sim_image_matrix):
 
@@ -601,6 +600,12 @@ def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_
                     if math.isnan(tel1_image_2d[y_idx,x_idx]): tel1_image_2d[y_idx,x_idx] = 0.
                     if math.isnan(tel2_image_2d[y_idx,x_idx]): tel2_image_2d[y_idx,x_idx] = 0.
 
+            #tel1_image_2d = smooth_map(tel1_image_2d,tel1_x_axis,tel1_y_axis,50.)
+            #tel2_image_2d = smooth_map(tel2_image_2d,tel2_x_axis,tel2_y_axis,50.)
+            #tel1_image_1d = geom.image_from_cartesian_representation(tel1_image_2d)
+            #tel2_image_1d = geom.image_from_cartesian_representation(tel2_image_2d)
+
+
             list_tel_x = []
             list_tel_x += [tel1_x]
             list_tel_x += [tel2_x]
@@ -777,30 +782,52 @@ def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,init_params,bounds,
 
     return [fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
 
-def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,energy,height,core_x,core_y):
+def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,param2image,energy,height,core_x,core_y):
 
     tic = time.perf_counter()
     print ('simultaneously_fit_3D_template_to_all_images...')
 
+    image_2d_matrix = []
+    for tel in range(0,len(image_1d_matrix)):
+        image_2d = geom.image_to_cartesian_representation(image_1d_matrix[tel])
+        num_rows, num_cols = image_2d.shape
+        for x_idx in range(0,num_cols):
+            for y_idx in range(0,num_rows):
+                if math.isnan(image_2d[y_idx,x_idx]): image_2d[y_idx,x_idx] = 0.
+        image_2d_matrix += [np.array(image_2d)]
+
+    num_rows, num_cols = image_2d_matrix[0].shape
+    stepsize = (all_cam_axes[0][0][1]-all_cam_axes[0][0][0])*1.01
+    print (f'stepsize = {stepsize}')
+
     cam_axes = []
     telpos_matrix = []
-    for tel in range(0,len(image_1d_matrix)):
+    for tel in range(0,len(image_2d_matrix)):
         cam_axes += [[all_cam_axes[tel][0],all_cam_axes[tel][1]]]
         telpos_matrix += [[telesc_position_matrix[tel][2],telesc_position_matrix[tel][3]]]
 
     solution = minimize(
         sum_sqaure_difference_between_images,
         x0=init_params,
-        args=(telpos_matrix,cam_axes,geom,image_1d_matrix,energy,height,core_x,core_y),
+        args=(telpos_matrix,cam_axes,geom,image_2d_matrix,param2image,energy,height,core_x,core_y),
         bounds=bounds,
+        method='L-BFGS-B',
+        jac=None,
+        options={'eps':stepsize},
     )
-
     fit_cam_x = solution['x'][0]
     fit_cam_y = solution['x'][1]
+
     fit_core_x = core_x
     fit_core_y = core_y
     fit_energy = energy
     fit_height = height
+    sum_chi2 = sum_sqaure_difference_between_images([fit_cam_x,fit_cam_y],telpos_matrix,cam_axes,geom,image_2d_matrix,param2image,fit_energy,fit_height,fit_core_x,fit_core_y)
+    print (f'sum_chi2 = {sum_chi2}')
+    print (f'init_cam_x = {init_params[0]}')
+    print (f'init_cam_y = {init_params[1]}')
+    print (f'fit_cam_x = {fit_cam_x}')
+    print (f'fit_cam_y = {fit_cam_y}')
 
     toc = time.perf_counter()
     print (f'simultaneously_fit_3D_template_to_all_images in {toc - tic:0.4f} seconds')
@@ -914,9 +941,9 @@ for img in range(0,len(testing_id_list)):
         simul_fit_tel_pos = []
         simul_fit_cam_axes = []
         max_weight = list_pair_weight[0]
-        if max_weight<0.2:
-            init_core_x = 0.
-            init_core_y = 0.
+        #if max_weight<0.2:
+        #    init_core_x = 0.
+        #    init_core_y = 0.
         simult_2d_solution = None
         for tp in range(0,len(list_pair_weight)):
             pair_weight = list_pair_weight[tp]
@@ -1019,9 +1046,10 @@ for img in range(0,len(testing_id_list)):
         simul_fit_cam_axes = []
         simult_2d_solution = None
         max_weight = list_pair_weight[0]
+        pix_size = all_cam_axes[0][0][1]-all_cam_axes[0][0][0]
         for tp in range(0,len(list_pair_weight)):
             pair_weight = list_pair_weight[tp]
-            #if pair_weight<max_weight*0.5: continue
+            if pair_weight<max_weight*0.5: continue
             simul_fit_image_matrix += [np.array(list_pair_images[tp][0])]
             simul_fit_image_matrix += [np.array(list_pair_images[tp][1])]
             simul_fit_tel_pos += [list_pair_telpos[tp][0]]
@@ -1029,10 +1057,11 @@ for img in range(0,len(testing_id_list)):
             simul_fit_cam_axes += [all_cam_axes[0]]
             simul_fit_cam_axes += [all_cam_axes[0]]
             init_params = [init_cam_x,init_cam_y]
-            cam_x_bound = (init_cam_x-5e2,init_cam_x+5e2)
-            cam_y_bound = (init_cam_y-5e2,init_cam_y+5e2)
+            cam_x_bound = (init_cam_x-4e-2,init_cam_x+4e-2)
+            cam_y_bound = (init_cam_y-4e-2,init_cam_y+4e-2)
             bounds = [cam_x_bound,cam_y_bound]
-            simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,init_energy,init_height,init_core_x,init_core_y)
+            simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image,init_energy,init_height,init_core_x,init_core_y)
+            if abs(init_cam_x-float(simult_2d_solution[2]))<pix_size and abs(init_cam_y-float(simult_2d_solution[3]))<pix_size: break
             init_energy = float(simult_2d_solution[0])
             init_height = float(simult_2d_solution[1])
             init_cam_x = float(simult_2d_solution[2])
@@ -1114,12 +1143,10 @@ for img in range(0,len(testing_id_list)):
             evt_param = np.array(evt_param)
 
             print (f'creating SVD image...')
-            svd_image_1d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,svd_param2image,'svd')
-            svd_image_2d = geom.image_to_cartesian_representation(svd_image_1d)
+            svd_image_2d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,svd_param2image,'svd')
 
             print (f'creating NN image...')
-            nn_image_1d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,nn_param2image,'nn')
-            nn_image_2d = geom.image_to_cartesian_representation(nn_image_1d)
+            nn_image_2d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,nn_param2image,'nn')
     
             if i==0:
                 image_sum_truth = analysis_image_square

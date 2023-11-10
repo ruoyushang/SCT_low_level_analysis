@@ -380,10 +380,10 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 # Define a camera geometry
                 geom = subarray.tel[tel_key].camera.geometry
                 # The CameraGeometry has functions to convert the 1d image arrays to 2d arrays and back to the 1d array
-                analysis_image_square = geom.image_to_cartesian_representation(true_image)
-                #analysis_image_square = geom.image_to_cartesian_representation(noisy_image)
-                #if is_training:
-                #    analysis_image_square = geom.image_to_cartesian_representation(true_image)
+                #analysis_image_square = geom.image_to_cartesian_representation(true_image)
+                analysis_image_square = geom.image_to_cartesian_representation(noisy_image)
+                if is_training:
+                    analysis_image_square = geom.image_to_cartesian_representation(true_image)
                 num_rows, num_cols = analysis_image_square.shape
                 for x_idx in range(0,num_cols):
                     for y_idx in range(0,num_rows):
@@ -391,17 +391,17 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
     
                 x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_square)
 
-                #if not is_training:
-                #    # image cleaning
-                #    analysis_image_smooth = smooth_map(analysis_image_square,x_axis,y_axis,50.)
-                #    image_mask = np.zeros_like(analysis_image_smooth)
+                if not is_training:
+                    # image cleaning
+                    analysis_image_smooth = smooth_map(analysis_image_square,x_axis,y_axis,50.)
+                    image_mask = np.zeros_like(analysis_image_smooth)
 
-                #    image_mask = find_mask(analysis_image_smooth)
-                #    renormalize_background(analysis_image_smooth,image_mask)
-                #    image_mask = find_mask(analysis_image_smooth)
+                    image_mask = find_mask(analysis_image_smooth)
+                    renormalize_background(analysis_image_smooth,image_mask)
+                    image_mask = find_mask(analysis_image_smooth)
 
-                #    renormalize_background(analysis_image_square,image_mask)
-                #    analysis_image_square = clean_image(analysis_image_square,image_mask)
+                    renormalize_background(analysis_image_square,image_mask)
+                    analysis_image_square = clean_image(analysis_image_square,image_mask)
 
     
                 tel_focal_length = float(geom.frame.focal_length/u.m)
