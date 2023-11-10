@@ -351,8 +351,8 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
     shower_impact_y = shower_core_y - tel_y
 
     shower_impact = pow(pow(shower_impact_x,2)+pow(shower_impact_y,2),0.5)
-    shower_impact = 1./pow(shower_impact/1000.,1)
-    evt_param = np.array([shower_energy*shower_impact])
+    shower_impact = pow(shower_impact/1000.,1)
+    evt_param = np.array([shower_energy/shower_impact])
 
     evt_image = None
     if machine=='svd':
@@ -1261,18 +1261,18 @@ for img in range(0,len(testing_id_list)):
         fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
         axbig.remove()
 
-        #fig.clf()
-        #axbig = fig.add_subplot()
-        #label_x = 'X'
-        #label_y = 'Y'
-        #axbig.set_xlabel(label_x)
-        #axbig.set_ylabel(label_y)
-        #im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        #cbar = fig.colorbar(im)
-        #cbar.set_label('PE')
-        #axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
-        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
-        #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        cbar.set_label('PE')
+        axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
+        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
+        axbig.remove()
 
         fig.clf()
         axbig = fig.add_subplot()
