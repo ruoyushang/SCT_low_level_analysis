@@ -384,10 +384,29 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
     #return analysis_image_1d
 
 
-def sum_sqaure_difference_between_images(params,tel_pos,all_cam_axes,geom,image_2d_matrix,param2image,energy,height,core_x,core_y):
+def sum_sqaure_difference_between_images(params,fix_params,var_name,tel_pos,all_cam_axes,geom,image_2d_matrix,param2image):
 
-    cam_x = params[0]
-    cam_y = params[1]
+    if var_name=='cam_xy':
+        cam_x = params[0]
+        cam_y = params[1]
+        energy = fix_params[0]
+        height = fix_params[1]
+        core_x = fix_params[2]
+        core_y = fix_params[3]
+    elif var_name=='energy':
+        energy = params[0]
+        height = params[1]
+        cam_x = fix_params[0]
+        cam_y = fix_params[1]
+        core_x = fix_params[2]
+        core_y = fix_params[3]
+    elif var_name=='core_xy':
+        core_x = params[0]
+        core_y = params[1]
+        energy = fix_params[0]
+        height = fix_params[1]
+        cam_x = fix_params[2]
+        cam_y = fix_params[3]
 
     sum_chi2 = 0.
     #sum_dist_sq = 0.
@@ -782,7 +801,7 @@ def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,init_params,bounds,
 
     return [fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
 
-def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,param2image,energy,height,core_x,core_y):
+def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,param2image):
 
     tic = time.perf_counter()
     print ('simultaneously_fit_3D_template_to_all_images...')
@@ -796,36 +815,70 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
                 if math.isnan(image_2d[y_idx,x_idx]): image_2d[y_idx,x_idx] = 0.
         image_2d_matrix += [np.array(image_2d)]
 
-    num_rows, num_cols = image_2d_matrix[0].shape
-    stepsize = (all_cam_axes[0][0][1]-all_cam_axes[0][0][0])*1.01
-    print (f'stepsize = {stepsize}')
-
     cam_axes = []
     telpos_matrix = []
     for tel in range(0,len(image_2d_matrix)):
         cam_axes += [[all_cam_axes[tel][0],all_cam_axes[tel][1]]]
         telpos_matrix += [[telesc_position_matrix[tel][2],telesc_position_matrix[tel][3]]]
 
+    fit_energy = init_params[0]
+    fit_height = init_params[1]
+    fit_cam_x = init_params[2]
+    fit_cam_y = init_params[3]
+    fit_core_x = init_params[4]
+    fit_core_y = init_params[5]
+    bound_energy = bounds[0]
+    bound_height = bounds[1]
+    bound_cam_x = bounds[2]
+    bound_cam_y = bounds[3]
+    bound_core_x = bounds[4]
+    bound_core_y = bounds[5]
+
+    var_name = 'core_xy'
+    var_params = [fit_core_x,fit_core_y]
+    var_bounds = [bound_core_x,bound_core_y]
+    fix_params = [fit_energy,fit_height,fit_cam_x,fit_cam_y]
+    stepsize = 5.
+    print (f'{var_name} stepsize = {stepsize}')
     solution = minimize(
         sum_sqaure_difference_between_images,
-        x0=init_params,
-        args=(telpos_matrix,cam_axes,geom,image_2d_matrix,param2image,energy,height,core_x,core_y),
-        bounds=bounds,
+        x0=var_params,
+        args=(fix_params,var_name,telpos_matrix,cam_axes,geom,image_2d_matrix,param2image),
+        bounds=var_bounds,
+        method='L-BFGS-B',
+        jac=None,
+        options={'eps':stepsize},
+    )
+    fit_core_x = solution['x'][0]
+    fit_core_y = solution['x'][1]
+    sum_chi2 = sum_sqaure_difference_between_images([fit_core_x,fit_core_y],fix_params,var_name,telpos_matrix,cam_axes,geom,image_2d_matrix,param2image)
+    print (f'sum_chi2 = {sum_chi2}')
+    print (f'init_core_x = {init_params[4]}')
+    print (f'init_core_y = {init_params[5]}')
+    print (f'fit_core_x = {fit_core_x}')
+    print (f'fit_core_y = {fit_core_y}')
+
+    var_name = 'cam_xy'
+    var_params = [fit_cam_x,fit_cam_y]
+    var_bounds = [bound_cam_x,bound_cam_y]
+    fix_params = [fit_energy,fit_height,fit_core_x,fit_core_y]
+    stepsize = (all_cam_axes[0][0][1]-all_cam_axes[0][0][0])*1.01
+    print (f'{var_name} stepsize = {stepsize}')
+    solution = minimize(
+        sum_sqaure_difference_between_images,
+        x0=var_params,
+        args=(fix_params,var_name,telpos_matrix,cam_axes,geom,image_2d_matrix,param2image),
+        bounds=var_bounds,
         method='L-BFGS-B',
         jac=None,
         options={'eps':stepsize},
     )
     fit_cam_x = solution['x'][0]
     fit_cam_y = solution['x'][1]
-
-    fit_core_x = core_x
-    fit_core_y = core_y
-    fit_energy = energy
-    fit_height = height
-    sum_chi2 = sum_sqaure_difference_between_images([fit_cam_x,fit_cam_y],telpos_matrix,cam_axes,geom,image_2d_matrix,param2image,fit_energy,fit_height,fit_core_x,fit_core_y)
+    sum_chi2 = sum_sqaure_difference_between_images([fit_cam_x,fit_cam_y],fix_params,var_name,telpos_matrix,cam_axes,geom,image_2d_matrix,param2image)
     print (f'sum_chi2 = {sum_chi2}')
-    print (f'init_cam_x = {init_params[0]}')
-    print (f'init_cam_y = {init_params[1]}')
+    print (f'init_cam_x = {init_params[2]}')
+    print (f'init_cam_y = {init_params[3]}')
     print (f'fit_cam_x = {fit_cam_x}')
     print (f'fit_cam_y = {fit_cam_y}')
 
@@ -1016,7 +1069,7 @@ for img in range(0,len(testing_id_list)):
             evt_cam_y = fit_indiv_evt_cam_y
             tel_x = telesc_position_matrix[tel][2]
             tel_y = telesc_position_matrix[tel][3]
-            evt_impact = pow(pow(fit_all_evt_core_x-tel_x,2)+pow(fit_all_evt_core_y-tel_y,2),0.5)/1000.
+            evt_impact = pow(pow(fit_indiv_evt_core_x-tel_x,2)+pow(fit_indiv_evt_core_y-tel_y,2),0.5)/1000.
             nn_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,nn_image2param,'nn',evt_cam_x,evt_cam_y)
             nn_evt_energy = float(nn_evt_params[0])*evt_impact
             svd_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,svd_image2param,'svd',evt_cam_x,evt_cam_y)
@@ -1056,11 +1109,15 @@ for img in range(0,len(testing_id_list)):
             simul_fit_tel_pos += [list_pair_telpos[tp][1]]
             simul_fit_cam_axes += [all_cam_axes[0]]
             simul_fit_cam_axes += [all_cam_axes[0]]
-            init_params = [init_cam_x,init_cam_y]
+            init_params = [init_energy,init_height,init_cam_x,init_cam_y,init_core_x,init_core_y]
+            energy_bound = (init_energy*0.5,init_energy*2)
+            height_bound = (init_height-5000.,init_height+5000.)
             cam_x_bound = (init_cam_x-4e-2,init_cam_x+4e-2)
             cam_y_bound = (init_cam_y-4e-2,init_cam_y+4e-2)
-            bounds = [cam_x_bound,cam_y_bound]
-            simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image,init_energy,init_height,init_core_x,init_core_y)
+            core_x_bound = (init_core_x-1000.,init_core_x+1000.)
+            core_y_bound = (init_core_y-1000.,init_core_y+1000.)
+            bounds = [energy_bound,height_bound,cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
+            simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image)
             if abs(init_cam_x-float(simult_2d_solution[2]))<pix_size and abs(init_cam_y-float(simult_2d_solution[3]))<pix_size: break
             init_energy = float(simult_2d_solution[0])
             init_height = float(simult_2d_solution[1])
