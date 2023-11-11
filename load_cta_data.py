@@ -270,7 +270,7 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., one_evt=1e10):
+def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     id_list = []
     truth_shower_position_matrix = []
@@ -305,9 +305,9 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
         evt_idx = 0
         for event in source:
         
+            if max_evt==evt_idx: continue
+
             event_id = event.index['event_id']
-            if one_evt!=1e10:
-                if event_id!=one_evt: continue
     
             ntel = len(event.r0.tel)
         

@@ -32,11 +32,15 @@ subprocess.call(['sh', './clean.sh'])
 
 testing_sample_path = []
 #testing_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
-testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run742___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 
+#with open('sim_files.txt', 'r') as file:
+#    for line in file:
+#        testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -66,7 +70,7 @@ def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
             else:
                 x = (b2 - b1) / (a1 - a2)
                 y = a1 * ((b2 - b1) / (a1 - a2)) + b1
-                w = (image_w[img1]*image_w[img2])*abs(a1-a2)
+                w = (image_w[img1]*image_w[img2])*np.arctan(abs((a1-a2)/(1.+a1*a2)))
             pair_x += [x]
             pair_y += [y]
             pair_w += [w]
@@ -148,7 +152,7 @@ def find_intersection_on_ground(image_x,image_y,image_a,image_b,image_w):
             y1 = image_y[img1]
             x2 = image_x[img2]
             y2 = image_y[img2]
-            #w = abs((a1-a2)/(1.+a1*a2))
+            #w = np.arctan(abs((a1-a2)/(1.+a1*a2)))
             w = pow(x1-x2,2)+pow(y1-y2,2)
             phi1 = np.arctan(a1)
             phi2 = np.arctan(a2)
@@ -289,7 +293,7 @@ def get_image_center(evt_image_2d,x_axis,y_axis):
             sum_w += weight
     avg_x = avg_x/sum_w
     avg_y = avg_y/sum_w
-    return avg_x, avg_y
+    return avg_x, avg_y, sum_w
 
 def predict_image_parameters(evt_image_1d,cam_axes,geom,image2param_mtx,machine,cam_x,cam_y):
     
@@ -306,7 +310,7 @@ def predict_image_parameters(evt_image_1d,cam_axes,geom,image2param_mtx,machine,
     shift_y = -cam_y
     evt_image_center = image_translation(evt_image_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
 
-    avg_x, avg_y = get_image_center(evt_image_center, cam_axes[0], cam_axes[1])
+    avg_x, avg_y, sum_w = get_image_center(evt_image_center, cam_axes[0], cam_axes[1])
 
     evt_image_rotate = np.zeros_like(evt_image_2d)
     angle_rad = np.arctan2(avg_y,avg_x)+np.pi
@@ -426,8 +430,8 @@ def sum_sqaure_difference_between_images(params,fix_params,var_name,tel_pos,all_
                 sum_chi2 += diff*diff
                 sum_correlation += corr
                 sum_w += svd_image_2d[row,col]+data_image_2d[row,col]
-        svg_avg_x, svd_avg_y = get_image_center(svd_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
-        data_avg_x, data_avg_y = get_image_center(data_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        svg_avg_x, svd_avg_y, svd_sum_w = get_image_center(svd_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        data_avg_x, data_avg_y, data_sum_w = get_image_center(data_image_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
         sum_dist_sq += sum_w*sum_w*(pow(svg_avg_x-data_avg_x,2)+pow(svd_avg_y-data_avg_y,2))
      
     return 1./sum_correlation
@@ -712,8 +716,9 @@ def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,ima
     core_x = params[0]
     core_y = params[1]
 
-    sum_dist_sq_weighted = 0.
-    sum_diff_a_sq = 0.
+    sum_dist_sq_pixel = 0.
+    sum_dist_sq_line = 0.
+    sigma_cam_xy = 0.05
     for tel in range(0,len(image_2d_matrix)):
 
         rad2deg = 180./np.pi
@@ -726,16 +731,19 @@ def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,ima
 
         a, b = construct_line_on_focalplane(cam_x,cam_y,impact_x,impact_y)
         aT, bT = construct_line_on_focalplane(cam_y,cam_x,impact_y,impact_x)
-
         input_a = line_a[tel]
+        diff_ang = np.arctan(abs((a-input_a)/(1.+a*input_a)))
+
         tel_image_2d = image_2d_matrix[tel]
         num_rows, num_cols = tel_image_2d.shape
 
-        avg_pix_x, avg_pix_y = get_image_center(tel_image_2d, x_axis, y_axis)
+        avg_pix_x, avg_pix_y, sum_w = get_image_center(tel_image_2d, x_axis, y_axis)
 
         vec_pix = np.array([avg_pix_x-cam_x,avg_pix_y-cam_y])
         vec_impact = -np.array([impact_x-cam_x,impact_y-cam_y])
         direction = 1./sigmoid(vec_pix.dot(vec_impact))
+
+        sum_dist_sq_line += diff_ang*diff_ang*direction
 
         for col in range(0,num_cols):
             for row in range(0,num_rows):
@@ -746,19 +754,14 @@ def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,ima
                 dist_sq = distance_square_point_to_line(pix_x,pix_y,a,b)
                 dist_sq_T = distance_square_point_to_line(pix_y,pix_x,aT,bT)
                 dist_sq = min(dist_sq,dist_sq_T)
-                sum_dist_sq_weighted += dist_sq*pow(pix_w,1)*direction
-        #sum_w = 0.
-        #for col in range(0,num_cols):
-        #    for row in range(0,num_rows):
-        #        sum_w += tel_image_2d[row,col]
-        #delta_a = abs(input_a-a)
-        #sum_diff_a_sq += delta_a*pow(sum_w,1)
+                sum_dist_sq_pixel += (dist_sq/(sigma_cam_xy*sigma_cam_xy)*pow(pix_w,1))*direction
 
-    return sum_dist_sq_weighted
-    #return sum_dist_sq_weighted*sum_diff_a_sq
 
-    #dist_sq_init_cam_xy = pow(cam_x-init_cam_x,2)+pow(cam_y-init_cam_y,2)*sum_evt_w*sum_evt_w
-    #return sum_dist_sq_weighted+dist_sq_init_cam_xy
+    if return_type=='line':
+        return sum_dist_sq_line
+    if return_type=='pixel':
+        return sum_dist_sq_pixel+sum_dist_sq_line
+
 
 def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,cam_x,cam_y):
 
@@ -794,24 +797,36 @@ def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_
     #)
     #fit_core_x = solution['x'][0]
     #fit_core_y = solution['x'][1]
-
-    params = [fit_core_x,fit_core_y]
-    #solution = minimize(
+    #solution = brute(
     #    sum_sqaure_distance_images_to_3D_line,
-    #    x0=params,
-    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'pixel'),
-    #    bounds=bounds,
+    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'center'),
+    #    ranges=bounds,
+    #    Ns=10,
     #)
-    #fit_core_x = solution['x'][0]
-    #fit_core_y = solution['x'][1]
-    solution = brute(
+    #fit_core_x = solution[0]
+    #fit_core_y = solution[1]
+
+    stepsize = 5.
+    params = [fit_core_x,fit_core_y]
+    solution = minimize(
         sum_sqaure_distance_images_to_3D_line,
+        x0=params,
         args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'pixel'),
-        ranges=bounds,
-        Ns=10,
+        bounds=bounds,
+        method='L-BFGS-B',
+        jac=None,
+        options={'eps':stepsize},
     )
-    fit_core_x = solution[0]
-    fit_core_y = solution[1]
+    fit_core_x = solution['x'][0]
+    fit_core_y = solution['x'][1]
+    #solution = brute(
+    #    sum_sqaure_distance_images_to_3D_line,
+    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'pixel'),
+    #    ranges=bounds,
+    #    Ns=10,
+    #)
+    #fit_core_x = solution[0]
+    #fit_core_y = solution[1]
 
     toc = time.perf_counter()
     print (f'simultaneously_fit_3D_line_to_all_images in {toc - tic:0.4f} seconds')
@@ -906,7 +921,7 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
 
 
 print ('loading testing data... ')
-testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.5,max_energy=1.0,one_evt=1e10)
+testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.5,max_energy=1000.0,max_evt=2)
 
 
 print ('loading svd pickle data... ')
@@ -993,6 +1008,18 @@ for img in range(0,len(testing_id_list)):
         fit_indiv_evt_core_x = float(ls_evt_line_vec[2])
         fit_indiv_evt_core_y = float(ls_evt_line_vec[3])
         fit_indiv_tel_coord = [fit_indiv_evt_cam_x,fit_indiv_evt_cam_y]
+        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print ('individual line fit result:')
+        print (f'current_event = {current_event}')
+        print (f'truth_cam_x      = {truth_cam_x:0.3f}')
+        print (f'truth_cam_y      = {truth_cam_y:0.3f}')
+        print (f'fit_indiv_evt_cam_x = {fit_indiv_evt_cam_x:0.3f}')
+        print (f'fit_indiv_evt_cam_y = {fit_indiv_evt_cam_y:0.3f}')
+        print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+        print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+        print (f'fit_indiv_evt_core_x = {fit_indiv_evt_core_x:0.3f}')
+        print (f'fit_indiv_evt_core_y = {fit_indiv_evt_core_y:0.3f}')
+        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         
         fit_indiv_array_coord = convert_tel_coord_to_array_coord(fit_indiv_tel_coord,tel_info)
         fit_indiv_evt_alt = fit_indiv_array_coord[0]
@@ -1026,29 +1053,29 @@ for img in range(0,len(testing_id_list)):
             simul_fit_tel_pos += [list_pair_telpos[tp][1]]
             simul_fit_cam_axes += [all_cam_axes[0]]
             simul_fit_cam_axes += [all_cam_axes[0]]
-            init_params = [init_core_x,init_core_y]
-            core_x_bound = (init_core_x-1e3,init_core_x+1e3)
-            core_y_bound = (init_core_y-1e3,init_core_y+1e3)
-            bounds = [core_x_bound,core_y_bound]
-            simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,init_cam_x,init_cam_y)
-            init_cam_x = float(simult_2d_solution[0])
-            init_cam_y = float(simult_2d_solution[1])
-            init_core_x = float(simult_2d_solution[2])
-            init_core_y = float(simult_2d_solution[3])
-            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            print (f'current_event = {current_event}')
-            print (f'pair_weight = {pair_weight}')
-            print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-            print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-            print (f'fit_indiv_evt_cam_x = {fit_indiv_evt_cam_x:0.3f}')
-            print (f'fit_indiv_evt_cam_y = {fit_indiv_evt_cam_y:0.3f}')
-            print (f'init_cam_x      = {init_cam_x:0.3f}')
-            print (f'init_cam_y      = {init_cam_y:0.3f}')
-            print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-            print (f'init_core_x         = {init_core_x:0.3f}')
-            print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-            print (f'init_core_y         = {init_core_y:0.3f}')
-            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        init_params = [init_core_x,init_core_y]
+        core_x_bound = (init_core_x-1e3,init_core_x+1e3)
+        core_y_bound = (init_core_y-1e3,init_core_y+1e3)
+        bounds = [core_x_bound,core_y_bound]
+        simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,init_cam_x,init_cam_y)
+        init_cam_x = float(simult_2d_solution[0])
+        init_cam_y = float(simult_2d_solution[1])
+        init_core_x = float(simult_2d_solution[2])
+        init_core_y = float(simult_2d_solution[3])
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        #print (f'current_event = {current_event}')
+        #print (f'pair_weight = {pair_weight}')
+        #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
+        #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
+        #print (f'fit_indiv_evt_cam_x = {fit_indiv_evt_cam_x:0.3f}')
+        #print (f'fit_indiv_evt_cam_y = {fit_indiv_evt_cam_y:0.3f}')
+        #print (f'init_cam_x      = {init_cam_x:0.3f}')
+        #print (f'init_cam_y      = {init_cam_y:0.3f}')
+        #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+        #print (f'init_core_x         = {init_core_x:0.3f}')
+        #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+        #print (f'init_core_y         = {init_core_y:0.3f}')
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         fit_all_line_evt_cam_x = float(simult_2d_solution[0])
         fit_all_line_evt_cam_y = float(simult_2d_solution[1])
         fit_all_line_evt_core_x = float(simult_2d_solution[2])
@@ -1057,22 +1084,15 @@ for img in range(0,len(testing_id_list)):
         fit_all_array_coord = convert_tel_coord_to_array_coord(fit_all_tel_coord,tel_info)
         fit_all_line_evt_alt = fit_all_array_coord[0]
         fit_all_line_evt_az = fit_all_array_coord[1]
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        #print (f'current_event = {current_event}')
-        #print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
-        #print (f'truth_shower_alt      = {truth_shower_alt*rad2deg:0.3f} deg')
-        #print (f'fit_indiv_evt_alt      = {fit_indiv_evt_alt*rad2deg:0.3f} deg')
-        #print (f'fit_all_line_evt_alt      = {fit_all_line_evt_alt*rad2deg:0.3f} deg')
-        #print (f'truth_shower_az      = {truth_shower_az*rad2deg:0.3f} deg')
-        #print (f'fit_indiv_evt_az       = {fit_indiv_evt_az*rad2deg:0.3f} deg')
-        #print (f'fit_all_line_evt_az       = {fit_all_line_evt_az*rad2deg:0.3f} deg')
-        #print (f'truth_shower_core_x = {truth_shower_core_x:0.1f} m')
-        #print (f'fit_indiv_evt_core_x   = {fit_indiv_evt_core_x:0.1f} m')
-        #print (f'fit_all_line_evt_core_x   = {fit_all_line_evt_core_x:0.1f} m')
-        #print (f'truth_shower_core_y = {truth_shower_core_y:0.1f} m')
-        #print (f'fit_indiv_evt_core_y   = {fit_indiv_evt_core_y:0.1f} m')
-        #print (f'fit_all_line_evt_core_y   = {fit_all_line_evt_core_y:0.1f} m')
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print ('simultaneous line fit result:')
+        print (f'current_event = {current_event}')
+        print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+        print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+        print (f'fit_all_line_evt_core_x = {fit_all_line_evt_core_x:0.3f}')
+        print (f'fit_all_line_evt_core_y = {fit_all_line_evt_core_y:0.3f}')
+        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+
 
         indiv_fit_alt_err += [fit_indiv_evt_alt-truth_shower_alt]
         indiv_fit_az_err += [fit_indiv_evt_az-truth_shower_az]
@@ -1111,85 +1131,85 @@ for img in range(0,len(testing_id_list)):
         print (f'avg_evt_energy = {avg_evt_energy}')
 
 
-        init_energy = avg_evt_energy
-        init_height = 15000.
-        #init_cam_x = fit_indiv_evt_cam_x
-        #init_cam_y = fit_indiv_evt_cam_y
-        #init_core_x = fit_indiv_evt_core_x
-        #init_core_y = fit_indiv_evt_core_y
-        init_cam_x = fit_all_line_evt_cam_x
-        init_cam_y = fit_all_line_evt_cam_y
-        init_core_x = fit_all_line_evt_core_x
-        init_core_y = fit_all_line_evt_core_y
-        simul_fit_image_matrix = []
-        simul_fit_tel_pos = []
-        simul_fit_cam_axes = []
-        simult_2d_solution = None
-        max_weight = list_pair_weight[0]
-        pix_size = all_cam_axes[0][0][1]-all_cam_axes[0][0][0]
-        for tp in range(0,len(list_pair_weight)):
-            pair_weight = list_pair_weight[tp]
-            if pair_weight<max_weight*0.5: continue
-            simul_fit_image_matrix += [np.array(list_pair_images[tp][0])]
-            simul_fit_image_matrix += [np.array(list_pair_images[tp][1])]
-            simul_fit_tel_pos += [list_pair_telpos[tp][0]]
-            simul_fit_tel_pos += [list_pair_telpos[tp][1]]
-            simul_fit_cam_axes += [all_cam_axes[0]]
-            simul_fit_cam_axes += [all_cam_axes[0]]
-        init_params = [init_energy,init_height,init_cam_x,init_cam_y,init_core_x,init_core_y]
-        energy_bound = (init_energy*0.5,init_energy*2)
-        height_bound = (init_height-5000.,init_height+5000.)
-        cam_x_bound = (init_cam_x-4e-2,init_cam_x+4e-2)
-        cam_y_bound = (init_cam_y-4e-2,init_cam_y+4e-2)
-        core_x_bound = (init_core_x-1000.,init_core_x+1000.)
-        core_y_bound = (init_core_y-1000.,init_core_y+1000.)
-        bounds = [energy_bound,height_bound,cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
-        simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image)
-        #if abs(init_cam_x-float(simult_2d_solution[2]))<pix_size and abs(init_cam_y-float(simult_2d_solution[3]))<pix_size: break
-        init_energy = float(simult_2d_solution[0])
-        init_height = float(simult_2d_solution[1])
-        init_cam_x = float(simult_2d_solution[2])
-        init_cam_y = float(simult_2d_solution[3])
-        init_core_x = float(simult_2d_solution[4])
-        init_core_y = float(simult_2d_solution[5])
-        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        print (f'current_event = {current_event}')
-        print (f'pair_weight = {pair_weight}')
-        print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-        print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-        print (f'init_cam_x      = {init_cam_x:0.3f}')
-        print (f'init_cam_y      = {init_cam_y:0.3f}')
-        print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-        print (f'init_core_x         = {init_core_x:0.3f}')
-        print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-        print (f'init_core_y         = {init_core_y:0.3f}')
-        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        fit_all_temp_evt_energy = float(simult_2d_solution[0])
-        fit_all_temp_evt_height = float(simult_2d_solution[1])
-        fit_all_temp_evt_cam_x = float(simult_2d_solution[2])
-        fit_all_temp_evt_cam_y = float(simult_2d_solution[3])
-        fit_all_temp_evt_core_x = float(simult_2d_solution[4])
-        fit_all_temp_evt_core_y = float(simult_2d_solution[5])
-        fit_all_tel_coord = [fit_all_temp_evt_cam_x,fit_all_temp_evt_cam_y]
-        fit_all_array_coord = convert_tel_coord_to_array_coord(fit_all_tel_coord,tel_info)
-        fit_all_temp_evt_alt = fit_all_array_coord[0]
-        fit_all_temp_evt_az = fit_all_array_coord[1]
-        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        print (f'current_event = {current_event}')
-        print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
-        print (f'truth_shower_alt      = {truth_shower_alt*rad2deg:0.3f} deg')
-        print (f'fit_indiv_evt_alt      = {fit_indiv_evt_alt*rad2deg:0.3f} deg')
-        print (f'fit_all_temp_evt_alt      = {fit_all_temp_evt_alt*rad2deg:0.3f} deg')
-        print (f'truth_shower_az      = {truth_shower_az*rad2deg:0.3f} deg')
-        print (f'fit_indiv_evt_az       = {fit_indiv_evt_az*rad2deg:0.3f} deg')
-        print (f'fit_all_temp_evt_az       = {fit_all_temp_evt_az*rad2deg:0.3f} deg')
-        print (f'truth_shower_core_x = {truth_shower_core_x:0.1f} m')
-        print (f'fit_indiv_evt_core_x   = {fit_indiv_evt_core_x:0.1f} m')
-        print (f'fit_all_temp_evt_core_x   = {fit_all_temp_evt_core_x:0.1f} m')
-        print (f'truth_shower_core_y = {truth_shower_core_y:0.1f} m')
-        print (f'fit_indiv_evt_core_y   = {fit_indiv_evt_core_y:0.1f} m')
-        print (f'fit_all_temp_evt_core_y   = {fit_all_temp_evt_core_y:0.1f} m')
-        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        #init_energy = avg_evt_energy
+        #init_height = 15000.
+        ##init_cam_x = fit_indiv_evt_cam_x
+        ##init_cam_y = fit_indiv_evt_cam_y
+        ##init_core_x = fit_indiv_evt_core_x
+        ##init_core_y = fit_indiv_evt_core_y
+        #init_cam_x = fit_all_line_evt_cam_x
+        #init_cam_y = fit_all_line_evt_cam_y
+        #init_core_x = fit_all_line_evt_core_x
+        #init_core_y = fit_all_line_evt_core_y
+        #simul_fit_image_matrix = []
+        #simul_fit_tel_pos = []
+        #simul_fit_cam_axes = []
+        #simult_2d_solution = None
+        #max_weight = list_pair_weight[0]
+        #pix_size = all_cam_axes[0][0][1]-all_cam_axes[0][0][0]
+        #for tp in range(0,len(list_pair_weight)):
+        #    pair_weight = list_pair_weight[tp]
+        #    if pair_weight<max_weight*0.5: continue
+        #    simul_fit_image_matrix += [np.array(list_pair_images[tp][0])]
+        #    simul_fit_image_matrix += [np.array(list_pair_images[tp][1])]
+        #    simul_fit_tel_pos += [list_pair_telpos[tp][0]]
+        #    simul_fit_tel_pos += [list_pair_telpos[tp][1]]
+        #    simul_fit_cam_axes += [all_cam_axes[0]]
+        #    simul_fit_cam_axes += [all_cam_axes[0]]
+        #init_params = [init_energy,init_height,init_cam_x,init_cam_y,init_core_x,init_core_y]
+        #energy_bound = (init_energy*0.5,init_energy*2)
+        #height_bound = (init_height-5000.,init_height+5000.)
+        #cam_x_bound = (init_cam_x-4e-2,init_cam_x+4e-2)
+        #cam_y_bound = (init_cam_y-4e-2,init_cam_y+4e-2)
+        #core_x_bound = (init_core_x-1000.,init_core_x+1000.)
+        #core_y_bound = (init_core_y-1000.,init_core_y+1000.)
+        #bounds = [energy_bound,height_bound,cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
+        #simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image)
+        ##if abs(init_cam_x-float(simult_2d_solution[2]))<pix_size and abs(init_cam_y-float(simult_2d_solution[3]))<pix_size: break
+        #init_energy = float(simult_2d_solution[0])
+        #init_height = float(simult_2d_solution[1])
+        #init_cam_x = float(simult_2d_solution[2])
+        #init_cam_y = float(simult_2d_solution[3])
+        #init_core_x = float(simult_2d_solution[4])
+        #init_core_y = float(simult_2d_solution[5])
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        #print (f'current_event = {current_event}')
+        #print (f'pair_weight = {pair_weight}')
+        #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
+        #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
+        #print (f'init_cam_x      = {init_cam_x:0.3f}')
+        #print (f'init_cam_y      = {init_cam_y:0.3f}')
+        #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+        #print (f'init_core_x         = {init_core_x:0.3f}')
+        #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+        #print (f'init_core_y         = {init_core_y:0.3f}')
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        #fit_all_temp_evt_energy = float(simult_2d_solution[0])
+        #fit_all_temp_evt_height = float(simult_2d_solution[1])
+        #fit_all_temp_evt_cam_x = float(simult_2d_solution[2])
+        #fit_all_temp_evt_cam_y = float(simult_2d_solution[3])
+        #fit_all_temp_evt_core_x = float(simult_2d_solution[4])
+        #fit_all_temp_evt_core_y = float(simult_2d_solution[5])
+        #fit_all_tel_coord = [fit_all_temp_evt_cam_x,fit_all_temp_evt_cam_y]
+        #fit_all_array_coord = convert_tel_coord_to_array_coord(fit_all_tel_coord,tel_info)
+        #fit_all_temp_evt_alt = fit_all_array_coord[0]
+        #fit_all_temp_evt_az = fit_all_array_coord[1]
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        #print (f'current_event = {current_event}')
+        #print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
+        #print (f'truth_shower_alt      = {truth_shower_alt*rad2deg:0.3f} deg')
+        #print (f'fit_indiv_evt_alt      = {fit_indiv_evt_alt*rad2deg:0.3f} deg')
+        #print (f'fit_all_temp_evt_alt      = {fit_all_temp_evt_alt*rad2deg:0.3f} deg')
+        #print (f'truth_shower_az      = {truth_shower_az*rad2deg:0.3f} deg')
+        #print (f'fit_indiv_evt_az       = {fit_indiv_evt_az*rad2deg:0.3f} deg')
+        #print (f'fit_all_temp_evt_az       = {fit_all_temp_evt_az*rad2deg:0.3f} deg')
+        #print (f'truth_shower_core_x = {truth_shower_core_x:0.1f} m')
+        #print (f'fit_indiv_evt_core_x   = {fit_indiv_evt_core_x:0.1f} m')
+        #print (f'fit_all_temp_evt_core_x   = {fit_all_temp_evt_core_x:0.1f} m')
+        #print (f'truth_shower_core_y = {truth_shower_core_y:0.1f} m')
+        #print (f'fit_indiv_evt_core_y   = {fit_indiv_evt_core_y:0.1f} m')
+        #print (f'fit_all_temp_evt_core_y   = {fit_all_temp_evt_core_y:0.1f} m')
+        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
 
 
@@ -1203,19 +1223,19 @@ for img in range(0,len(testing_id_list)):
             tel_x = telesc_position_matrix[i][2]
             tel_y = telesc_position_matrix[i][3]
 
-            #fit_shower_energy = truth_shower_energy
-            #fit_shower_height = truth_shower_height
-            fit_shower_energy = avg_evt_energy
-            fit_shower_height = 15000.
+            fit_shower_energy = truth_shower_energy
+            fit_shower_height = truth_shower_height
+            #fit_shower_energy = avg_evt_energy
+            #fit_shower_height = 15000.
 
-            #fit_shower_cam_x = truth_cam_x
-            #fit_shower_cam_y = truth_cam_y
-            #fit_shower_core_x = truth_shower_core_x
-            #fit_shower_core_y = truth_shower_core_y
-            fit_shower_cam_x = fit_all_temp_evt_cam_x
-            fit_shower_cam_y = fit_all_temp_evt_cam_y
-            fit_shower_core_x = fit_all_temp_evt_core_x
-            fit_shower_core_y = fit_all_temp_evt_core_y
+            fit_shower_cam_x = truth_cam_x
+            fit_shower_cam_y = truth_cam_y
+            fit_shower_core_x = truth_shower_core_x
+            fit_shower_core_y = truth_shower_core_y
+            #fit_shower_cam_x = fit_all_temp_evt_cam_x
+            #fit_shower_cam_y = fit_all_temp_evt_cam_y
+            #fit_shower_core_x = fit_all_temp_evt_core_x
+            #fit_shower_core_y = fit_all_temp_evt_core_y
 
             analysis_image_1d = testing_image_matrix[i]
             analysis_image_square = geom.image_to_cartesian_representation(analysis_image_1d)
@@ -1257,7 +1277,7 @@ for img in range(0,len(testing_id_list)):
         im = axbig.imshow(image_sum_svd,origin='lower',extent=(xmin,xmax,ymin,ymax))
         cbar = fig.colorbar(im)
         cbar.set_label('PE')
-        axbig.scatter(fit_all_temp_evt_cam_x, -fit_all_temp_evt_cam_y, s=90, c='r', marker='+')
+        axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
         fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
         axbig.remove()
 
