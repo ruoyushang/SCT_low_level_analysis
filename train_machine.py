@@ -24,16 +24,16 @@ from load_cta_data import NeuralNetwork
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
-training_sample_path = []
-#training_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
-training_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-training_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-training_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+print ('loading pickle trainging sample data... ')
+output_filename = f'{ctapipe_output}/output_machines/training_sample.pkl'
+training_sample = pickle.load(open(output_filename, "rb"))
 
-
-print ('loading training data... ')
-training_id_list, training_telesc_position_matrix, training_truth_shower_position_matrix, train_cam_axes, big_training_image_matrix, big_training_param_matrix = load_training_samples(training_sample_path,True)
+training_id_list = training_sample[0]
+training_telesc_position_matrix = training_sample[1]
+training_truth_shower_position_matrix = training_sample[2]
+train_cam_axes = training_sample[3]
+big_training_image_matrix = training_sample[4]
+big_training_param_matrix = training_sample[5]
 
 print ('Compute big matrix SVD...')
 big_training_image_matrix = np.array(big_training_image_matrix)
@@ -41,7 +41,7 @@ big_training_param_matrix = np.array(big_training_param_matrix)
 
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
-rank = 30
+rank = 100
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
 S_pseudo = np.diag(1 / S_full[:rank])

@@ -898,8 +898,16 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
     return [fit_energy,fit_height,fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
 
 
-print ('loading testing data... ')
-testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.1,max_energy=100.0,max_evt=1e1)
+print ('loading pickle trainging sample data... ')
+output_filename = f'{ctapipe_output}/output_machines/testing_sample.pkl'
+testing_sample = pickle.load(open(output_filename, "rb"))
+
+testing_id_list = testing_sample[0]
+big_telesc_position_matrix = testing_sample[1]
+big_truth_shower_position_matrix = testing_sample[2]
+test_cam_axes = testing_sample[3]
+big_testing_image_matrix = testing_sample[4]
+big_testing_param_matrix = testing_sample[5]
 
 
 print ('loading svd pickle data... ')
@@ -1241,31 +1249,31 @@ for img in range(0,len(testing_id_list)):
         ymax = max(geom.pix_y)/u.m
         ymin = min(geom.pix_y)/u.m
 
-        #fig.clf()
-        #axbig = fig.add_subplot()
-        #label_x = 'X'
-        #label_y = 'Y'
-        #axbig.set_xlabel(label_x)
-        #axbig.set_ylabel(label_y)
-        #im = axbig.imshow(image_sum_svd,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        #cbar = fig.colorbar(im)
-        #cbar.set_label('PE')
-        #axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
-        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
-        #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(image_sum_svd,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        cbar.set_label('PE')
+        axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
+        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
+        axbig.remove()
 
-        #fig.clf()
-        #axbig = fig.add_subplot()
-        #label_x = 'X'
-        #label_y = 'Y'
-        #axbig.set_xlabel(label_x)
-        #axbig.set_ylabel(label_y)
-        #im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        #cbar = fig.colorbar(im)
-        #cbar.set_label('PE')
-        #axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
-        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
-        #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        cbar.set_label('PE')
+        axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
+        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
+        axbig.remove()
 
         fig.clf()
         axbig = fig.add_subplot()
