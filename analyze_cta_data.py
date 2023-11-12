@@ -30,17 +30,6 @@ from load_cta_data import NeuralNetwork
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean.sh'])
 
-testing_sample_path = []
-#testing_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run742___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-
-#with open('sim_files.txt', 'r') as file:
-#    for line in file:
-#        testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -898,16 +887,33 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
     return [fit_energy,fit_height,fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
 
 
-print ('loading pickle trainging sample data... ')
-output_filename = f'{ctapipe_output}/output_machines/testing_sample.pkl'
-testing_sample = pickle.load(open(output_filename, "rb"))
+testing_sample_path = []
+testing_sample_path = [get_dataset_path('gamma_20deg_0deg_run835___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz')]
+#with open('testing_sim_files.txt', 'r') as file:
+#    for line in file:
+#        testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
-testing_id_list = testing_sample[0]
-big_telesc_position_matrix = testing_sample[1]
-big_truth_shower_position_matrix = testing_sample[2]
-test_cam_axes = testing_sample[3]
-big_testing_image_matrix = testing_sample[4]
-big_testing_param_matrix = testing_sample[5]
+testing_id_list = []
+big_telesc_position_matrix = []
+big_truth_shower_position_matrix = []
+test_cam_axes = []
+big_testing_image_matrix = []
+big_testing_param_matrix = []
+for path in range(0,len(testing_sample_path)):
+    source = SimTelEventSource(testing_sample_path[path], focal_length_choice='EQUIVALENT')
+    subarray = source.subarray
+    ob_keys = source.observation_blocks.keys()
+    run_id = list(ob_keys)[0]
+    print ('loading pickle testing sample data... ')
+    output_filename = f'{ctapipe_output}/output_samples/testing_sample_run{run_id}.pkl'
+    training_sample = pickle.load(open(output_filename, "rb"))
+
+    testing_id_list += training_sample[0]
+    big_telesc_position_matrix += training_sample[1]
+    big_truth_shower_position_matrix = training_sample[2]
+    test_cam_axes += training_sample[3]
+    big_testing_image_matrix += training_sample[4]
+    big_testing_param_matrix += training_sample[5]
 
 
 print ('loading svd pickle data... ')

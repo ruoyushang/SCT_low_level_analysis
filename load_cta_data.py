@@ -6,6 +6,7 @@ import time
 import math
 import numpy as np
 from astropy import units as u
+import pickle
 
 from ctapipe import utils
 from ctapipe.utils.datasets import get_dataset_path
@@ -272,15 +273,16 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
 
 def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
-    id_list = []
-    truth_shower_position_matrix = []
-    cam_axes = []
-    telesc_position_matrix = []
-    big_image_matrix = []
-    big_param_matrix = []
-
     for path in range(0,len(training_sample_path)):
     
+        id_list = []
+        truth_shower_position_matrix = []
+        cam_axes = []
+        telesc_position_matrix = []
+        big_image_matrix = []
+        big_param_matrix = []
+
+        print (f'loading file: {training_sample_path[path]}')
         source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     
         # Explore the instrument description
@@ -289,6 +291,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
     
         ob_keys = source.observation_blocks.keys()
         run_id = list(ob_keys)[0]
+        print (f'run_id = {run_id}')
     
         tel_pointing_alt = float(source.observation_blocks[run_id].subarray_pointing_lat/u.rad)
         tel_pointing_az = float(source.observation_blocks[run_id].subarray_pointing_lon/u.rad)
@@ -479,7 +482,13 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
         
             evt_idx += 1
 
-    return id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix
+        output_filename = f'{ctapipe_output}/output_samples/training_sample_run{run_id}.pkl'
+        if not is_training:
+            output_filename = f'{ctapipe_output}/output_samples/testing_sample_run{run_id}.pkl'
+
+        print (f'writing file to {output_filename}')
+        with open(output_filename,"wb") as file:
+            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix], file)
 
 
 class NeuralNetwork:
