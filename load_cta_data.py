@@ -465,15 +465,14 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 #exit()
     
                 evt_truth_energy = shower_energy
-                evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)
+                evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
                 evt_truth_height = shower_height
                 evt_truth_x_max = shower_x_max
 
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
                 big_image_matrix += [analysis_image_rotate_1d]
-                #big_param_matrix += [[evt_truth_energy,1./pow(evt_truth_impact/1000.,1),evt_truth_height]]
-                big_param_matrix += [[evt_truth_energy/pow(evt_truth_impact/1000.,1)]]
+                big_param_matrix += [[evt_truth_energy/evt_truth_impact,evt_truth_energy,evt_truth_impact]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
 

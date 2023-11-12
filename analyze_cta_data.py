@@ -33,8 +33,8 @@ subprocess.call(['sh', './clean.sh'])
 testing_sample_path = []
 #testing_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run742___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+#testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #testing_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 
@@ -159,7 +159,7 @@ def find_intersection_on_ground(image_x,image_y,image_a,image_b,image_w):
             sx, sy = find_single_pair_intersection_on_ground(x1, y1, phi1, x2, y2, phi2)
             if sx==0 and sy==0: w = 0.
             shower_x += [sx]
-            shower_y += [-sy]
+            shower_y += [sy]
             shower_w += [w]
 
     avg_sx = 0.
@@ -356,7 +356,7 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
 
     shower_impact = pow(pow(shower_impact_x,2)+pow(shower_impact_y,2),0.5)
     shower_impact = pow(shower_impact/1000.,1)
-    evt_param = np.array([shower_energy/shower_impact])
+    evt_param = np.array([shower_energy/shower_impact,shower_energy,shower_impact])
 
     evt_image = None
     if machine=='svd':
@@ -711,14 +711,16 @@ def distance_square_point_to_line(x0,y0,a,b):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,image_2d_matrix,cam_x,cam_y,return_type):
+def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,image_2d_matrix,return_type):
 
-    core_x = params[0]
-    core_y = params[1]
+    cam_x = params[0]
+    cam_y = params[1]
+    core_x = params[2]
+    core_y = params[3]
 
     sum_dist_sq_pixel = 0.
     sum_dist_sq_line = 0.
-    sigma_cam_xy = 0.05
+    sigma_cam_xy = 0.01
     for tel in range(0,len(image_2d_matrix)):
 
         rad2deg = 180./np.pi
@@ -763,7 +765,7 @@ def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,ima
         return sum_dist_sq_pixel+sum_dist_sq_line
 
 
-def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,cam_x,cam_y):
+def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes):
 
     tic = time.perf_counter()
     print ('simultaneously_fit_3D_line_to_all_images...')
@@ -783,50 +785,26 @@ def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_
         cam_axes += [[all_cam_axes[tel][0],all_cam_axes[tel][1]]]
         telpos_matrix += [[telesc_position_matrix[tel][2],telesc_position_matrix[tel][3]]]
 
-    fit_cam_x = cam_x
-    fit_cam_y = cam_y
-    fit_core_x = init_params[0]
-    fit_core_y = init_params[1]
+    fit_cam_x = init_params[0]
+    fit_cam_y = init_params[1]
+    fit_core_x = init_params[2]
+    fit_core_y = init_params[3]
 
-    #params = [fit_core_x,fit_core_y]
-    #solution = minimize(
-    #    sum_sqaure_distance_images_to_3D_line,
-    #    x0=params,
-    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'center'),
-    #    bounds=bounds,
-    #)
-    #fit_core_x = solution['x'][0]
-    #fit_core_y = solution['x'][1]
-    #solution = brute(
-    #    sum_sqaure_distance_images_to_3D_line,
-    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'center'),
-    #    ranges=bounds,
-    #    Ns=10,
-    #)
-    #fit_core_x = solution[0]
-    #fit_core_y = solution[1]
-
-    stepsize = 5.
-    params = [fit_core_x,fit_core_y]
+    stepsize = [0.01,0.01,5.,5.]
+    params = [fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
     solution = minimize(
         sum_sqaure_distance_images_to_3D_line,
         x0=params,
-        args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'pixel'),
+        args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,'pixel'),
         bounds=bounds,
         method='L-BFGS-B',
         jac=None,
         options={'eps':stepsize},
     )
-    fit_core_x = solution['x'][0]
-    fit_core_y = solution['x'][1]
-    #solution = brute(
-    #    sum_sqaure_distance_images_to_3D_line,
-    #    args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,cam_x,cam_y,'pixel'),
-    #    ranges=bounds,
-    #    Ns=10,
-    #)
-    #fit_core_x = solution[0]
-    #fit_core_y = solution[1]
+    fit_cam_x = solution['x'][0]
+    fit_cam_y = solution['x'][1]
+    fit_core_x = solution['x'][2]
+    fit_core_y = solution['x'][3]
 
     toc = time.perf_counter()
     print (f'simultaneously_fit_3D_line_to_all_images in {toc - tic:0.4f} seconds')
@@ -921,7 +899,7 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
 
 
 print ('loading testing data... ')
-testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.5,max_energy=1000.0,max_evt=2)
+testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.1,max_energy=100.0,max_evt=1e1)
 
 
 print ('loading svd pickle data... ')
@@ -1034,8 +1012,8 @@ for img in range(0,len(testing_id_list)):
         init_cam_y = fit_indiv_evt_cam_y
         init_core_x = fit_indiv_evt_core_x
         init_core_y = fit_indiv_evt_core_y
-        init_core_x = 10.
-        init_core_y = 10.
+        #init_core_x = 10.
+        #init_core_y = 10.
         simul_fit_image_matrix = []
         simul_fit_line_a_matrix = []
         simul_fit_tel_pos = []
@@ -1053,11 +1031,13 @@ for img in range(0,len(testing_id_list)):
             simul_fit_tel_pos += [list_pair_telpos[tp][1]]
             simul_fit_cam_axes += [all_cam_axes[0]]
             simul_fit_cam_axes += [all_cam_axes[0]]
-        init_params = [init_core_x,init_core_y]
+        init_params = [init_cam_x,init_cam_y,init_core_x,init_core_y]
+        cam_x_bound = (init_cam_x-0.1,init_cam_x+0.1)
+        cam_y_bound = (init_cam_y-0.1,init_cam_y+0.1)
         core_x_bound = (init_core_x-1e3,init_core_x+1e3)
         core_y_bound = (init_core_y-1e3,init_core_y+1e3)
-        bounds = [core_x_bound,core_y_bound]
-        simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,init_cam_x,init_cam_y)
+        bounds = [cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
+        simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes)
         init_cam_x = float(simult_2d_solution[0])
         init_cam_y = float(simult_2d_solution[1])
         init_core_x = float(simult_2d_solution[2])
@@ -1118,13 +1098,6 @@ for img in range(0,len(testing_id_list)):
             img_w = list_img_w[tel]
             avg_evt_energy += img_w*svd_evt_energy
             sum_weight += img_w
-            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            #print (f'current_event = {current_event}')
-            #print (f'img_w = {img_w}')
-            #print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
-            #print (f'svd_evt_energy = {svd_evt_energy:0.2f} TeV')
-            #print (f'nn_evt_energy = {nn_evt_energy:0.2f} TeV')
-            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         avg_evt_energy = avg_evt_energy/sum_weight
         print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
@@ -1268,31 +1241,31 @@ for img in range(0,len(testing_id_list)):
         ymax = max(geom.pix_y)/u.m
         ymin = min(geom.pix_y)/u.m
 
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'X'
-        label_y = 'Y'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        im = axbig.imshow(image_sum_svd,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        cbar = fig.colorbar(im)
-        cbar.set_label('PE')
-        axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
-        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'X'
+        #label_y = 'Y'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #im = axbig.imshow(image_sum_svd,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        #cbar = fig.colorbar(im)
+        #cbar.set_label('PE')
+        #axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
+        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
+        #axbig.remove()
 
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'X'
-        label_y = 'Y'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        cbar = fig.colorbar(im)
-        cbar.set_label('PE')
-        axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
-        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'X'
+        #label_y = 'Y'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        #cbar = fig.colorbar(im)
+        #cbar.set_label('PE')
+        #axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
+        #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
+        #axbig.remove()
 
         fig.clf()
         axbig = fig.add_subplot()
