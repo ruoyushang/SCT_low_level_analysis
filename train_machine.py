@@ -73,7 +73,7 @@ inv_M_pseudo = VT_eco.T @ S_pseudo @ U_eco.T
 # Compute the weighted least-squares solution
 svd_image2param = inv_M_pseudo @ big_training_param_matrix
 
-n_bins = 10
+n_bins = 20
 lookup_table = []
 lookup_table_norm = []
 for r in range(0,rank):

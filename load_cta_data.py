@@ -631,17 +631,19 @@ class MyArray2D:
         for idx_y in range(0,len(self.yaxis)-1):
             if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
                 key_idx_y = idx_y
+        if value_x>self.xaxis.max():
+            key_idx_x = len(self.xaxis)-1
+        if value_y>self.yaxis.max():
+            key_idx_y = len(self.yaxis)-1
         return [key_idx_x,key_idx_y]
 
+    def get_bin_center(self, idx_x, idx_y):
+        return [self.xaxis[idx_x],self.yaxis[idx_y]]
+
     def get_bin_content(self, value_x, value_y):
-        key_idx_x = 0
-        key_idx_y = 0
-        for idx_x in range(0,len(self.xaxis)-1):
-            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
-                key_idx_x = idx_x
-        for idx_y in range(0,len(self.yaxis)-1):
-            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
-                key_idx_y = idx_y
+        key_idx = self.get_bin(value_x, value_y)
+        key_idx_x = key_idx[0]
+        key_idx_y = key_idx[1]
         return self.zaxis[key_idx_x,key_idx_y]
 
 
