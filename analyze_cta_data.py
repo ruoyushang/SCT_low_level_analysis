@@ -700,7 +700,7 @@ def distance_square_point_to_line(x0,y0,a,b):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,image_2d_matrix,return_type):
+def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,image_2d_matrix,guiding_line_weight):
 
     cam_x = params[0]
     cam_y = params[1]
@@ -747,14 +747,10 @@ def sum_sqaure_distance_images_to_3D_line(params,line_a,tel_pos,all_cam_axes,ima
                 dist_sq = min(dist_sq,dist_sq_T)
                 sum_dist_sq_pixel += (dist_sq/(sigma_cam_xy*sigma_cam_xy)*pow(pix_w,1))*direction
 
-
-    if return_type=='line':
-        return sum_dist_sq_line
-    if return_type=='pixel':
-        return sum_dist_sq_pixel+sum_dist_sq_line
+    return sum_dist_sq_pixel + guiding_line_weight*sum_dist_sq_line
 
 
-def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes):
+def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_params,bounds,telesc_position_matrix,geom,all_cam_axes,guiding_line_weight):
 
     tic = time.perf_counter()
     print ('simultaneously_fit_3D_line_to_all_images...')
@@ -784,7 +780,7 @@ def simultaneously_fit_3D_line_to_all_images(image_1d_matrix,line_a_matrix,init_
     solution = minimize(
         sum_sqaure_distance_images_to_3D_line,
         x0=params,
-        args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,'pixel'),
+        args=(line_a_matrix,telpos_matrix,cam_axes,image_2d_matrix,guiding_line_weight),
         bounds=bounds,
         method='L-BFGS-B',
         jac=None,
@@ -1045,31 +1041,30 @@ for img in range(0,len(testing_id_list)):
             simul_fit_tel_pos += [list_pair_telpos[tp][1]]
             simul_fit_cam_axes += [all_cam_axes[0]]
             simul_fit_cam_axes += [all_cam_axes[0]]
-        init_params = [init_cam_x,init_cam_y,init_core_x,init_core_y]
-        cam_x_bound = (init_cam_x-0.1,init_cam_x+0.1)
-        cam_y_bound = (init_cam_y-0.1,init_cam_y+0.1)
-        core_x_bound = (init_core_x-1e3,init_core_x+1e3)
-        core_y_bound = (init_core_y-1e3,init_core_y+1e3)
-        bounds = [cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
-        simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes)
-        init_cam_x = float(simult_2d_solution[0])
-        init_cam_y = float(simult_2d_solution[1])
-        init_core_x = float(simult_2d_solution[2])
-        init_core_y = float(simult_2d_solution[3])
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        #print (f'current_event = {current_event}')
-        #print (f'pair_weight = {pair_weight}')
-        #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-        #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-        #print (f'fit_indiv_evt_cam_x = {fit_indiv_evt_cam_x:0.3f}')
-        #print (f'fit_indiv_evt_cam_y = {fit_indiv_evt_cam_y:0.3f}')
-        #print (f'init_cam_x      = {init_cam_x:0.3f}')
-        #print (f'init_cam_y      = {init_cam_y:0.3f}')
-        #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-        #print (f'init_core_x         = {init_core_x:0.3f}')
-        #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-        #print (f'init_core_y         = {init_core_y:0.3f}')
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        guiding_line_weight = [1.0,0.1,0.0]
+        for lw in range(0,len(guiding_line_weight)):
+            init_params = [init_cam_x,init_cam_y,init_core_x,init_core_y]
+            cam_x_bound = (init_cam_x-0.1,init_cam_x+0.1)
+            cam_y_bound = (init_cam_y-0.1,init_cam_y+0.1)
+            core_x_bound = (init_core_x-1e3,init_core_x+1e3)
+            core_y_bound = (init_core_y-1e3,init_core_y+1e3)
+            bounds = [cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
+            simult_2d_solution = simultaneously_fit_3D_line_to_all_images(simul_fit_image_matrix,simul_fit_line_a_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,guiding_line_weight[lw])
+            init_cam_x = float(simult_2d_solution[0])
+            init_cam_y = float(simult_2d_solution[1])
+            init_core_x = float(simult_2d_solution[2])
+            init_core_y = float(simult_2d_solution[3])
+            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print (f'guiding_line_weight = {guiding_line_weight[lw]}')
+            print (f'truth_cam_x     = {truth_cam_x:0.3f}')
+            print (f'init_cam_x      = {init_cam_x:0.3f}')
+            print (f'truth_cam_y     = {truth_cam_y:0.3f}')
+            print (f'init_cam_y      = {init_cam_y:0.3f}')
+            print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+            print (f'init_core_x         = {init_core_x:0.3f}')
+            print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+            print (f'init_core_y         = {init_core_y:0.3f}')
+            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         fit_all_line_evt_cam_x = float(simult_2d_solution[0])
         fit_all_line_evt_cam_y = float(simult_2d_solution[1])
         fit_all_line_evt_core_x = float(simult_2d_solution[2])
@@ -1356,6 +1351,8 @@ for img in range(0,len(testing_id_list)):
         truth_shower_position_matrix = []
         all_cam_axes = []
         telesc_position_matrix = []
+
+        #exit()
 
 
 fig.clf()

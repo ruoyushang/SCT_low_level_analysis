@@ -43,11 +43,5 @@ with open('test_sim_files.txt', 'r') as file:
         testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
 print ('loading testing data... ')
-load_training_samples(testing_sample_path,False,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-
-#testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix = load_training_samples(testing_sample_path,False,min_energy=0.1,max_energy=100.0,max_evt=1e1)
-
-#output_filename = f'{ctapipe_output}/output_machines/testing_sample.pkl'
-#with open(output_filename,"wb") as file:
-#    pickle.dump([testing_id_list, big_telesc_position_matrix, big_truth_shower_position_matrix, test_cam_axes, big_testing_image_matrix, big_testing_param_matrix], file)
+load_training_samples(testing_sample_path,False,min_energy=0.2,max_energy=100.0,max_evt=5)
 

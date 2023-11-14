@@ -58,7 +58,7 @@ print ('Compute big matrix SVD...')
 big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
 
-rank = 100
+rank = 30
 
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
