@@ -284,50 +284,7 @@ def get_image_center(evt_image_2d,x_axis,y_axis):
     avg_y = avg_y/sum_w
     return avg_x, avg_y, sum_w
 
-def predict_image_parameters(evt_image_1d,cam_axes,geom,image2param_mtx,machine,cam_x,cam_y):
-    
-    evt_image_2d = geom.image_to_cartesian_representation(evt_image_1d)
-    num_rows, num_cols = evt_image_2d.shape
-
-    for x_idx in range(0,num_cols):
-        for y_idx in range(0,num_rows):
-            if math.isnan(evt_image_2d[y_idx,x_idx]): evt_image_2d[y_idx,x_idx] = 0.
-            if evt_image_2d[y_idx,x_idx]<0.: evt_image_2d[y_idx,x_idx] = 0.
-
-    evt_image_center = np.zeros_like(evt_image_2d)
-    shift_x = -cam_x
-    shift_y = -cam_y
-    evt_image_center = image_translation(evt_image_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
-
-    avg_x, avg_y, sum_w = get_image_center(evt_image_center, cam_axes[0], cam_axes[1])
-
-    evt_image_rotate = np.zeros_like(evt_image_2d)
-    angle_rad = np.arctan2(avg_y,avg_x)+np.pi
-    if math.isnan(angle_rad): angle_rad = 0.
-    evt_image_rotate = image_rotation(evt_image_center, cam_axes[0], cam_axes[1], -angle_rad)
-
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(evt_image_rotate,origin='lower')
-    #fig.savefig(f'{ctapipe_output}/output_plots/test_image.png',bbox_inches='tight')
-    #axbig.remove()
-    #exit()
-
-    evt_image_rotate_1d = geom.image_from_cartesian_representation(evt_image_rotate)
-
-    evt_params = None
-    if machine=='svd':
-        evt_params = evt_image_rotate_1d @ image2param_mtx
-    elif machine=='nn':
-        evt_params = image2param_mtx.predict(evt_image_rotate_1d)[:,0]
-
-    return evt_params
-
-def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine):
+def create_svd_image(shower_params,tel_pos,cam_axes,geom,lookup_table,eigen_vectors):
 
     shower_energy = float(shower_params[0])
     shower_height = float(shower_params[1])
@@ -345,14 +302,13 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,param2image_mtx,machine
 
     shower_impact = pow(pow(shower_impact_x,2)+pow(shower_impact_y,2),0.5)
     shower_impact = pow(shower_impact/1000.,1)
-    evt_param = np.array([shower_energy/shower_impact,shower_energy,shower_impact])
 
-    evt_image = None
-    if machine=='svd':
-        evt_image = evt_param @ param2image_mtx
-    elif machine=='nn':
-        evt_image = param2image_mtx.predict(evt_param)[:,0]
-
+    latent_space = []
+    for r in range(0,len(lookup_table)):
+        latent_space += [lookup_table[r].get_bin_content(shower_impact,math.log10(shower_energy))]
+    latent_space = np.array(latent_space)
+    
+    evt_image = eigen_vectors.T @ latent_space
     evt_image_square = geom.image_to_cartesian_representation(evt_image)
 
     num_rows, num_cols = evt_image_square.shape
@@ -408,7 +364,7 @@ def sum_sqaure_difference_between_images(params,fix_params,var_name,tel_pos,all_
     for tel in range(0,len(image_2d_matrix)):
         evt_param = [energy,height,cam_x,cam_y,core_x,core_y]
         evt_param = np.array(evt_param)
-        svd_image_2d = create_svd_image(evt_param,tel_pos[tel],all_cam_axes[tel],geom,param2image,'svd')
+        svd_image_2d = create_svd_image(evt_param,tel_pos[tel],all_cam_axes[tel],geom,param2image)
         data_image_2d = image_2d_matrix[tel]
         n_rows, n_cols = data_image_2d.shape
         sum_w = 0.
@@ -895,6 +851,7 @@ big_truth_shower_position_matrix = []
 test_cam_axes = []
 big_testing_image_matrix = []
 big_testing_param_matrix = []
+big_testing_hillas_matrix = []
 for path in range(0,len(testing_sample_path)):
     source = SimTelEventSource(testing_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
@@ -902,6 +859,8 @@ for path in range(0,len(testing_sample_path)):
     run_id = list(ob_keys)[0]
     print ('loading pickle testing sample data... ')
     output_filename = f'{ctapipe_output}/output_samples/testing_sample_run{run_id}.pkl'
+    if not os.path.exists(output_filename):
+        continue
     training_sample = pickle.load(open(output_filename, "rb"))
 
     testing_id_list += training_sample[0]
@@ -910,21 +869,15 @@ for path in range(0,len(testing_sample_path)):
     test_cam_axes += training_sample[3]
     big_testing_image_matrix += training_sample[4]
     big_testing_param_matrix += training_sample[5]
+    big_testing_hillas_matrix += training_sample[6]
 
 
 print ('loading svd pickle data... ')
-output_filename = f'{ctapipe_output}/output_machines/svd_param2image.pkl'
-svd_param2image = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
+lookup_table_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/svd_image2param.pkl'
-svd_image2param = pickle.load(open(output_filename, "rb"))
-
-print ('loading nn pickle data... ')
-output_filename = f'{ctapipe_output}/output_machines/nn_param2image.pkl'
-nn_param2image = pickle.load(open(output_filename, "rb"))
-
-output_filename = f'{ctapipe_output}/output_machines/nn_image2param.pkl'
-nn_image2param = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
+eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
 
 
 print ('analyzing test data... ')
@@ -933,6 +886,7 @@ current_run = 0
 current_event = 0
 testing_image_matrix = []
 testing_param_matrix = []
+testing_hillas_matrix = []
 truth_shower_position_matrix = []
 all_cam_axes = []
 telesc_position_matrix = []
@@ -961,13 +915,34 @@ for img in range(0,len(testing_id_list)):
     if not collected_all_images:
         testing_image_matrix += [big_testing_image_matrix[img]]
         testing_param_matrix += [big_testing_param_matrix[img]]
+        testing_hillas_matrix += [big_testing_hillas_matrix[img]]
         truth_shower_position_matrix += [big_truth_shower_position_matrix[img]]
         all_cam_axes += [test_cam_axes[img]]
         telesc_position_matrix += [big_telesc_position_matrix[img]]
     else:
         collected_all_images = False
 
+        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print (f'collected all images.')
+        print (f'current_run = {current_run}')
+        print (f'current_event = {current_event}')
+        print (f'len(testing_image_matrix) = {len(testing_image_matrix)}')
+
         if len(testing_image_matrix)<=1: 
+            testing_image_matrix = []
+            testing_param_matrix = []
+            testing_hillas_matrix = []
+            truth_shower_position_matrix = []
+            all_cam_axes = []
+            telesc_position_matrix = []
+            continue
+        if len(testing_image_matrix)>=10: 
+            testing_image_matrix = []
+            testing_param_matrix = []
+            testing_hillas_matrix = []
+            truth_shower_position_matrix = []
+            all_cam_axes = []
+            telesc_position_matrix = []
             continue
 
         deg2rad = np.pi/180.
@@ -1022,8 +997,6 @@ for img in range(0,len(testing_id_list)):
         init_cam_y = fit_indiv_evt_cam_y
         init_core_x = fit_indiv_evt_core_x
         init_core_y = fit_indiv_evt_core_y
-        #init_core_x = 10.
-        #init_core_y = 10.
         simul_fit_image_matrix = []
         simul_fit_line_a_matrix = []
         simul_fit_tel_pos = []
@@ -1092,112 +1065,10 @@ for img in range(0,len(testing_id_list)):
         simul_fit_core_x_err += [fit_all_line_evt_core_x-truth_shower_core_x]
         simul_fit_core_y_err += [fit_all_line_evt_core_y-truth_shower_core_y]
 
-        avg_evt_energy = 0.
-        sum_weight = 0.
-        for tel in range(0,len(testing_image_matrix)):
-            evt_cam_x = fit_all_line_evt_cam_x
-            evt_cam_y = fit_all_line_evt_cam_y
-            tel_x = telesc_position_matrix[tel][2]
-            tel_y = telesc_position_matrix[tel][3]
-            evt_impact = pow(pow(fit_all_line_evt_core_x-tel_x,2)+pow(fit_all_line_evt_core_y-tel_y,2),0.5)/1000.
-            nn_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,nn_image2param,'nn',evt_cam_x,evt_cam_y)
-            nn_evt_energy = float(nn_evt_params[0])*evt_impact
-            svd_evt_params = predict_image_parameters(testing_image_matrix[tel],all_cam_axes[tel],geom,svd_image2param,'svd',evt_cam_x,evt_cam_y)
-            svd_evt_energy = float(svd_evt_params[0])*evt_impact
-            img_w = list_img_w[tel]
-            avg_evt_energy += img_w*svd_evt_energy
-            sum_weight += img_w
-        avg_evt_energy = avg_evt_energy/sum_weight
-        print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
-        print (f'avg_evt_energy = {avg_evt_energy}')
-
-
-        #init_energy = avg_evt_energy
-        #init_height = 15000.
-        ##init_cam_x = fit_indiv_evt_cam_x
-        ##init_cam_y = fit_indiv_evt_cam_y
-        ##init_core_x = fit_indiv_evt_core_x
-        ##init_core_y = fit_indiv_evt_core_y
-        #init_cam_x = fit_all_line_evt_cam_x
-        #init_cam_y = fit_all_line_evt_cam_y
-        #init_core_x = fit_all_line_evt_core_x
-        #init_core_y = fit_all_line_evt_core_y
-        #simul_fit_image_matrix = []
-        #simul_fit_tel_pos = []
-        #simul_fit_cam_axes = []
-        #simult_2d_solution = None
-        #max_weight = list_pair_weight[0]
-        #pix_size = all_cam_axes[0][0][1]-all_cam_axes[0][0][0]
-        #for tp in range(0,len(list_pair_weight)):
-        #    pair_weight = list_pair_weight[tp]
-        #    if pair_weight<max_weight*0.5: continue
-        #    simul_fit_image_matrix += [np.array(list_pair_images[tp][0])]
-        #    simul_fit_image_matrix += [np.array(list_pair_images[tp][1])]
-        #    simul_fit_tel_pos += [list_pair_telpos[tp][0]]
-        #    simul_fit_tel_pos += [list_pair_telpos[tp][1]]
-        #    simul_fit_cam_axes += [all_cam_axes[0]]
-        #    simul_fit_cam_axes += [all_cam_axes[0]]
-        #init_params = [init_energy,init_height,init_cam_x,init_cam_y,init_core_x,init_core_y]
-        #energy_bound = (init_energy*0.5,init_energy*2)
-        #height_bound = (init_height-5000.,init_height+5000.)
-        #cam_x_bound = (init_cam_x-4e-2,init_cam_x+4e-2)
-        #cam_y_bound = (init_cam_y-4e-2,init_cam_y+4e-2)
-        #core_x_bound = (init_core_x-1000.,init_core_x+1000.)
-        #core_y_bound = (init_core_y-1000.,init_core_y+1000.)
-        #bounds = [energy_bound,height_bound,cam_x_bound,cam_y_bound,core_x_bound,core_y_bound]
-        #simult_2d_solution = simultaneously_fit_3D_template_to_all_images(simul_fit_image_matrix,init_params,bounds,simul_fit_tel_pos,geom,simul_fit_cam_axes,svd_param2image)
-        ##if abs(init_cam_x-float(simult_2d_solution[2]))<pix_size and abs(init_cam_y-float(simult_2d_solution[3]))<pix_size: break
-        #init_energy = float(simult_2d_solution[0])
-        #init_height = float(simult_2d_solution[1])
-        #init_cam_x = float(simult_2d_solution[2])
-        #init_cam_y = float(simult_2d_solution[3])
-        #init_core_x = float(simult_2d_solution[4])
-        #init_core_y = float(simult_2d_solution[5])
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        #print (f'current_event = {current_event}')
-        #print (f'pair_weight = {pair_weight}')
-        #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-        #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-        #print (f'init_cam_x      = {init_cam_x:0.3f}')
-        #print (f'init_cam_y      = {init_cam_y:0.3f}')
-        #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-        #print (f'init_core_x         = {init_core_x:0.3f}')
-        #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-        #print (f'init_core_y         = {init_core_y:0.3f}')
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        #fit_all_temp_evt_energy = float(simult_2d_solution[0])
-        #fit_all_temp_evt_height = float(simult_2d_solution[1])
-        #fit_all_temp_evt_cam_x = float(simult_2d_solution[2])
-        #fit_all_temp_evt_cam_y = float(simult_2d_solution[3])
-        #fit_all_temp_evt_core_x = float(simult_2d_solution[4])
-        #fit_all_temp_evt_core_y = float(simult_2d_solution[5])
-        #fit_all_tel_coord = [fit_all_temp_evt_cam_x,fit_all_temp_evt_cam_y]
-        #fit_all_array_coord = convert_tel_coord_to_array_coord(fit_all_tel_coord,tel_info)
-        #fit_all_temp_evt_alt = fit_all_array_coord[0]
-        #fit_all_temp_evt_az = fit_all_array_coord[1]
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-        #print (f'current_event = {current_event}')
-        #print (f'truth_shower_energy = {truth_shower_energy:0.2f} TeV')
-        #print (f'truth_shower_alt      = {truth_shower_alt*rad2deg:0.3f} deg')
-        #print (f'fit_indiv_evt_alt      = {fit_indiv_evt_alt*rad2deg:0.3f} deg')
-        #print (f'fit_all_temp_evt_alt      = {fit_all_temp_evt_alt*rad2deg:0.3f} deg')
-        #print (f'truth_shower_az      = {truth_shower_az*rad2deg:0.3f} deg')
-        #print (f'fit_indiv_evt_az       = {fit_indiv_evt_az*rad2deg:0.3f} deg')
-        #print (f'fit_all_temp_evt_az       = {fit_all_temp_evt_az*rad2deg:0.3f} deg')
-        #print (f'truth_shower_core_x = {truth_shower_core_x:0.1f} m')
-        #print (f'fit_indiv_evt_core_x   = {fit_indiv_evt_core_x:0.1f} m')
-        #print (f'fit_all_temp_evt_core_x   = {fit_all_temp_evt_core_x:0.1f} m')
-        #print (f'truth_shower_core_y = {truth_shower_core_y:0.1f} m')
-        #print (f'fit_indiv_evt_core_y   = {fit_indiv_evt_core_y:0.1f} m')
-        #print (f'fit_all_temp_evt_core_y   = {fit_all_temp_evt_core_y:0.1f} m')
-        #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-
 
 
         image_sum_truth = None
         image_sum_svd = None
-        image_sum_nn = None
         for i in range(0,len(testing_param_matrix)):
 
             tel_alt = telesc_position_matrix[i][0]
@@ -1225,23 +1096,17 @@ for img in range(0,len(testing_id_list)):
             tel_pos = [tel_x,tel_y]
 
             evt_param = [fit_shower_energy,fit_shower_height,fit_shower_cam_x,fit_shower_cam_y,fit_shower_core_x,fit_shower_core_y]
-            #evt_param = [fit_shower_energy,fit_shower_cam_x,fit_shower_cam_y,fit_shower_core_x,fit_shower_core_y]
             evt_param = np.array(evt_param)
 
             print (f'creating SVD image...')
-            svd_image_2d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,svd_param2image,'svd')
+            svd_image_2d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,eigen_vectors_pkl)
 
-            print (f'creating NN image...')
-            nn_image_2d = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,nn_param2image,'nn')
-    
             if i==0:
                 image_sum_truth = analysis_image_square
                 image_sum_svd = svd_image_2d
-                image_sum_nn = nn_image_2d
             else:
                 image_sum_truth += analysis_image_square
                 image_sum_svd += svd_image_2d
-                image_sum_nn += nn_image_2d
 
 
 
@@ -1261,19 +1126,6 @@ for img in range(0,len(testing_id_list)):
         cbar.set_label('PE')
         axbig.scatter(fit_all_line_evt_cam_x, -fit_all_line_evt_cam_y, s=90, c='r', marker='+')
         fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd.png',bbox_inches='tight')
-        axbig.remove()
-
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'X'
-        label_y = 'Y'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        im = axbig.imshow(image_sum_nn,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        cbar = fig.colorbar(im)
-        cbar.set_label('PE')
-        axbig.scatter(fit_indiv_evt_cam_x, -fit_indiv_evt_cam_y, s=90, c='r', marker='+')
-        fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_nn.png',bbox_inches='tight')
         axbig.remove()
 
         fig.clf()
@@ -1348,6 +1200,7 @@ for img in range(0,len(testing_id_list)):
 
         testing_image_matrix = []
         testing_param_matrix = []
+        testing_hillas_matrix = []
         truth_shower_position_matrix = []
         all_cam_axes = []
         telesc_position_matrix = []

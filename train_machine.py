@@ -21,6 +21,7 @@ from ctapipe.visualization import CameraDisplay
 
 from load_cta_data import load_training_samples
 from load_cta_data import NeuralNetwork
+from load_cta_data import MyArray2D
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -36,6 +37,7 @@ training_truth_shower_position_matrix = []
 train_cam_axes = []
 big_training_image_matrix = []
 big_training_param_matrix = []
+big_training_hillas_matrix = []
 for path in range(0,len(training_sample_path)):
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
@@ -53,12 +55,14 @@ for path in range(0,len(training_sample_path)):
     train_cam_axes += training_sample[3]
     big_training_image_matrix += training_sample[4]
     big_training_param_matrix += training_sample[5]
+    big_training_hillas_matrix += training_sample[6]
 
 print ('Compute big matrix SVD...')
 big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
+big_training_hillas_matrix = np.array(big_training_hillas_matrix)
 
-rank = 30
+rank = 20
 
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
@@ -69,26 +73,36 @@ inv_M_pseudo = VT_eco.T @ S_pseudo @ U_eco.T
 # Compute the weighted least-squares solution
 svd_image2param = inv_M_pseudo @ big_training_param_matrix
 
-u_full, s_full, vT_full = np.linalg.svd(big_training_param_matrix,full_matrices=False)
-#u_eco = u_full[:, :rank]
-#vT_eco = vT_full[:rank, :]
-#s_pseudo = np.diag(1 / s_full[:rank])
-u_eco = u_full
-vT_eco = vT_full
-s_pseudo = np.diag(1 / s_full)
-inv_m_pseudo = vT_eco.T @ s_pseudo @ u_eco.T
-svd_param2image = inv_m_pseudo @ big_training_image_matrix
+n_bins = 10
+lookup_table = []
+lookup_table_norm = []
+for r in range(0,rank):
+    lookup_table += [MyArray2D(x_bins=n_bins,start_x=0.,end_x=0.5,y_bins=n_bins,start_y=-1.,end_y=1.)]
+    lookup_table_norm += [MyArray2D(x_bins=n_bins,start_x=0.,end_x=0.5,y_bins=n_bins,start_y=-1.,end_y=1.)]
 
-print ('Train a Neural Network...')
-tic = time.perf_counter()
-learning_rate = 0.1
-nn_param2image = NeuralNetwork(big_training_param_matrix[0],big_training_image_matrix[0],learning_rate,rank)
-training_error_param2image = nn_param2image.train(big_training_param_matrix, big_training_image_matrix, 10000)
-nn_image2param = NeuralNetwork(big_training_image_matrix[0],big_training_param_matrix[0],learning_rate,rank)
-training_error_image2param = nn_image2param.train(big_training_image_matrix, big_training_param_matrix, 10000)
-toc = time.perf_counter()
-print (f'Neural Network training completed in {toc - tic:0.4f} seconds')
+for img in range(0,len(big_training_image_matrix)):
+    energy = big_training_param_matrix[img][1]
+    impact = big_training_param_matrix[img][2]
+    log_energy = math.log10(energy)
+    image = np.array(big_training_image_matrix[img])
+    #print (f'image.shape = {image.shape}')
+    #print (f'VT_eco.shape = {VT_eco.shape}')
+    latent_space = VT_eco @ image
+    #print (f'latent_space = {latent_space}')
+    for r in range(0,rank):
+        lookup_table[r].fill(impact,log_energy,weight=latent_space[r])
+        lookup_table_norm[r].fill(impact,log_energy,weight=1.)
 
+for r in range(0,rank):
+    lookup_table[r].divide(lookup_table_norm[r])
+
+output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(lookup_table, file)
+
+output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(VT_eco, file)
 
 
 fig, ax = plt.subplots()
@@ -99,37 +113,75 @@ fig.set_figwidth(figsize_x)
 
 fig.clf()
 axbig = fig.add_subplot()
-label_x = 'Iterations'
-label_y = 'Error'
+label_x = 'Rank'
+label_y = 'Signular value'
 axbig.set_xlabel(label_x)
 axbig.set_ylabel(label_y)
-axbig.plot(training_error_param2image)
-fig.savefig(f'{ctapipe_output}/output_plots/training_error_param2image.png',bbox_inches='tight')
+axbig.set_yscale('log')
+axbig.plot(S_full)
+fig.savefig(f'{ctapipe_output}/output_plots/training_sample_signularvalue.png',bbox_inches='tight')
 axbig.remove()
 
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Iterations'
-label_y = 'Error'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.plot(training_error_image2param)
-fig.savefig(f'{ctapipe_output}/output_plots/training_error_image2param.png',bbox_inches='tight')
-axbig.remove()
+for r in range(0,rank):
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Impact [km]'
+    label_y = 'log Energy [TeV]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    xmin = lookup_table[r].xaxis.min()
+    xmax = lookup_table[r].xaxis.max()
+    ymin = lookup_table[r].yaxis.min()
+    ymax = lookup_table[r].yaxis.max()
+    im = axbig.imshow(lookup_table[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}.png',bbox_inches='tight')
+    axbig.remove()
 
-output_filename = f'{ctapipe_output}/output_machines/svd_param2image.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(svd_param2image, file)
-
-output_filename = f'{ctapipe_output}/output_machines/svd_image2param.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(svd_image2param, file)
-
-output_filename = f'{ctapipe_output}/output_machines/nn_param2image.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(nn_param2image, file)
-
-output_filename = f'{ctapipe_output}/output_machines/nn_image2param.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(nn_image2param, file)
+#for img in range(0,len(training_id_list)):
+#
+#    current_run = training_id_list[img][0]
+#    current_event = training_id_list[img][1]
+#    current_tel_id = training_id_list[img][2]
+#    subarray = training_id_list[img][3]
+#    geom = subarray.tel[current_tel_id].camera.geometry
+#
+#    sim_energy = big_training_param_matrix[img][1]
+#    sim_impact = big_training_param_matrix[img][2]
+#    sim_log_energy = math.log10(sim_energy)
+#
+#    latent_space = []
+#    for r in range(0,rank):
+#        latent_space += [lookup_table[r].get_bin_content(sim_impact,sim_log_energy)]
+#    latent_space = np.array(latent_space)
+#    
+#    sim_image = VT_eco.T @ latent_space
+#    sim_image_2d = geom.image_to_cartesian_representation(sim_image)
+#
+#    truth_image = big_training_image_matrix[img]
+#    truth_image_2d = geom.image_to_cartesian_representation(truth_image)
+#
+#    fig.clf()
+#    axbig = fig.add_subplot()
+#    label_x = 'X'
+#    label_y = 'Y'
+#    axbig.set_xlabel(label_x)
+#    axbig.set_ylabel(label_y)
+#    im = axbig.imshow(sim_image_2d,origin='lower')
+#    cbar = fig.colorbar(im)
+#    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_sim.png',bbox_inches='tight')
+#    axbig.remove()
+#
+#    fig.clf()
+#    axbig = fig.add_subplot()
+#    label_x = 'X'
+#    label_y = 'Y'
+#    axbig.set_xlabel(label_x)
+#    axbig.set_ylabel(label_y)
+#    im = axbig.imshow(truth_image_2d,origin='lower')
+#    cbar = fig.colorbar(im)
+#    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_truth.png',bbox_inches='tight')
+#    axbig.remove()
+#
+#    exit()
 

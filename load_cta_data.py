@@ -281,6 +281,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
         telesc_position_matrix = []
         big_image_matrix = []
         big_param_matrix = []
+        hillas_param_matrix = []
 
         print (f'loading file: {training_sample_path[path]}')
         source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
@@ -334,21 +335,21 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
             shower_processor(event)
             ranked_tel_key_array = rank_brightest_telescope(event.r0.tel)
 
-            stereo = event.dl2.stereo.geometry["HillasReconstructor"]
-            hillas_shower_alt = 0.
-            hillas_shower_az = 0.
-            hillas_shower_height = 0.
-            hillas_shower_core_x = 0.
-            hillas_shower_core_y = 0.
-            if stereo.is_valid:
-                hillas_shower_alt = float(stereo.alt/u.rad)
-                hillas_shower_az = float(stereo.az/u.rad)
-                hillas_shower_height = float(stereo.h_max/u.m)
-                hillas_shower_core_x = float(stereo.core_x/u.m)
-                hillas_shower_core_y = float(stereo.core_y/u.m)
-                print ('Hillas Reconstruction is successful.')
-            else:
-                print ('Hillas Reconstruction is invalid.')
+            #stereo = event.dl2.stereo.geometry["HillasReconstructor"]
+            #hillas_shower_alt = 0.
+            #hillas_shower_az = 0.
+            #hillas_shower_height = 0.
+            #hillas_shower_core_x = 0.
+            #hillas_shower_core_y = 0.
+            #if stereo.is_valid:
+            #    hillas_shower_alt = float(stereo.alt/u.rad)
+            #    hillas_shower_az = float(stereo.az/u.rad)
+            #    hillas_shower_height = float(stereo.h_max/u.m)
+            #    hillas_shower_core_x = float(stereo.core_x/u.m)
+            #    hillas_shower_core_y = float(stereo.core_y/u.m)
+            #    print ('Hillas Reconstruction is successful.')
+            #else:
+            #    print ('Hillas Reconstruction is invalid.')
     
 
             mean_tel_x = 0.
@@ -383,28 +384,25 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 # Define a camera geometry
                 geom = subarray.tel[tel_key].camera.geometry
                 # The CameraGeometry has functions to convert the 1d image arrays to 2d arrays and back to the 1d array
-                #analysis_image_square = geom.image_to_cartesian_representation(true_image)
-                analysis_image_square = geom.image_to_cartesian_representation(noisy_image)
-                if is_training:
-                    analysis_image_square = geom.image_to_cartesian_representation(true_image)
-                num_rows, num_cols = analysis_image_square.shape
+                analysis_image_2d = geom.image_to_cartesian_representation(noisy_image)
+                analysis_image_truth_2d = geom.image_to_cartesian_representation(true_image)
+
+                num_rows, num_cols = analysis_image_2d.shape
                 for x_idx in range(0,num_cols):
                     for y_idx in range(0,num_rows):
-                        if math.isnan(analysis_image_square[y_idx,x_idx]): analysis_image_square[y_idx,x_idx] = 0.
+                        if math.isnan(analysis_image_2d[y_idx,x_idx]): analysis_image_2d[y_idx,x_idx] = 0.
+                        if math.isnan(analysis_image_truth_2d[y_idx,x_idx]): analysis_image_truth_2d[y_idx,x_idx] = 0.
     
-                x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_square)
+                x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
 
-                if not is_training:
-                    # image cleaning
-                    analysis_image_smooth = smooth_map(analysis_image_square,x_axis,y_axis,50.)
-                    image_mask = np.zeros_like(analysis_image_smooth)
-
-                    image_mask = find_mask(analysis_image_smooth)
-                    renormalize_background(analysis_image_smooth,image_mask)
-                    image_mask = find_mask(analysis_image_smooth)
-
-                    renormalize_background(analysis_image_square,image_mask)
-                    analysis_image_square = clean_image(analysis_image_square,image_mask)
+                # image cleaning
+                analysis_image_smooth = smooth_map(analysis_image_2d,x_axis,y_axis,50.)
+                image_mask = np.zeros_like(analysis_image_smooth)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_smooth,image_mask)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_2d,image_mask)
+                analysis_image_2d = clean_image(analysis_image_2d,image_mask)
 
     
                 tel_focal_length = float(geom.frame.focal_length/u.m)
@@ -419,23 +417,24 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                analysis_image_recenter = np.zeros_like(analysis_image_square)
-                if is_training:
-                    shift_x = -evt_cam_x
-                    shift_y = -evt_cam_y
-                    analysis_image_recenter = image_translation(analysis_image_square, x_axis, y_axis, shift_x, shift_y)
-                else:
-                    analysis_image_recenter = analysis_image_square
+                analysis_image_recenter = np.zeros_like(analysis_image_2d)
+                shift_x = -evt_cam_x
+                shift_y = -evt_cam_y
+                analysis_image_recenter = image_translation(analysis_image_truth_2d, x_axis, y_axis, shift_x, shift_y)
 
-                analysis_image_rotate = np.zeros_like(analysis_image_square)
-                if is_training:
-                    angle_rad = -np.arctan2(evt_impact_y,evt_impact_x)
-                    analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
-                else:
-                    analysis_image_rotate = analysis_image_recenter
+                analysis_image_rotate = np.zeros_like(analysis_image_2d)
+                angle_rad = -np.arctan2(evt_impact_y,evt_impact_x)
+                analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
     
                 analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
+                analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
                 
+                hillas_params = hillas_parameters(geom, analysis_image_rotate_1d)
+                hillas_intensity = hillas_params['intensity']
+                hillas_r = hillas_params['r']/u.m
+                hillas_length = hillas_params['length']/u.m
+                hillas_width = hillas_params['width']/u.m
+
                 #fig.clf()
                 #axbig = fig.add_subplot()
                 #label_x = 'X'
@@ -474,8 +473,12 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
 
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
-                big_image_matrix += [analysis_image_rotate_1d]
+                if is_training:
+                    big_image_matrix += [analysis_image_rotate_1d]
+                else:
+                    big_image_matrix += [analysis_image_1d]
                 big_param_matrix += [[evt_truth_energy/evt_truth_impact,evt_truth_energy,evt_truth_impact]]
+                hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
 
@@ -488,7 +491,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
 
         print (f'writing file to {output_filename}')
         with open(output_filename,"wb") as file:
-            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix], file)
+            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix, hillas_param_matrix], file)
 
 
 class NeuralNetwork:
@@ -574,6 +577,76 @@ class NeuralNetwork:
                 cumulative_errors.append(cumulative_error)
 
         return cumulative_errors
+
+class MyArray2D:
+
+    def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.):
+        delta_x = (end_x-start_x)/float(x_bins)
+        delta_y = (end_y-start_y)/float(y_bins)
+        array_shape = (x_bins,y_bins)
+        self.xaxis = np.zeros(array_shape[0])
+        self.yaxis = np.zeros(array_shape[1])
+        self.zaxis = np.zeros(array_shape)
+        for idx in range(0,len(self.xaxis)):
+            self.xaxis[idx] = start_x + idx*delta_x
+        for idx in range(0,len(self.yaxis)):
+            self.yaxis[idx] = start_y + idx*delta_y
+
+    def reset(self):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                self.zaxis[idx_x,idx_y] = 0.
+
+    def add(self, add_array, factor=1.):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                self.zaxis[idx_x,idx_y] = self.zaxis[idx_x,idx_y]+add_array.zaxis[idx_x,idx_y]*factor
+
+    def fill(self, value_x, value_y, weight=1.):
+        key_idx_x = -1
+        key_idx_y = -1
+        for idx_x in range(0,len(self.xaxis)-1):
+            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+                key_idx_x = idx_x
+        for idx_y in range(0,len(self.yaxis)-1):
+            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
+                key_idx_y = idx_y
+        if key_idx_x>=0 and key_idx_y>=0:
+            self.zaxis[key_idx_x,key_idx_y] += 1.*weight
+    
+    def divide(self, add_array):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                if add_array.zaxis[idx_x,idx_y]==0.:
+                    self.zaxis[idx_x,idx_y] = 0.
+                else:
+                    self.zaxis[idx_x,idx_y] = self.zaxis[idx_x,idx_y]/add_array.zaxis[idx_x,idx_y]
+
+    def get_bin(self, value_x, value_y):
+        key_idx_x = 0
+        key_idx_y = 0
+        for idx_x in range(0,len(self.xaxis)-1):
+            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+                key_idx_x = idx_x
+        for idx_y in range(0,len(self.yaxis)-1):
+            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
+                key_idx_y = idx_y
+        return [key_idx_x,key_idx_y]
+
+    def get_bin_content(self, value_x, value_y):
+        key_idx_x = 0
+        key_idx_y = 0
+        for idx_x in range(0,len(self.xaxis)-1):
+            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+                key_idx_x = idx_x
+        for idx_y in range(0,len(self.yaxis)-1):
+            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
+                key_idx_y = idx_y
+        return self.zaxis[key_idx_x,key_idx_y]
+
+
+
+
 
 
 
