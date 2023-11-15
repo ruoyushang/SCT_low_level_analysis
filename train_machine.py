@@ -185,3 +185,55 @@ for r in range(0,rank):
 #
 #    exit()
 
+current_run = training_id_list[0][0]
+current_event = training_id_list[0][1]
+current_tel_id = training_id_list[0][2]
+subarray = training_id_list[0][3]
+geom = subarray.tel[current_tel_id].camera.geometry
+
+sim_energy = 0.4
+sim_impact = 0.1
+sim_log_energy = math.log10(sim_energy)
+
+latent_space = []
+for r in range(0,rank):
+    latent_space += [lookup_table[r].get_bin_content(sim_impact,sim_log_energy)]
+latent_space = np.array(latent_space)
+
+sim_image = VT_eco.T @ latent_space
+sim_image_2d = geom.image_to_cartesian_representation(sim_image)
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'X'
+label_y = 'Y'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+im = axbig.imshow(sim_image_2d,origin='lower')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_energy{sim_energy}_impact{sim_impact}.png',bbox_inches='tight')
+axbig.remove()
+
+sim_energy = 0.8
+sim_impact = 0.2
+sim_log_energy = math.log10(sim_energy)
+
+latent_space = []
+for r in range(0,rank):
+    latent_space += [lookup_table[r].get_bin_content(sim_impact,sim_log_energy)]
+latent_space = np.array(latent_space)
+
+sim_image = VT_eco.T @ latent_space
+sim_image_2d = geom.image_to_cartesian_representation(sim_image)
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'X'
+label_y = 'Y'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+im = axbig.imshow(sim_image_2d,origin='lower')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_energy{sim_energy}_impact{sim_impact}.png',bbox_inches='tight')
+axbig.remove()
+

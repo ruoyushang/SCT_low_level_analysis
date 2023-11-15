@@ -614,11 +614,24 @@ def sum_sqaure_difference_between_images(var_params,fix_params,tel_pos,all_cam_a
     core_x = 0.
     core_y = 0.
     if var_name=='energy':
-        energy = var_params[0]
         cam_x = fix_params[0]
         cam_y = fix_params[1]
         core_x = fix_params[2]
         core_y = fix_params[3]
+        energy = var_params[0]
+    if var_name=='cam_xy':
+        cam_x = var_params[0]
+        cam_y = var_params[1]
+        core_x = fix_params[0]
+        core_y = fix_params[1]
+        energy = fix_params[2]
+    if var_name=='all':
+        cam_x = var_params[0]
+        cam_y = var_params[1]
+        core_x = var_params[2]
+        core_y = var_params[3]
+        energy = var_params[4]
+
     params = [cam_x,cam_y,core_x,core_y,energy]
 
     sum_chi2 = 0.
@@ -752,16 +765,19 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
     fit_cam_y = init_params[1]
     fit_core_x = init_params[2]
     fit_core_y = init_params[3]
-    fit_energy = init_params[4]
+    fit_log_energy = init_params[4]
     bound_cam_x = bounds[0]
     bound_cam_y = bounds[1]
     bound_core_x = bounds[2]
     bound_core_y = bounds[3]
     bound_energy = bounds[4]
+    energy_stepsize = 1.5*(lookup_table[0].yaxis[1]-lookup_table[0].yaxis[0])
+    cam_xy_stepsize = 0.01
+    core_xy_stepsize = 5.
 
-    stepsize = [1.5*(lookup_table[0].yaxis[1]-lookup_table[0].yaxis[0])]
+    stepsize = [energy_stepsize]
     var_name = 'energy'
-    var_params = [fit_energy]
+    var_params = [fit_log_energy]
     var_bounds = [bound_energy]
     fix_params = [fit_cam_x,fit_cam_y,fit_core_x,fit_core_y]
     solution = minimize(
@@ -775,6 +791,44 @@ def simultaneously_fit_3D_template_to_all_images(image_1d_matrix,init_params,bou
     )
     fit_log_energy = solution['x'][0]
     fit_energy = pow(10.,fit_log_energy)
+
+    stepsize = [cam_xy_stepsize,cam_xy_stepsize]
+    var_name = 'cam_xy'
+    var_params = [fit_cam_x,fit_cam_y]
+    var_bounds = [bound_cam_x,bound_cam_y]
+    fix_params = [fit_core_x,fit_core_y,fit_log_energy]
+    solution = minimize(
+        sum_sqaure_difference_between_images,
+        x0=var_params,
+        args=(fix_params,telpos_matrix,cam_axes,geom,image_2d_matrix,lookup_table,eigen_vectors,var_name),
+        bounds=var_bounds,
+        method='L-BFGS-B',
+        jac=None,
+        options={'eps':stepsize},
+    )
+    fit_cam_x = solution['x'][0]
+    fit_cam_y = solution['x'][1]
+
+    #stepsize = [cam_xy_stepsize,cam_xy_stepsize,core_xy_stepsize,core_xy_stepsize,energy_stepsize]
+    #var_name = 'all'
+    #var_params = [fit_cam_x,fit_cam_y,fit_core_x,fit_core_y,fit_log_energy]
+    #var_bounds = [bound_cam_x,bound_cam_y,bound_core_x,bound_core_y,bound_energy]
+    #fix_params = []
+    #solution = minimize(
+    #    sum_sqaure_difference_between_images,
+    #    x0=var_params,
+    #    args=(fix_params,telpos_matrix,cam_axes,geom,image_2d_matrix,lookup_table,eigen_vectors,var_name),
+    #    bounds=var_bounds,
+    #    method='L-BFGS-B',
+    #    jac=None,
+    #    options={'eps':stepsize},
+    #)
+    #fit_cam_x = solution['x'][0]
+    #fit_cam_y = solution['x'][1]
+    #fit_core_x = solution['x'][2]
+    #fit_core_y = solution['x'][3]
+    #fit_log_energy = solution['x'][4]
+    #fit_energy = pow(10.,fit_log_energy)
 
     toc = time.perf_counter()
     print (f'simultaneously_fit_3D_template_to_all_images in {toc - tic:0.4f} seconds')
@@ -879,7 +933,7 @@ for img in range(0,len(testing_id_list)):
             all_cam_axes = []
             telesc_position_matrix = []
             continue
-        if len(testing_image_matrix)>=10: 
+        if len(testing_image_matrix)>=3: 
             testing_image_matrix = []
             testing_param_matrix = []
             testing_hillas_matrix = []
@@ -1056,17 +1110,21 @@ for img in range(0,len(testing_id_list)):
             tel_x = telesc_position_matrix[i][2]
             tel_y = telesc_position_matrix[i][3]
 
-            fit_shower_energy = truth_shower_energy
+            #fit_shower_energy = truth_shower_energy
             #fit_shower_cam_x = truth_cam_x
             #fit_shower_cam_y = truth_cam_y
             #fit_shower_core_x = truth_shower_core_x
             #fit_shower_core_y = truth_shower_core_y
+            #fit_shower_cam_x = fit_indiv_evt_cam_x
+            #fit_shower_cam_y = fit_indiv_evt_cam_y
+            #fit_shower_core_x = fit_indiv_evt_core_x
+            #fit_shower_core_y = fit_indiv_evt_core_y
 
-            #fit_shower_energy = fit_all_temp_evt_energy
-            fit_shower_cam_x = fit_indiv_evt_cam_x
-            fit_shower_cam_y = fit_indiv_evt_cam_y
-            fit_shower_core_x = fit_indiv_evt_core_x
-            fit_shower_core_y = fit_indiv_evt_core_y
+            fit_shower_energy = fit_all_temp_evt_energy
+            fit_shower_cam_x = fit_all_temp_evt_cam_x
+            fit_shower_cam_y = fit_all_temp_evt_cam_y
+            fit_shower_core_x = fit_all_temp_evt_core_x
+            fit_shower_core_y = fit_all_temp_evt_core_y
 
             analysis_image_1d = testing_image_matrix[i]
             analysis_image_square = geom.image_to_cartesian_representation(analysis_image_1d)
