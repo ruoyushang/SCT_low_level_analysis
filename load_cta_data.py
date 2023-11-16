@@ -314,7 +314,7 @@ def find_image_moments(input_image_2d, x_axis, y_axis):
         image_foci_x = float(foci_2_x)
         image_foci_y = float(foci_2_y)
 
-    return image_center_x, image_center_y, image_foci_x, image_foci_y
+    return image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq
 
 def image_translation(input_image_2d, x_axis, y_axis, shift_x, shift_y):
 
@@ -569,7 +569,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                image_center_x, image_center_y, image_foci_x, image_foci_y = find_image_moments(analysis_image_truth_2d, x_axis, y_axis)
+                image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq = find_image_moments(analysis_image_truth_2d, x_axis, y_axis)
                 #print (f'image_center_x = {image_center_x}')
                 #print (f'image_center_y = {image_center_y}')
                 #print (f'image_foci_x = {image_foci_x}')

@@ -136,8 +136,8 @@ for r in range(0,rank):
     ymax = lookup_table[r].yaxis.max()
     im = axbig.imshow(lookup_table[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
     cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}.png',bbox_inches='tight')
-axbig.remove()
+    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}.png',bbox_inches='tight')
+    axbig.remove()
 fig.clf()
 axbig = fig.add_subplot()
 label_x = 'Impact [km]'
@@ -230,38 +230,38 @@ for img in range(0,len(training_id_list)):
     fit_image = VT_eco.T @ fit_latent_space
     fit_image_2d = geom.image_to_cartesian_representation(fit_image)
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'X'
-    label_y = 'Y'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    im = axbig.imshow(sim_image_2d,origin='lower')
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_sim.png',bbox_inches='tight')
-    axbig.remove()
+    #fig.clf()
+    #axbig = fig.add_subplot()
+    #label_x = 'X'
+    #label_y = 'Y'
+    #axbig.set_xlabel(label_x)
+    #axbig.set_ylabel(label_y)
+    #im = axbig.imshow(sim_image_2d,origin='lower')
+    #cbar = fig.colorbar(im)
+    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_sim.png',bbox_inches='tight')
+    #axbig.remove()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'X'
-    label_y = 'Y'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    im = axbig.imshow(fit_image_2d,origin='lower')
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
-    axbig.remove()
+    #fig.clf()
+    #axbig = fig.add_subplot()
+    #label_x = 'X'
+    #label_y = 'Y'
+    #axbig.set_xlabel(label_x)
+    #axbig.set_ylabel(label_y)
+    #im = axbig.imshow(fit_image_2d,origin='lower')
+    #cbar = fig.colorbar(im)
+    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
+    #axbig.remove()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'X'
-    label_y = 'Y'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    im = axbig.imshow(truth_image_2d,origin='lower')
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_truth.png',bbox_inches='tight')
-    axbig.remove()
+    #fig.clf()
+    #axbig = fig.add_subplot()
+    #label_x = 'X'
+    #label_y = 'Y'
+    #axbig.set_xlabel(label_x)
+    #axbig.set_ylabel(label_y)
+    #im = axbig.imshow(truth_image_2d,origin='lower')
+    #cbar = fig.colorbar(im)
+    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_truth.png',bbox_inches='tight')
+    #axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
