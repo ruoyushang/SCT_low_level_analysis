@@ -7,6 +7,7 @@ import math
 import numpy as np
 from astropy import units as u
 import pickle
+from matplotlib import pyplot as plt
 
 from ctapipe import utils
 from ctapipe.utils.datasets import get_dataset_path
@@ -163,6 +164,157 @@ def find_mask(image_data):
                 image_mask[y_idx,x_idx] = 1
 
     return image_mask
+
+def fit_image_to_line(image_input,x_axis,y_axis):
+
+    num_rows, num_cols = image_input.shape
+    x = []
+    y = []
+    w = []
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            x += [x_axis[x_idx]]
+            y += [y_axis[y_idx]]
+            w += [pow(image_input[y_idx,x_idx],1.0)]
+    x = np.array(x)
+    y = np.array(y)
+    w = np.array(w)
+
+    if np.sum(w)==0.:
+        return 0., 0., 0.
+
+    avg_x = np.sum(w * x)/np.sum(w)
+    avg_y = np.sum(w * y)/np.sum(w)
+
+    # solve x*A = y using SVD
+    x = []
+    y = []
+    w = []
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            x += [[x_axis[x_idx]-avg_x]]
+            y += [[y_axis[y_idx]-avg_y]]
+            w += [pow(image_input[y_idx,x_idx],1.0)]
+    x = np.array(x)
+    y = np.array(y)
+    w = np.diag(w)
+
+    # Compute the weighted SVD
+    U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
+    # Calculate the weighted pseudo-inverse
+    S_pseudo_w = np.diag(1 / S)
+    x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
+    # Compute the weighted least-squares solution
+    A_svd = x_pseudo_w @ (w @ y)
+    # Compute chi2
+    chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
+
+    a = A_svd[0]
+    b = avg_y - a*avg_x
+
+    #return a, b, 1./chi2
+    return a, b, np.trace(w)/chi2
+
+def find_image_moments(input_image_2d, x_axis, y_axis):
+
+    num_rows, num_cols = input_image_2d.shape
+
+    image_center_x = 0.
+    image_center_y = 0.
+    image_size = 0.
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            image_size += input_image_2d[y_idx,x_idx]
+            image_center_x += x_axis[x_idx]*input_image_2d[y_idx,x_idx]
+            image_center_y += y_axis[y_idx]*input_image_2d[y_idx,x_idx]
+    image_center_x = image_center_x/image_size
+    image_center_y = image_center_y/image_size
+    #print (f'image_size = {image_size}')
+    #print (f'image_center_x = {image_center_x}')
+    #print (f'image_center_y = {image_center_y}')
+
+    a, b, w = fit_image_to_line(input_image_2d,x_axis,y_axis)
+    aT, bT, wT = fit_image_to_line(np.array(input_image_2d).transpose(),y_axis,x_axis)
+    if w<wT:
+        a = 1./aT
+        b = -bT/aT
+        w = wT
+
+    cov_xx = 0.
+    cov_xy = 0.
+    cov_yx = 0.
+    cov_yy = 0.
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            diff_x = x_axis[x_idx]-image_center_x
+            diff_y = y_axis[y_idx]-image_center_y
+            weight = input_image_2d[y_idx,x_idx]
+            cov_xx += diff_x*diff_x*weight
+            cov_xy += diff_x*diff_y*weight
+            cov_yx += diff_y*diff_x*weight
+            cov_yy += diff_y*diff_y*weight
+    cov_xx = cov_xx/image_size
+    cov_xy = cov_xy/image_size
+    cov_yx = cov_yx/image_size
+    cov_yy = cov_yy/image_size
+
+    covariance_matrix = np.array([[cov_xx, cov_xy], [cov_yx, cov_yy]])
+    eigenvalues, eigenvectors = np.linalg.eig(covariance_matrix)
+
+    semi_major_sq = eigenvalues[0]
+    semi_minor_sq = eigenvalues[1]
+    if semi_minor_sq>semi_major_sq:
+        x = semi_minor_sq
+        semi_minor_sq = semi_major_sq
+        semi_major_sq = x
+    dist_foci = pow(semi_major_sq-semi_minor_sq,0.5) 
+    #print (f'semi_major_sq = {semi_major_sq}')
+    #print (f'semi_minor_sq = {semi_minor_sq}')
+
+    angle = np.arctan(a)
+    delta_x = dist_foci*np.cos(angle)
+    delta_y = dist_foci*np.sin(angle)
+    foci_1_x = image_center_x + delta_x
+    foci_1_y = image_center_y + delta_y
+    foci_2_x = image_center_x - delta_x
+    foci_2_y = image_center_y - delta_y
+    #print (f'a = {a}')
+    #print (f'angle = {angle}')
+    #print (f'foci_1_x = {foci_1_x}')
+    #print (f'foci_1_y = {foci_1_y}')
+    #print (f'foci_2_x = {foci_2_x}')
+    #print (f'foci_2_y = {foci_2_y}')
+
+    foci_1_rms = 0.
+    foci_2_rms = 0.
+    sum_weight = 0.
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            diff_1_x = x_axis[x_idx]-foci_1_x
+            diff_1_y = y_axis[y_idx]-foci_1_y
+            diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
+            diff_2_x = x_axis[x_idx]-foci_2_x
+            diff_2_y = y_axis[y_idx]-foci_2_y
+            diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
+            weight = pow(input_image_2d[y_idx,x_idx],2)
+            foci_1_rms += diff_1_r2*weight
+            foci_2_rms += diff_2_r2*weight
+            sum_weight += weight
+    foci_1_rms = pow(foci_1_rms/sum_weight,0.5)
+    foci_2_rms = pow(foci_2_rms/sum_weight,0.5)
+    #print (f'foci_1_rms = {foci_1_rms}')
+    #print (f'foci_2_rms = {foci_2_rms}')
+
+    image_foci_x = 0.
+    image_foci_y = 0.
+    if foci_1_rms<foci_2_rms:
+        image_foci_x = float(foci_1_x)
+        image_foci_y = float(foci_1_y)
+    else:
+        image_foci_x = float(foci_2_x)
+        image_foci_y = float(foci_2_y)
+
+    return image_center_x, image_center_y, image_foci_x, image_foci_y
 
 def image_translation(input_image_2d, x_axis, y_axis, shift_x, shift_y):
 
@@ -417,13 +569,22 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                analysis_image_recenter = np.zeros_like(analysis_image_2d)
-                shift_x = -evt_cam_x
-                shift_y = -evt_cam_y
+                image_center_x, image_center_y, image_foci_x, image_foci_y = find_image_moments(analysis_image_truth_2d, x_axis, y_axis)
+                #print (f'image_center_x = {image_center_x}')
+                #print (f'image_center_y = {image_center_y}')
+                #print (f'image_foci_x = {image_foci_x}')
+                #print (f'image_foci_y = {image_foci_y}')
+
+                analysis_image_recenter = np.zeros_like(analysis_image_truth_2d)
+                #shift_x = -evt_cam_x
+                #shift_y = -evt_cam_y
+                shift_x = -image_foci_x
+                shift_y = -image_foci_y
                 analysis_image_recenter = image_translation(analysis_image_truth_2d, x_axis, y_axis, shift_x, shift_y)
 
-                analysis_image_rotate = np.zeros_like(analysis_image_2d)
-                angle_rad = -np.arctan2(evt_impact_y,evt_impact_x)
+                analysis_image_rotate = np.zeros_like(analysis_image_truth_2d)
+                #angle_rad = -np.arctan2(evt_impact_y,evt_impact_x)
+                angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
                 analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
     
                 analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
@@ -435,13 +596,19 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 hillas_length = hillas_params['length']/u.m
                 hillas_width = hillas_params['width']/u.m
 
+                #fig, ax = plt.subplots()
+                #figsize_x = 8.6
+                #figsize_y = 6.4
+                #fig.set_figheight(figsize_y)
+                #fig.set_figwidth(figsize_x)
+
                 #fig.clf()
                 #axbig = fig.add_subplot()
                 #label_x = 'X'
                 #label_y = 'Y'
                 #axbig.set_xlabel(label_x)
                 #axbig.set_ylabel(label_y)
-                #axbig.imshow(analysis_image_square,origin='lower')
+                #axbig.imshow(analysis_image_truth_2d,origin='lower')
                 #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_original.png',bbox_inches='tight')
                 #axbig.remove()
     
@@ -464,12 +631,14 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 #axbig.imshow(analysis_image_rotate,origin='lower')
                 #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_rotate.png',bbox_inches='tight')
                 #axbig.remove()
-                #exit()
+                ##exit()
     
-                evt_truth_energy = shower_energy
+                evt_truth_energy = math.log10(shower_energy)
                 evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
                 evt_truth_height = shower_height
                 evt_truth_x_max = shower_x_max
+
+                foci_2_sky = pow(pow(evt_cam_x-image_foci_x,2)+pow(evt_cam_y-image_foci_y,2),0.5)
 
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
@@ -477,7 +646,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                     big_image_matrix += [analysis_image_rotate_1d]
                 else:
                     big_image_matrix += [analysis_image_1d]
-                big_param_matrix += [[evt_truth_energy/evt_truth_impact,evt_truth_energy,evt_truth_impact]]
+                big_param_matrix += [[foci_2_sky,evt_truth_energy,evt_truth_impact]]
                 hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
@@ -507,6 +676,7 @@ class NeuralNetwork:
         self.learning_rate = learning_rate
 
     def _sigmoid(self, x):
+        #y = np.maximum(-100., x)
         return 1 / (1 + np.exp(-x))
 
     def _sigmoid_deriv(self, x):
@@ -606,10 +776,10 @@ class MyArray2D:
         key_idx_x = -1
         key_idx_y = -1
         for idx_x in range(0,len(self.xaxis)-1):
-            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+            if self.xaxis[idx_x]<value_x and self.xaxis[idx_x+1]>=value_x:
                 key_idx_x = idx_x
         for idx_y in range(0,len(self.yaxis)-1):
-            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
+            if self.yaxis[idx_y]<value_y and self.yaxis[idx_y+1]>=value_y:
                 key_idx_y = idx_y
         if key_idx_x>=0 and key_idx_y>=0:
             self.zaxis[key_idx_x,key_idx_y] += 1.*weight
@@ -647,8 +817,30 @@ class MyArray2D:
         return self.zaxis[key_idx_x,key_idx_y]
 
 
+def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_data,lookup_table,eigen_vectors):
 
+    fit_log_energy = init_params[0]
+    fit_impact = init_params[1]
 
+    fit_latent_space = []
+    for r in range(0,len(lookup_table)):
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy)]
+    fit_latent_space = np.array(fit_latent_space)
+
+    data_latent_space = eigen_vectors @ image_1d_data
+    #print (f'fit_log_energy = {fit_log_energy}')
+    #print (f'fit_impact = {fit_impact}')
+    #print (f'data_latent_space = {data_latent_space}')
+    #print (f'fit_latent_space = {fit_latent_space}')
+
+    sum_chi2 = 0.
+    n_rows = len(data_latent_space)
+    for row in range(0,n_rows):
+        diff = data_latent_space[row] - fit_latent_space[row]
+        sum_chi2 += diff*diff
+    #print (f'sum_chi2 = {sum_chi2}')
+
+    return sum_chi2
 
 
 
