@@ -118,7 +118,7 @@ label_x = 'Rank'
 label_y = 'Signular value'
 axbig.set_xlabel(label_x)
 axbig.set_ylabel(label_y)
-axbig.set_yscale('log')
+axbig.set_xlim(0,100)
 axbig.plot(S_full)
 fig.savefig(f'{ctapipe_output}/output_plots/training_sample_signularvalue.png',bbox_inches='tight')
 axbig.remove()
@@ -148,10 +148,12 @@ xmin = lookup_table_arrival.xaxis.min()
 xmax = lookup_table_arrival.xaxis.max()
 ymin = lookup_table_arrival.yaxis.min()
 ymax = lookup_table_arrival.yaxis.max()
-im = axbig.imshow(lookup_table_arrival.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+im = axbig.imshow(lookup_table_arrival.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival.png',bbox_inches='tight')
 axbig.remove()
+
+exit()
 
 log_energy_truth = []
 impact_truth = []
@@ -241,27 +243,27 @@ for img in range(0,len(training_id_list)):
     #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_sim.png',bbox_inches='tight')
     #axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(fit_image_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
-    #axbig.remove()
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(fit_image_2d,origin='lower')
+    cbar = fig.colorbar(im)
+    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
+    axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(truth_image_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_truth.png',bbox_inches='tight')
-    #axbig.remove()
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(truth_image_2d,origin='lower')
+    cbar = fig.colorbar(im)
+    fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_truth.png',bbox_inches='tight')
+    axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()

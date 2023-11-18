@@ -215,7 +215,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     #return a, b, 1./chi2
     return a, b, np.trace(w)/chi2
 
-def find_image_moments(input_image_2d, x_axis, y_axis):
+def find_image_moments_guided(input_image_2d, x_axis, y_axis, arrival_x, arrival_y):
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -268,8 +268,6 @@ def find_image_moments(input_image_2d, x_axis, y_axis):
         semi_minor_sq = semi_major_sq
         semi_major_sq = x
     dist_foci = pow(semi_major_sq-semi_minor_sq,0.5) 
-    #print (f'semi_major_sq = {semi_major_sq}')
-    #print (f'semi_minor_sq = {semi_minor_sq}')
 
     angle = np.arctan(a)
     delta_x = dist_foci*np.cos(angle)
@@ -278,12 +276,6 @@ def find_image_moments(input_image_2d, x_axis, y_axis):
     foci_1_y = image_center_y + delta_y
     foci_2_x = image_center_x - delta_x
     foci_2_y = image_center_y - delta_y
-    #print (f'a = {a}')
-    #print (f'angle = {angle}')
-    #print (f'foci_1_x = {foci_1_x}')
-    #print (f'foci_1_y = {foci_1_y}')
-    #print (f'foci_2_x = {foci_2_x}')
-    #print (f'foci_2_y = {foci_2_y}')
 
     foci_1_rms = 0.
     foci_2_rms = 0.
@@ -300,10 +292,16 @@ def find_image_moments(input_image_2d, x_axis, y_axis):
             foci_1_rms += diff_1_r2*weight
             foci_2_rms += diff_2_r2*weight
             sum_weight += weight
+    diff_1_x = arrival_x-foci_1_x
+    diff_1_y = arrival_y-foci_1_y
+    diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
+    diff_2_x = arrival_x-foci_2_x
+    diff_2_y = arrival_y-foci_2_y
+    diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
+    foci_1_rms += diff_1_r2*sum_weight
+    foci_2_rms += diff_2_r2*sum_weight
     foci_1_rms = pow(foci_1_rms/sum_weight,0.5)
     foci_2_rms = pow(foci_2_rms/sum_weight,0.5)
-    #print (f'foci_1_rms = {foci_1_rms}')
-    #print (f'foci_2_rms = {foci_2_rms}')
 
     image_foci_x = 0.
     image_foci_y = 0.
@@ -569,7 +567,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq = find_image_moments(analysis_image_truth_2d, x_axis, y_axis)
+                image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_truth_2d, x_axis, y_axis, evt_cam_x, evt_cam_y)
                 #print (f'image_center_x = {image_center_x}')
                 #print (f'image_center_y = {image_center_y}')
                 #print (f'image_foci_x = {image_foci_x}')
@@ -772,26 +770,6 @@ class MyArray2D:
             for idx_y in range(0,len(self.yaxis)):
                 self.zaxis[idx_x,idx_y] = self.zaxis[idx_x,idx_y]+add_array.zaxis[idx_x,idx_y]*factor
 
-    def fill(self, value_x, value_y, weight=1.):
-        key_idx_x = -1
-        key_idx_y = -1
-        for idx_x in range(0,len(self.xaxis)-1):
-            if self.xaxis[idx_x]<value_x and self.xaxis[idx_x+1]>=value_x:
-                key_idx_x = idx_x
-        for idx_y in range(0,len(self.yaxis)-1):
-            if self.yaxis[idx_y]<value_y and self.yaxis[idx_y+1]>=value_y:
-                key_idx_y = idx_y
-        if key_idx_x>=0 and key_idx_y>=0:
-            self.zaxis[key_idx_x,key_idx_y] += 1.*weight
-    
-    def divide(self, add_array):
-        for idx_x in range(0,len(self.xaxis)):
-            for idx_y in range(0,len(self.yaxis)):
-                if add_array.zaxis[idx_x,idx_y]==0.:
-                    self.zaxis[idx_x,idx_y] = 0.
-                else:
-                    self.zaxis[idx_x,idx_y] = self.zaxis[idx_x,idx_y]/add_array.zaxis[idx_x,idx_y]
-
     def get_bin(self, value_x, value_y):
         key_idx_x = 0
         key_idx_y = 0
@@ -807,6 +785,20 @@ class MyArray2D:
             key_idx_y = len(self.yaxis)-1
         return [key_idx_x,key_idx_y]
 
+    def fill(self, value_x, value_y, weight=1.):
+        key_idx = self.get_bin(value_x, value_y)
+        key_idx_x = key_idx[0]
+        key_idx_y = key_idx[1]
+        self.zaxis[key_idx_x,key_idx_y] += 1.*weight
+    
+    def divide(self, add_array):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                if add_array.zaxis[idx_x,idx_y]==0.:
+                    self.zaxis[idx_x,idx_y] = 0.
+                else:
+                    self.zaxis[idx_x,idx_y] = self.zaxis[idx_x,idx_y]/add_array.zaxis[idx_x,idx_y]
+
     def get_bin_center(self, idx_x, idx_y):
         return [self.xaxis[idx_x],self.yaxis[idx_y]]
 
@@ -815,6 +807,40 @@ class MyArray2D:
         key_idx_x = key_idx[0]
         key_idx_y = key_idx[1]
         return self.zaxis[key_idx_x,key_idx_y]
+
+class MyArray1D:
+
+    def __init__(self,x_axis):
+        self.xaxis = np.array(x_axis)
+        self.yaxis = np.zeros_like(x_axis)
+
+    def reset(self):
+        for idx_x in range(0,len(self.xaxis)):
+            self.yaxis[idx_x] = 0.
+
+    def add(self, add_array, factor=1.):
+        for idx_x in range(0,len(self.xaxis)):
+            self.yaxis[idx_x] = self.yaxis[idx_x]+add_array.yaxis[idx_x]*factor
+
+    def get_bin(self, value_x):
+        key_idx_x = 0
+        for idx_x in range(0,len(self.xaxis)-1):
+            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+                key_idx_x = idx_x
+        if value_x>self.xaxis.max():
+            key_idx_x = len(self.xaxis)-1
+        return key_idx_x
+
+    def fill(self, value_x, weight=1.):
+        key_idx_x = self.get_bin(value_x)
+        self.yaxis[key_idx_x] += 1.*weight
+    
+    def divide(self, add_array):
+        for idx_x in range(0,len(self.xaxis)):
+            if add_array.yaxis[idx_x]==0.:
+                self.yaxis[idx_x] = 0.
+            else:
+                self.yaxis[idx_x] = self.yaxis[idx_x]/add_array.yaxis[idx_x]
 
 
 def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_data,lookup_table,eigen_vectors):
@@ -842,5 +868,18 @@ def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_d
 
     return sum_chi2
 
+def get_average(xdata_list,ydata_list,x_axis):
 
+    avg = MyArray1D(x_axis)
+    norm = MyArray1D(x_axis)
+
+    for entry in range(0,len(xdata_list)):
+        xdata = xdata_list[entry]
+        ydata = ydata_list[entry]
+        avg.fill(xdata,weight=ydata)
+        norm.fill(xdata,weight=1.)
+
+    avg.divide(norm)
+
+    return avg
 
