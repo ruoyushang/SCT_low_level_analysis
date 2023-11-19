@@ -215,7 +215,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     #return a, b, 1./chi2
     return a, b, np.trace(w)/chi2
 
-def find_image_moments_guided(input_image_2d, x_axis, y_axis, arrival_x, arrival_y):
+def find_image_moments_guided(input_image_2d, x_axis, y_axis, guided=False, arrival_x=0., arrival_y=0.):
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -292,27 +292,34 @@ def find_image_moments_guided(input_image_2d, x_axis, y_axis, arrival_x, arrival
             foci_1_rms += diff_1_r2*weight
             foci_2_rms += diff_2_r2*weight
             sum_weight += weight
-    diff_1_x = arrival_x-foci_1_x
-    diff_1_y = arrival_y-foci_1_y
-    diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
-    diff_2_x = arrival_x-foci_2_x
-    diff_2_y = arrival_y-foci_2_y
-    diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
-    foci_1_rms += diff_1_r2*sum_weight
-    foci_2_rms += diff_2_r2*sum_weight
+    if guided:
+        diff_1_x = arrival_x-foci_1_x
+        diff_1_y = arrival_y-foci_1_y
+        diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
+        diff_2_x = arrival_x-foci_2_x
+        diff_2_y = arrival_y-foci_2_y
+        diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
+        foci_1_rms += diff_1_r2*sum_weight
+        foci_2_rms += diff_2_r2*sum_weight
     foci_1_rms = pow(foci_1_rms/sum_weight,0.5)
     foci_2_rms = pow(foci_2_rms/sum_weight,0.5)
 
-    image_foci_x = 0.
-    image_foci_y = 0.
+    image_foci_x1 = 0.
+    image_foci_y1 = 0.
+    image_foci_x2 = 0.
+    image_foci_y2 = 0.
     if foci_1_rms<foci_2_rms:
-        image_foci_x = float(foci_1_x)
-        image_foci_y = float(foci_1_y)
+        image_foci_x1 = float(foci_1_x)
+        image_foci_y1 = float(foci_1_y)
+        image_foci_x2 = float(foci_2_x)
+        image_foci_y2 = float(foci_2_y)
     else:
-        image_foci_x = float(foci_2_x)
-        image_foci_y = float(foci_2_y)
+        image_foci_x1 = float(foci_2_x)
+        image_foci_y1 = float(foci_2_y)
+        image_foci_x2 = float(foci_1_x)
+        image_foci_y2 = float(foci_1_y)
 
-    return image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq
+    return image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq
 
 def image_translation(input_image_2d, x_axis, y_axis, shift_x, shift_y):
 
@@ -567,7 +574,9 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                image_center_x, image_center_y, image_foci_x, image_foci_y, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_truth_2d, x_axis, y_axis, evt_cam_x, evt_cam_y)
+                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_truth_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
+                image_foci_x = image_foci_x1
+                image_foci_y = image_foci_y1
                 #print (f'image_center_x = {image_center_x}')
                 #print (f'image_center_y = {image_center_y}')
                 #print (f'image_foci_x = {image_foci_x}')
