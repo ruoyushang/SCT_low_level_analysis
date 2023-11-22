@@ -28,7 +28,7 @@ from load_cta_data import smooth_map
 from load_cta_data import NeuralNetwork
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
-subprocess.call(['sh', './clean.sh'])
+#subprocess.call(['sh', './clean.sh'])
 
 testing_sample_path = []
 #testing_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
@@ -43,5 +43,6 @@ with open('test_sim_files.txt', 'r') as file:
         testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
 print ('loading testing data... ')
-load_training_samples(testing_sample_path,False,min_energy=0.1,max_energy=100.0,max_evt=2e10)
+load_training_samples(testing_sample_path,is_training=False,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=2e10)
+load_training_samples(testing_sample_path,is_training=False,analysis_mode=0,min_energy=0.1,max_energy=100.0,max_evt=2e10)
 

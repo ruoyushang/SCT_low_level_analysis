@@ -36,11 +36,9 @@ with open('train_sim_files.txt', 'r') as file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
 
 print ('loading training data... ')
-#load_training_samples(training_sample_path,True,min_energy=0.5,max_energy=100.0,max_evt=10)
-load_training_samples(training_sample_path,True,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+load_training_samples(training_sample_path,is_training=True,analysis_mode=2,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+load_training_samples(training_sample_path,is_training=True,analysis_mode=1,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+load_training_samples(training_sample_path,is_training=True,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 
-#output_filename = f'{ctapipe_output}/output_samples/training_sample.pkl'
-#with open(output_filename,"wb") as file:
-#    pickle.dump([training_id_list, training_telesc_position_matrix, training_truth_shower_position_matrix, train_cam_axes, big_training_image_matrix, big_training_param_matrix], file)
 
 

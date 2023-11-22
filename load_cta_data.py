@@ -428,7 +428,40 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training, min_energy=0.1, max_energy=1000., max_evt=1e10):
+def load_training_samples(training_sample_path, is_training=False, analysis_mode=0, min_energy=0.1, max_energy=1000., max_evt=1e10):
+
+    ana_tag = 'testing_sample'
+    if is_training:
+        ana_tag = 'training_sample'
+
+    use_truth = False
+    do_cleaning = True
+    do_reposition = False
+    if analysis_mode==1:
+        use_truth = False
+        do_cleaning = False
+        do_reposition = False
+    if analysis_mode==2:
+        use_truth = True
+        do_cleaning = False
+        do_reposition = True
+    if analysis_mode==3:
+        use_truth = True
+        do_cleaning = False
+        do_reposition = False
+
+    if use_truth:
+        ana_tag += '_truth'
+    else:
+        ana_tag += '_noisy'
+    if do_cleaning:
+        ana_tag += '_clean'
+    else:
+        ana_tag += '_dirty'
+    if do_reposition:
+        ana_tag += '_repose'
+    else:
+        ana_tag += '_origin'
 
     for path in range(0,len(training_sample_path)):
     
@@ -542,25 +575,27 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 geom = subarray.tel[tel_key].camera.geometry
                 # The CameraGeometry has functions to convert the 1d image arrays to 2d arrays and back to the 1d array
                 analysis_image_2d = geom.image_to_cartesian_representation(noisy_image)
-                analysis_image_truth_2d = geom.image_to_cartesian_representation(true_image)
+                if use_truth:
+                    analysis_image_2d = geom.image_to_cartesian_representation(true_image)
 
                 num_rows, num_cols = analysis_image_2d.shape
                 for x_idx in range(0,num_cols):
                     for y_idx in range(0,num_rows):
                         if math.isnan(analysis_image_2d[y_idx,x_idx]): analysis_image_2d[y_idx,x_idx] = 0.
-                        if math.isnan(analysis_image_truth_2d[y_idx,x_idx]): analysis_image_truth_2d[y_idx,x_idx] = 0.
     
                 x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
 
                 # image cleaning
-                analysis_image_smooth = smooth_map(analysis_image_2d,x_axis,y_axis,50.)
-                image_mask = np.zeros_like(analysis_image_smooth)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_smooth,image_mask)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_2d,image_mask)
-                analysis_image_2d = clean_image(analysis_image_2d,image_mask)
+                if do_cleaning:
+                    analysis_image_smooth = smooth_map(analysis_image_2d,x_axis,y_axis,50.)
+                    image_mask = np.zeros_like(analysis_image_smooth)
+                    image_mask = find_mask(analysis_image_smooth)
+                    renormalize_background(analysis_image_smooth,image_mask)
+                    image_mask = find_mask(analysis_image_smooth)
+                    renormalize_background(analysis_image_2d,image_mask)
+                    analysis_image_2d = clean_image(analysis_image_2d,image_mask)
 
+                analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
     
                 tel_focal_length = float(geom.frame.focal_length/u.m)
                 tel_x = float(subarray.positions[tel_key][0]/u.m)
@@ -574,34 +609,28 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_truth_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
+                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
                 image_foci_x = image_foci_x1
                 image_foci_y = image_foci_y1
-                #print (f'image_center_x = {image_center_x}')
-                #print (f'image_center_y = {image_center_y}')
-                #print (f'image_foci_x = {image_foci_x}')
-                #print (f'image_foci_y = {image_foci_y}')
 
-                analysis_image_recenter = np.zeros_like(analysis_image_truth_2d)
-                #shift_x = -evt_cam_x
-                #shift_y = -evt_cam_y
-                shift_x = -image_foci_x
-                shift_y = -image_foci_y
-                analysis_image_recenter = image_translation(analysis_image_truth_2d, x_axis, y_axis, shift_x, shift_y)
+                if do_reposition:
+                    analysis_image_recenter = np.zeros_like(analysis_image_2d)
+                    shift_x = -image_foci_x
+                    shift_y = -image_foci_y
+                    analysis_image_recenter = image_translation(analysis_image_2d, x_axis, y_axis, shift_x, shift_y)
 
-                analysis_image_rotate = np.zeros_like(analysis_image_truth_2d)
-                #angle_rad = -np.arctan2(evt_impact_y,evt_impact_x)
-                angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
-                analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
+                    analysis_image_rotate = np.zeros_like(analysis_image_2d)
+                    angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+                    analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
     
-                analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
-                analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
+                    analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
+
                 
-                hillas_params = hillas_parameters(geom, analysis_image_rotate_1d)
-                hillas_intensity = hillas_params['intensity']
-                hillas_r = hillas_params['r']/u.m
-                hillas_length = hillas_params['length']/u.m
-                hillas_width = hillas_params['width']/u.m
+                #hillas_params = hillas_parameters(geom, analysis_image_1d)
+                #hillas_intensity = hillas_params['intensity']
+                #hillas_r = hillas_params['r']/u.m
+                #hillas_length = hillas_params['length']/u.m
+                #hillas_width = hillas_params['width']/u.m
 
                 #fig, ax = plt.subplots()
                 #figsize_x = 8.6
@@ -615,7 +644,7 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
                 #label_y = 'Y'
                 #axbig.set_xlabel(label_x)
                 #axbig.set_ylabel(label_y)
-                #axbig.imshow(analysis_image_truth_2d,origin='lower')
+                #axbig.imshow(analysis_image_2d,origin='lower')
                 #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_original.png',bbox_inches='tight')
                 #axbig.remove()
     
@@ -649,25 +678,22 @@ def load_training_samples(training_sample_path, is_training, min_energy=0.1, max
 
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
-                if is_training:
+                if do_reposition:
                     big_image_matrix += [analysis_image_rotate_1d]
                 else:
                     big_image_matrix += [analysis_image_1d]
                 big_param_matrix += [[foci_2_sky,evt_truth_energy,evt_truth_impact]]
-                hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
+                #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
 
         
             evt_idx += 1
 
-        output_filename = f'{ctapipe_output}/output_samples/training_sample_run{run_id}.pkl'
-        if not is_training:
-            output_filename = f'{ctapipe_output}/output_samples/testing_sample_run{run_id}.pkl'
-
+        output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
         print (f'writing file to {output_filename}')
         with open(output_filename,"wb") as file:
-            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix, hillas_param_matrix], file)
+            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix], file)
 
 
 class NeuralNetwork:

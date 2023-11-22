@@ -26,6 +26,12 @@ from load_cta_data import sqaure_difference_between_1d_images
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
+fig, ax = plt.subplots()
+figsize_x = 8.6
+figsize_y = 6.4
+fig.set_figheight(figsize_y)
+fig.set_figwidth(figsize_x)
+
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 with open('train_sim_files.txt', 'r') as file:
@@ -38,13 +44,12 @@ training_truth_shower_position_matrix = []
 train_cam_axes = []
 big_training_image_matrix = []
 big_training_param_matrix = []
-big_training_hillas_matrix = []
 for path in range(0,len(training_sample_path)):
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
     print (f'loading pickle trainging sample data: {output_filename}')
     if not os.path.exists(output_filename):
         print (f'file does not exist.')
@@ -57,15 +62,31 @@ for path in range(0,len(training_sample_path)):
     train_cam_axes += training_sample[3]
     big_training_image_matrix += training_sample[4]
     big_training_param_matrix += training_sample[5]
-    big_training_hillas_matrix += training_sample[6]
 
 print ('Compute big matrix SVD...')
 big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
-big_training_hillas_matrix = np.array(big_training_hillas_matrix)
+
+
+# neural network for image cleaning
+learning_rate = 0.1
+n_node = 100
+nn_cleaner = NeuralNetwork(big_training_image_matrix[0],big_training_truth_image_matrix[0],learning_rate,n_node)
+training_error = nn_cleaner.train(big_training_image_matrix, big_training_truth_image_matrix, 10000)
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Iterations'
+label_y = 'Error'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.plot(training_error)
+fig.savefig(f'{ctapipe_output}/output_plots/training_error_cleaning.png',bbox_inches='tight')
+axbig.remove()
+
+
 
 rank = 20
-
 # Calculate the unweighted pseudo-inverse
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
 U_eco = U_full[:, :rank]
@@ -105,12 +126,6 @@ with open(output_filename,"wb") as file:
 output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(lookup_table_arrival, file)
-
-fig, ax = plt.subplots()
-figsize_x = 8.6
-figsize_y = 6.4
-fig.set_figheight(figsize_y)
-fig.set_figwidth(figsize_x)
 
 fig.clf()
 axbig = fig.add_subplot()

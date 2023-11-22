@@ -38,13 +38,12 @@ training_truth_shower_position_matrix = []
 train_cam_axes = []
 big_training_image_matrix = []
 big_training_param_matrix = []
-big_training_hillas_matrix = []
 for path in range(0,len(training_sample_path)):
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
     print (f'loading pickle trainging sample data: {output_filename}')
     if not os.path.exists(output_filename):
         print (f'file does not exist.')
@@ -57,7 +56,6 @@ for path in range(0,len(training_sample_path)):
     train_cam_axes += training_sample[3]
     big_training_image_matrix += training_sample[4]
     big_training_param_matrix += training_sample[5]
-    big_training_hillas_matrix += training_sample[6]
 
 print ('loading svd pickle data... ')
 output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
@@ -71,7 +69,6 @@ eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
 
 big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
-big_training_hillas_matrix = np.array(big_training_hillas_matrix)
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
