@@ -54,7 +54,7 @@ def rank_brightest_telescope(tel_array):
                 brightest_tel_array[tel2][1] = tel2_pix
     return brightest_tel_array
 
-def smooth_map(image_data,xaxis,yaxis,mode):
+def smooth_image(image_data,xaxis,yaxis,mode):
 
     image_smooth = np.zeros_like(image_data)
 
@@ -96,6 +96,36 @@ def smooth_map(image_data,xaxis,yaxis,mode):
                     image_smooth[idx_y1,idx_x1] += old_content*scale
 
     return image_smooth
+
+def smooth_time_image(time_data,image_data,xaxis,yaxis,mode):
+
+    time_smooth = np.zeros_like(time_data)
+
+    bin_size = xaxis[1]-xaxis[0]
+    max_x = max(xaxis)
+    min_x = min(xaxis)
+
+    kernel_radius = (max_x-min_x)/mode
+    kernel_pix_size = int(kernel_radius/bin_size)
+
+    for idx_x1 in range(0,len(xaxis)):
+        for idx_y1 in range(0,len(yaxis)):
+            time_smooth[idx_y1,idx_x1] = 0.
+            if image_data[idx_y1,idx_x1]==0.: continue
+            sum_weight = 0.
+            for idx_x2 in range(idx_x1-2*kernel_pix_size,idx_x1+2*kernel_pix_size):
+                for idx_y2 in range(idx_y1-2*kernel_pix_size,idx_y1+2*kernel_pix_size):
+                    if idx_x2<0: continue
+                    if idx_y2<0: continue
+                    if idx_x2>=len(xaxis): continue
+                    if idx_y2>=len(yaxis): continue
+                    time = time_data[idx_y2,idx_x2]
+                    weight = image_data[idx_y2,idx_x2]
+                    time_smooth[idx_y1,idx_x1] += time*weight
+                    sum_weight += weight
+            time_smooth[idx_y1,idx_x1] = time_smooth[idx_y1,idx_x1]/sum_weight
+
+    return time_smooth
 
 def renormalize_background(image_data,image_mask):
 
@@ -215,7 +245,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     #return a, b, 1./chi2
     return a, b, np.trace(w)/chi2
 
-def find_image_moments_guided(input_image_2d, x_axis, y_axis, guided=False, arrival_x=0., arrival_y=0.):
+def find_image_moments_guided(input_image_2d, input_time_2d, x_axis, y_axis, guided=False, arrival_x=0., arrival_y=0.):
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -277,49 +307,85 @@ def find_image_moments_guided(input_image_2d, x_axis, y_axis, guided=False, arri
     foci_2_x = image_center_x - delta_x
     foci_2_y = image_center_y - delta_y
 
-    foci_1_rms = 0.
-    foci_2_rms = 0.
-    sum_weight = 0.
+    foci_1_time = 0.
+    foci_2_time = 0.
+    center_time = 0.
+    sum_weight_1 = 0.
+    sum_weight_2 = 0.
+    sum_weight_c = 0.
     for x_idx in range(0,num_cols):
         for y_idx in range(0,num_rows):
             diff_1_x = x_axis[x_idx]-foci_1_x
             diff_1_y = y_axis[y_idx]-foci_1_y
-            diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
+            diff_1_r = pow(diff_1_x*diff_1_x + diff_1_y*diff_1_y,0.5)
             diff_2_x = x_axis[x_idx]-foci_2_x
             diff_2_y = y_axis[y_idx]-foci_2_y
-            diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
-            weight = pow(input_image_2d[y_idx,x_idx],2)
-            foci_1_rms += diff_1_r2*weight
-            foci_2_rms += diff_2_r2*weight
-            sum_weight += weight
-    if guided:
-        diff_1_x = arrival_x-foci_1_x
-        diff_1_y = arrival_y-foci_1_y
-        diff_1_r2 = diff_1_x*diff_1_x + diff_1_y*diff_1_y
-        diff_2_x = arrival_x-foci_2_x
-        diff_2_y = arrival_y-foci_2_y
-        diff_2_r2 = diff_2_x*diff_2_x + diff_2_y*diff_2_y
-        foci_1_rms += diff_1_r2*sum_weight
-        foci_2_rms += diff_2_r2*sum_weight
-    foci_1_rms = pow(foci_1_rms/sum_weight,0.5)
-    foci_2_rms = pow(foci_2_rms/sum_weight,0.5)
+            diff_2_r = pow(diff_2_x*diff_2_x + diff_2_y*diff_2_y,0.5)
+            diff_c_x = x_axis[x_idx]-image_center_x
+            diff_c_y = y_axis[y_idx]-image_center_y
+            diff_c_r = pow(diff_c_x*diff_c_x + diff_c_y*diff_c_y,0.5)
+            weight = input_image_2d[y_idx,x_idx]
+            time = input_time_2d[y_idx,x_idx]
+            if diff_1_r<0.03:
+                foci_1_time += time*weight
+                sum_weight_1 += weight
+            if diff_2_r<0.03:
+                foci_2_time += time*weight
+                sum_weight_2 += weight
+            if diff_c_r<0.03:
+                center_time += time*weight
+                sum_weight_c += weight
+    if sum_weight_1>0.:
+        foci_1_time = foci_1_time/sum_weight_1
+    if sum_weight_2>0.:
+        foci_2_time = foci_2_time/sum_weight_2
+    if sum_weight_c>0.:
+        center_time = center_time/sum_weight_c
 
     image_foci_x1 = 0.
     image_foci_y1 = 0.
     image_foci_x2 = 0.
     image_foci_y2 = 0.
-    if foci_1_rms<foci_2_rms:
-        image_foci_x1 = float(foci_1_x)
-        image_foci_y1 = float(foci_1_y)
-        image_foci_x2 = float(foci_2_x)
-        image_foci_y2 = float(foci_2_y)
+    delta_foci_time = 0.
+    if guided:
+        diff_1_x = arrival_x-foci_1_x
+        diff_1_y = arrival_y-foci_1_y
+        diff_1_r = pow(diff_1_x*diff_1_x + diff_1_y*diff_1_y,0.5)
+        diff_2_x = arrival_x-foci_2_x
+        diff_2_y = arrival_y-foci_2_y
+        diff_2_r = pow(diff_2_x*diff_2_x + diff_2_y*diff_2_y,0.5)
+        if diff_1_r<diff_2_r:
+            center_time = foci_2_time
+            image_foci_x1 = float(foci_1_x)
+            image_foci_y1 = float(foci_1_y)
+            image_foci_x2 = float(foci_2_x)
+            image_foci_y2 = float(foci_2_y)
+            delta_foci_time = foci_2_time-foci_1_time
+        else:
+            center_time = foci_1_time
+            image_foci_x1 = float(foci_2_x)
+            image_foci_y1 = float(foci_2_y)
+            image_foci_x2 = float(foci_1_x)
+            image_foci_y2 = float(foci_1_y)
+            delta_foci_time = foci_1_time-foci_2_time
     else:
-        image_foci_x1 = float(foci_2_x)
-        image_foci_y1 = float(foci_2_y)
-        image_foci_x2 = float(foci_1_x)
-        image_foci_y2 = float(foci_1_y)
+        if foci_1_time<foci_2_time:
+            center_time = foci_2_time
+            image_foci_x1 = float(foci_1_x)
+            image_foci_y1 = float(foci_1_y)
+            image_foci_x2 = float(foci_2_x)
+            image_foci_y2 = float(foci_2_y)
+            delta_foci_time = foci_2_time-foci_1_time
+        else:
+            center_time = foci_1_time
+            image_foci_x1 = float(foci_2_x)
+            image_foci_y1 = float(foci_2_y)
+            image_foci_x2 = float(foci_1_x)
+            image_foci_y2 = float(foci_1_y)
+            delta_foci_time = foci_1_time-foci_2_time
 
-    return image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq
+
+    return image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq
 
 def image_translation(input_image_2d, x_axis, y_axis, shift_x, shift_y):
 
@@ -430,6 +496,12 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
 
 def load_training_samples(training_sample_path, is_training=False, analysis_mode=0, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
+    fig, ax = plt.subplots()
+    figsize_x = 8.6
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+
     ana_tag = 'testing_sample'
     if is_training:
         ana_tag = 'training_sample'
@@ -470,7 +542,9 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
         cam_axes = []
         telesc_position_matrix = []
         big_image_matrix = []
+        big_time_matrix = []
         big_param_matrix = []
+        big_moment_matrix = []
         hillas_param_matrix = []
 
         print (f'loading file: {training_sample_path[path]}')
@@ -567,9 +641,11 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 sim_tel = event.simulation.tel[tel_key]
                 sim_tel_impact = float(sim_tel.impact['distance']/u.m)
                 true_image = sim_tel.true_image
+                #true_time = sim_tel.peak_time # simulation camera container does not have peak_time
 
                 dl1tel = event.dl1.tel[tel_key]
                 noisy_image = dl1tel.image
+                noisy_time = dl1tel.peak_time
         
                 # Define a camera geometry
                 geom = subarray.tel[tel_key].camera.geometry
@@ -577,17 +653,20 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 analysis_image_2d = geom.image_to_cartesian_representation(noisy_image)
                 if use_truth:
                     analysis_image_2d = geom.image_to_cartesian_representation(true_image)
+                analysis_time_2d = geom.image_to_cartesian_representation(noisy_time)
 
                 num_rows, num_cols = analysis_image_2d.shape
                 for x_idx in range(0,num_cols):
                     for y_idx in range(0,num_rows):
-                        if math.isnan(analysis_image_2d[y_idx,x_idx]): analysis_image_2d[y_idx,x_idx] = 0.
+                        if math.isnan(analysis_image_2d[y_idx,x_idx]): 
+                            analysis_image_2d[y_idx,x_idx] = 0.
+                            analysis_time_2d[y_idx,x_idx] = 0.
     
                 x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
 
                 # image cleaning
                 if do_cleaning:
-                    analysis_image_smooth = smooth_map(analysis_image_2d,x_axis,y_axis,50.)
+                    analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
                     image_mask = np.zeros_like(analysis_image_smooth)
                     image_mask = find_mask(analysis_image_smooth)
                     renormalize_background(analysis_image_smooth,image_mask)
@@ -595,7 +674,15 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                     renormalize_background(analysis_image_2d,image_mask)
                     analysis_image_2d = clean_image(analysis_image_2d,image_mask)
 
+                for x_idx in range(0,num_cols):
+                    for y_idx in range(0,num_rows):
+                        if analysis_image_2d[y_idx,x_idx]==0.: 
+                            analysis_time_2d[y_idx,x_idx] = 0.
+
+                analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,20.)
+
                 analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
+                analysis_time_1d = geom.image_from_cartesian_representation(analysis_time_2d)
     
                 tel_focal_length = float(geom.frame.focal_length/u.m)
                 tel_x = float(subarray.positions[tel_key][0]/u.m)
@@ -609,21 +696,31 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 evt_impact_x = tel_coord[2]
                 evt_impact_y = tel_coord[3]
 
-                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
+                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_2d, analysis_time_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
                 image_foci_x = image_foci_x1
                 image_foci_y = image_foci_y1
 
+                for x_idx in range(0,num_cols):
+                    for y_idx in range(0,num_rows):
+                        if analysis_time_2d[y_idx,x_idx]==0.: continue
+                        analysis_time_2d[y_idx,x_idx] = analysis_time_2d[y_idx,x_idx]-center_time
+
                 if do_reposition:
                     analysis_image_recenter = np.zeros_like(analysis_image_2d)
+                    analysis_time_recenter = np.zeros_like(analysis_time_2d)
                     shift_x = -image_foci_x
                     shift_y = -image_foci_y
                     analysis_image_recenter = image_translation(analysis_image_2d, x_axis, y_axis, shift_x, shift_y)
+                    analysis_time_recenter = image_translation(analysis_time_2d, x_axis, y_axis, shift_x, shift_y)
 
                     analysis_image_rotate = np.zeros_like(analysis_image_2d)
+                    analysis_time_rotate = np.zeros_like(analysis_time_2d)
                     angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
                     analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
+                    analysis_time_rotate = image_rotation(analysis_time_recenter, x_axis, y_axis, angle_rad)
     
                     analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
+                    analysis_time_rotate_1d = geom.image_from_cartesian_representation(analysis_time_rotate)
 
                 
                 #hillas_params = hillas_parameters(geom, analysis_image_1d)
@@ -632,11 +729,38 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 #hillas_length = hillas_params['length']/u.m
                 #hillas_width = hillas_params['width']/u.m
 
-                #fig, ax = plt.subplots()
-                #figsize_x = 8.6
-                #figsize_y = 6.4
-                #fig.set_figheight(figsize_y)
-                #fig.set_figwidth(figsize_x)
+                #fig.clf()
+                #axbig = fig.add_subplot()
+                #label_x = 'X'
+                #label_y = 'Y'
+                #axbig.set_xlabel(label_x)
+                #axbig.set_ylabel(label_y)
+                #im = axbig.imshow(analysis_image_2d,origin='lower')
+                #cbar = fig.colorbar(im)
+                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_original.png',bbox_inches='tight')
+                #axbig.remove()
+    
+                #fig.clf()
+                #axbig = fig.add_subplot()
+                #label_x = 'X'
+                #label_y = 'Y'
+                #axbig.set_xlabel(label_x)
+                #axbig.set_ylabel(label_y)
+                #im = axbig.imshow(analysis_image_recenter,origin='lower')
+                #cbar = fig.colorbar(im)
+                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_recenter.png',bbox_inches='tight')
+                #axbig.remove()
+    
+                #fig.clf()
+                #axbig = fig.add_subplot()
+                #label_x = 'X'
+                #label_y = 'Y'
+                #axbig.set_xlabel(label_x)
+                #axbig.set_ylabel(label_y)
+                #im = axbig.imshow(analysis_image_rotate,origin='lower')
+                #cbar = fig.colorbar(im)
+                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_rotate.png',bbox_inches='tight')
+                #axbig.remove()
 
                 #fig.clf()
                 #axbig = fig.add_subplot()
@@ -644,30 +768,11 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 #label_y = 'Y'
                 #axbig.set_xlabel(label_x)
                 #axbig.set_ylabel(label_y)
-                #axbig.imshow(analysis_image_2d,origin='lower')
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_original.png',bbox_inches='tight')
+                #im = axbig.imshow(analysis_time_rotate,origin='lower')
+                #cbar = fig.colorbar(im)
+                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_time_rotate.png',bbox_inches='tight')
                 #axbig.remove()
-    
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #axbig.imshow(analysis_image_recenter,origin='lower')
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_recenter.png',bbox_inches='tight')
-                #axbig.remove()
-    
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #axbig.imshow(analysis_image_rotate,origin='lower')
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_image_evt{event_id}_tel{tel_idx}_rotate.png',bbox_inches='tight')
-                #axbig.remove()
-                ##exit()
+                #if evt_idx==5: exit()
     
                 evt_truth_energy = math.log10(shower_energy)
                 evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
@@ -680,9 +785,12 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
                 if do_reposition:
                     big_image_matrix += [analysis_image_rotate_1d]
+                    big_time_matrix += [analysis_time_rotate_1d]
                 else:
                     big_image_matrix += [analysis_image_1d]
+                    big_time_matrix += [analysis_time_1d]
                 big_param_matrix += [[foci_2_sky,evt_truth_energy,evt_truth_impact]]
+                big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq]]
                 #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
@@ -693,7 +801,7 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
         output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
         print (f'writing file to {output_filename}')
         with open(output_filename,"wb") as file:
-            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_param_matrix], file)
+            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_time_matrix, big_param_matrix, big_moment_matrix], file)
 
 
 class NeuralNetwork:

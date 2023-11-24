@@ -37,8 +37,8 @@ with open('train_sim_files.txt', 'r') as file:
 
 print ('loading training data... ')
 load_training_samples(training_sample_path,is_training=True,analysis_mode=2,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-load_training_samples(training_sample_path,is_training=True,analysis_mode=1,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-load_training_samples(training_sample_path,is_training=True,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+#load_training_samples(training_sample_path,is_training=True,analysis_mode=1,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+#load_training_samples(training_sample_path,is_training=True,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 
 
 
