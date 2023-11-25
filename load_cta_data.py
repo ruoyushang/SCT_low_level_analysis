@@ -889,6 +889,83 @@ class NeuralNetwork:
 
         return cumulative_errors
 
+class MyArray3D:
+
+    def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.,z_bins=10,start_z=0.,end_z=10.):
+        delta_x = (end_x-start_x)/float(x_bins)
+        delta_y = (end_y-start_y)/float(y_bins)
+        delta_z = (end_z-start_z)/float(z_bins)
+        array_shape = (x_bins,y_bins,z_bins)
+        self.xaxis = np.zeros(array_shape[0])
+        self.yaxis = np.zeros(array_shape[1])
+        self.zaxis = np.zeros(array_shape[2])
+        self.waxis = np.zeros(array_shape)
+        for idx in range(0,len(self.xaxis)):
+            self.xaxis[idx] = start_x + idx*delta_x
+        for idx in range(0,len(self.yaxis)):
+            self.yaxis[idx] = start_y + idx*delta_y
+        for idx in range(0,len(self.zaxis)):
+            self.zaxis[idx] = start_z + idx*delta_z
+
+    def reset(self):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                for idx_z in range(0,len(self.zaxis)):
+                    self.waxis[idx_x,idx_y,idx_z] = 0.
+
+    def add(self, add_array, factor=1.):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                for idx_z in range(0,len(self.zaxis)):
+                    self.waxis[idx_x,idx_y,idx_z] = self.waxis[idx_x,idx_y,idx_z]+add_array.waxis[idx_x,idx_y,idx_z]*factor
+
+    def get_bin(self, value_x, value_y, value_z):
+        key_idx_x = 0
+        key_idx_y = 0
+        key_idx_z = 0
+        for idx_x in range(0,len(self.xaxis)-1):
+            if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
+                key_idx_x = idx_x
+        for idx_y in range(0,len(self.yaxis)-1):
+            if self.yaxis[idx_y]<=value_y and self.yaxis[idx_y+1]>value_y:
+                key_idx_y = idx_y
+        for idx_z in range(0,len(self.zaxis)-1):
+            if self.zaxis[idx_z]<=value_z and self.zaxis[idx_z+1]>value_z:
+                key_idx_z = idx_z
+        if value_x>self.xaxis.max():
+            key_idx_x = len(self.xaxis)-1
+        if value_y>self.yaxis.max():
+            key_idx_y = len(self.yaxis)-1
+        if value_z>self.zaxis.max():
+            key_idx_z = len(self.zaxis)-1
+        return [key_idx_x,key_idx_y,key_idx_z]
+
+    def fill(self, value_x, value_y, value_z, weight=1.):
+        key_idx = self.get_bin(value_x, value_y, value_z)
+        key_idx_x = key_idx[0]
+        key_idx_y = key_idx[1]
+        key_idx_z = key_idx[2]
+        self.waxis[key_idx_x,key_idx_y,key_idx_z] += 1.*weight
+    
+    def divide(self, add_array):
+        for idx_x in range(0,len(self.xaxis)):
+            for idx_y in range(0,len(self.yaxis)):
+                for idx_z in range(0,len(self.zaxis)):
+                    if add_array.waxis[idx_x,idx_y,idx_z]==0.:
+                        self.waxis[idx_x,idx_y,idx_z] = 0.
+                    else:
+                        self.waxis[idx_x,idx_y,idx_z] = self.waxis[idx_x,idx_y,idx_z]/add_array.waxis[idx_x,idx_y,idx_z]
+
+    def get_bin_center(self, idx_x, idx_y, idx_z):
+        return [self.xaxis[idx_x],self.yaxis[idx_y],self.zaxis[idx_z]]
+
+    def get_bin_content(self, value_x, value_y, value_z):
+        key_idx = self.get_bin(value_x, value_y, value_z)
+        key_idx_x = key_idx[0]
+        key_idx_y = key_idx[1]
+        key_idx_z = key_idx[2]
+        return self.waxis[key_idx_x,key_idx_y,key_idx_z]
+
 class MyArray2D:
 
     def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.):
@@ -990,10 +1067,11 @@ def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_d
 
     fit_log_energy = init_params[0]
     fit_impact = init_params[1]
+    delta_foci_time = init_params[2]
 
     fit_latent_space = []
     for r in range(0,len(lookup_table)):
-        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy)]
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy,delta_foci_time)]
     fit_latent_space = np.array(fit_latent_space)
 
     data_latent_space = eigen_vectors @ image_1d_data

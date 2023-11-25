@@ -25,6 +25,7 @@ from load_cta_data import MyArray2D
 from load_cta_data import sqaure_difference_between_1d_images
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
+subprocess.call(['sh', './clean_plots.sh'])
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -70,6 +71,8 @@ for path in range(0,len(training_sample_path)):
 
 all_delta_foci_r = []
 all_delta_time = []
+all_log_energy = []
+all_impact = []
 training_id_list = []
 training_telesc_position_matrix = []
 training_truth_shower_position_matrix = []
@@ -93,11 +96,15 @@ for img in range(0,len(old_big_training_image_matrix)):
     semi_minor_sq = img_moment[9]
     foci_r1 = pow(image_foci_x1*image_foci_x1+image_foci_y1*image_foci_y1,0.5)
     foci_r2 = pow(image_foci_x2*image_foci_x2+image_foci_y2*image_foci_y2,0.5)
-    all_delta_time += [delta_foci_time]
-    all_delta_foci_r += [foci_r2-foci_r1]
+
+    shower_param = old_big_training_param_matrix[img]
+    shower_arrival = shower_param[0]
+    shower_log_energy = shower_param[1]
+    shower_impact = shower_param[2]
     
     if delta_foci_time>30.: continue
     if delta_foci_time<0.: continue
+    if foci_r2-foci_r1<0.: continue
     training_id_list += [old_training_id_list[img]]
     training_telesc_position_matrix += [old_training_telesc_position_matrix[img]]
     training_truth_shower_position_matrix += [old_training_truth_shower_position_matrix[img]]
@@ -106,6 +113,16 @@ for img in range(0,len(old_big_training_image_matrix)):
     big_training_time_matrix += [old_big_training_time_matrix[img]]
     big_training_param_matrix += [old_big_training_param_matrix[img]]
     big_training_moment_matrix += [old_big_training_moment_matrix[img]]
+
+    all_delta_time += [delta_foci_time]
+    all_delta_foci_r += [foci_r2-foci_r1]
+    all_log_energy += [shower_log_energy]
+    all_impact += [shower_impact]
+
+all_delta_foci_r = np.array(all_delta_foci_r)
+all_delta_time = np.array(all_delta_time)
+all_log_energy = np.array(all_log_energy)
+all_impact = np.array(all_impact)
 
 fig.clf()
 axbig = fig.add_subplot()
@@ -119,10 +136,41 @@ axbig.set_xscale('log')
 fig.savefig(f'{ctapipe_output}/output_plots/delta_time_vs_delta_foci_r.png',bbox_inches='tight')
 axbig.remove()
 
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'impact'
+label_y = 'delta foci t'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(all_log_energy, all_delta_time, s=90, c='r', marker='+')
+fig.savefig(f'{ctapipe_output}/output_plots/log_energy_vs_delta_foci_t.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'impact'
+label_y = 'delta foci t'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(all_impact, all_delta_time, s=90, c='r', marker='+')
+fig.savefig(f'{ctapipe_output}/output_plots/impact_vs_delta_foci_t.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'impact'
+label_y = 'delta foci r'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(all_impact, all_delta_foci_r, s=90, c='r', marker='+')
+fig.savefig(f'{ctapipe_output}/output_plots/impact_vs_delta_foci_r.png',bbox_inches='tight')
+axbig.remove()
+
 big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_time_matrix = np.array(big_training_time_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
 big_training_moment_matrix = np.array(big_training_moment_matrix)
+big_training_time_matrix = big_training_time_matrix * big_training_image_matrix
 
 
 
@@ -139,14 +187,7 @@ lookup_table_arrival_pkl = pickle.load(open(output_filename, "rb"))
 output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival_rms.pkl'
 lookup_table_arrival_rms_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/time_lookup_table.pkl'
-time_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-
-output_filename = f'{ctapipe_output}/output_machines/time_eigen_vectors.pkl'
-time_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
-
 rank = len(lookup_table_pkl)
-time_rank = len(time_lookup_table_pkl)
 
 for r in range(0,rank):
     fig.clf()
@@ -159,26 +200,39 @@ for r in range(0,rank):
     xmax = lookup_table_pkl[r].xaxis.max()
     ymin = lookup_table_pkl[r].yaxis.min()
     ymax = lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(lookup_table_pkl[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
     cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t0.png',bbox_inches='tight')
     axbig.remove()
-
-for r in range(0,time_rank):
     fig.clf()
     axbig = fig.add_subplot()
     label_x = 'Impact [km]'
     label_y = 'log Energy [TeV]'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    xmin = time_lookup_table_pkl[r].xaxis.min()
-    xmax = time_lookup_table_pkl[r].xaxis.max()
-    ymin = time_lookup_table_pkl[r].yaxis.min()
-    ymax = time_lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(time_lookup_table_pkl[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    xmin = lookup_table_pkl[r].xaxis.min()
+    xmax = lookup_table_pkl[r].xaxis.max()
+    ymin = lookup_table_pkl[r].yaxis.min()
+    ymax = lookup_table_pkl[r].yaxis.max()
+    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,1].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
     cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/time_lookup_table_rank{r}.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t1.png',bbox_inches='tight')
     axbig.remove()
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Impact [km]'
+    label_y = 'log Energy [TeV]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    xmin = lookup_table_pkl[r].xaxis.min()
+    xmax = lookup_table_pkl[r].xaxis.max()
+    ymin = lookup_table_pkl[r].yaxis.min()
+    ymax = lookup_table_pkl[r].yaxis.max()
+    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,2].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t2.png',bbox_inches='tight')
+    axbig.remove()
+
 
 fig.clf()
 axbig = fig.add_subplot()
@@ -190,10 +244,41 @@ xmin = lookup_table_arrival_pkl.xaxis.min()
 xmax = lookup_table_arrival_pkl.xaxis.max()
 ymin = lookup_table_arrival_pkl.yaxis.min()
 ymax = lookup_table_arrival_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival.png',bbox_inches='tight')
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t0.png',bbox_inches='tight')
 axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Impact [km]'
+label_y = 'log Energy [TeV]'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+xmin = lookup_table_arrival_pkl.xaxis.min()
+xmax = lookup_table_arrival_pkl.xaxis.max()
+ymin = lookup_table_arrival_pkl.yaxis.min()
+ymax = lookup_table_arrival_pkl.yaxis.max()
+im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,1].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t1.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Impact [km]'
+label_y = 'log Energy [TeV]'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+xmin = lookup_table_arrival_pkl.xaxis.min()
+xmax = lookup_table_arrival_pkl.xaxis.max()
+ymin = lookup_table_arrival_pkl.yaxis.min()
+ymax = lookup_table_arrival_pkl.yaxis.max()
+im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,2].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t2.png',bbox_inches='tight')
+axbig.remove()
+
 
 fig.clf()
 axbig = fig.add_subplot()
@@ -205,23 +290,58 @@ xmin = lookup_table_arrival_rms_pkl.xaxis.min()
 xmax = lookup_table_arrival_rms_pkl.xaxis.max()
 ymin = lookup_table_arrival_rms_pkl.yaxis.min()
 ymax = lookup_table_arrival_rms_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_rms_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival_rms_pkl.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_rms.png',bbox_inches='tight')
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_rms_t0.png',bbox_inches='tight')
 axbig.remove()
+
+
+## neural network for lookup table
+#
+#nn_input = []
+#nn_output = []
+#for img in range(0,len(big_training_image_matrix)):
+#
+#    img_moment = big_training_moment_matrix[img]
+#    delta_foci_time = img_moment[7]
+#
+#    arrival = big_training_param_matrix[img][0]
+#    log_energy = big_training_param_matrix[img][1]
+#    impact = big_training_param_matrix[img][2]
+#    image = np.array(big_training_image_matrix[img])
+#    latent_space = eigen_vectors_pkl @ image
+#
+#    new_entry_input = latent_space+[delta_foci_time]
+#    new_entry_output = [arrival,log_energy,impact]
+#    nn_input += [new_entry_input]
+#    nn_output += [new_entry_output]
+#
+#nn_input = np.array(nn_input)
+#nn_output = np.array(nn_output)
+#
+#learning_rate = 0.1
+#n_node = 20
+#nn_lookup_table = NeuralNetwork(nn_input[0],nn_output[0],learning_rate,n_node)
+#training_error = nn_lookup_table.train(nn_input, nn_output, 10000)
+
+#fig.clf()
+#axbig = fig.add_subplot()
+#label_x = 'Iterations'
+#label_y = 'Error'
+#axbig.set_xlabel(label_x)
+#axbig.set_ylabel(label_y)
+#axbig.plot(training_error)
+#fig.savefig(f'{ctapipe_output}/output_plots/training_error.png',bbox_inches='tight')
+#axbig.remove()
 
 
 log_energy_truth = []
 impact_truth = []
 arrival_truth = []
-log_energy_image_guess = []
-impact_image_guess = []
-arrival_image_guess = []
-arrival_image_error = []
-log_energy_time_guess = []
-impact_time_guess = []
-arrival_time_guess = []
-arrival_time_error = []
+log_energy_hist_guess = []
+impact_hist_guess = []
+arrival_hist_guess = []
+arrival_hist_error = []
 image_size = []
 for img in range(0,len(training_id_list)):
 
@@ -234,9 +354,6 @@ for img in range(0,len(training_id_list)):
     truth_image = big_training_image_matrix[img]
     truth_image_2d = geom.image_to_cartesian_representation(truth_image)
 
-    truth_time = big_training_time_matrix[img]
-    truth_time_2d = geom.image_to_cartesian_representation(truth_time)
-
     sim_arrival = big_training_param_matrix[img][0]
     sim_log_energy = big_training_param_matrix[img][1]
     sim_impact = big_training_param_matrix[img][2]
@@ -247,25 +364,19 @@ for img in range(0,len(training_id_list)):
     #if img!=2: continue
     if sim_log_energy<0.: continue
 
+    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+
     latent_space = []
     for r in range(0,rank):
-        latent_space += [lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
+        latent_space += [lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy,delta_foci_time)]
     latent_space = np.array(latent_space)
-
-    time_latent_space = []
-    for r in range(0,time_rank):
-        time_latent_space += [time_lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
-    time_latent_space = np.array(time_latent_space)
 
     sim_image = eigen_vectors_pkl.T @ latent_space
     sim_image_2d = geom.image_to_cartesian_representation(sim_image)
 
-    sim_time = time_eigen_vectors_pkl.T @ time_latent_space
-    sim_time_2d = geom.image_to_cartesian_representation(sim_time)
-
     fit_log_energy = 0.
     fit_impact = 0.1
-    init_params = [fit_log_energy,fit_impact]
+    init_params = [fit_log_energy,fit_impact,delta_foci_time]
     fit_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
     print (f'init_log_energy = {fit_log_energy}')
     print (f'init_impact = {fit_impact}')
@@ -276,7 +387,7 @@ for img in range(0,len(training_id_list)):
         for idx_y  in range(0,n_bins_energy):
             try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
             try_impact = lookup_table_pkl[0].xaxis[idx_x]
-            init_params = [try_log_energy,try_impact]
+            init_params = [try_log_energy,try_impact,delta_foci_time]
             try_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
             if try_chi2<fit_chi2:
                 fit_chi2 = try_chi2
@@ -286,40 +397,16 @@ for img in range(0,len(training_id_list)):
     print (f'fit_impact = {fit_impact}')
     print (f'fit_chi2 = {fit_chi2}')
 
-    time_fit_log_energy = 0.
-    time_fit_impact = 0.1
-    init_params = [time_fit_log_energy,time_fit_impact]
-    time_fit_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,time_lookup_table_pkl,time_eigen_vectors_pkl)
-    n_bins_energy = len(lookup_table_pkl[0].yaxis)
-    n_bins_impact = len(lookup_table_pkl[0].xaxis)
-    for idx_x  in range(0,n_bins_impact):
-        for idx_y  in range(0,n_bins_energy):
-            try_log_energy = time_lookup_table_pkl[0].yaxis[idx_y]
-            try_impact = time_lookup_table_pkl[0].xaxis[idx_x]
-            init_params = [try_log_energy,try_impact]
-            try_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,time_lookup_table_pkl,time_eigen_vectors_pkl)
-            if try_chi2<time_fit_chi2:
-                time_fit_chi2 = try_chi2
-                time_fit_log_energy = try_log_energy
-                time_fit_impact = try_impact
-    print (f'time_fit_log_energy = {time_fit_log_energy}')
-    print (f'time_fit_impact = {time_fit_impact}')
-    print (f'time_fit_chi2 = {time_fit_chi2}')
-
-    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy)
-    time_fit_arrival = lookup_table_arrival_pkl.get_bin_content(time_fit_impact,time_fit_log_energy)
+    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy,delta_foci_time)
 
     log_energy_truth += [sim_log_energy]
     impact_truth += [sim_impact]
     arrival_truth += [sim_arrival]
-    log_energy_image_guess += [fit_log_energy]
-    impact_image_guess += [fit_impact]
-    arrival_image_guess += [fit_arrival]
-    arrival_image_error += [fit_arrival-sim_arrival]
-    log_energy_time_guess += [time_fit_log_energy]
-    impact_time_guess += [time_fit_impact]
-    arrival_time_guess += [time_fit_arrival]
-    arrival_time_error += [time_fit_arrival-sim_arrival]
+    log_energy_hist_guess += [fit_log_energy]
+    impact_hist_guess += [fit_impact]
+    arrival_hist_guess += [fit_arrival]
+    arrival_hist_error += [fit_arrival-sim_arrival]
+
 
     size = 0.
     for pix in range(0,len(sim_image)):
@@ -328,76 +415,47 @@ for img in range(0,len(training_id_list)):
 
     fit_latent_space = []
     for r in range(0,rank):
-        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_impact,fit_log_energy)]
+        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_impact,fit_log_energy,delta_foci_time)]
     fit_latent_space = np.array(fit_latent_space)
-
-    time_fit_latent_space = []
-    for r in range(0,time_rank):
-        time_fit_latent_space += [time_lookup_table_pkl[r].get_bin_content(time_fit_impact,time_fit_log_energy)]
-    time_fit_latent_space = np.array(time_fit_latent_space)
 
     fit_image = eigen_vectors_pkl.T @ fit_latent_space
     fit_image_2d = geom.image_to_cartesian_representation(fit_image)
 
-    fit_time = time_eigen_vectors_pkl.T @ time_fit_latent_space
-    fit_time_2d = geom.image_to_cartesian_representation(fit_time)
+    if img%10==0:
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'X'
+        #label_y = 'Y'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #im = axbig.imshow(fit_image_2d,origin='lower')
+        #cbar = fig.colorbar(im)
+        #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
+        #axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(fit_image_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
-    #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(sim_image_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_sim.png',bbox_inches='tight')
+        axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(sim_image_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_sim.png',bbox_inches='tight')
-    #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(truth_image_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_truth.png',bbox_inches='tight')
+        axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(truth_image_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_truth.png',bbox_inches='tight')
-    #axbig.remove()
-
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(sim_time_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_sim.png',bbox_inches='tight')
-    #axbig.remove()
-
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(truth_time_2d,origin='lower')
-    #cbar = fig.colorbar(im)
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_truth.png',bbox_inches='tight')
-    #axbig.remove()
-
-    #exit()
+        #exit()
 
     fig.clf()
     axbig = fig.add_subplot()
@@ -405,38 +463,18 @@ for img in range(0,len(training_id_list)):
     label_y = 'log energy predict'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(log_energy_truth, log_energy_image_guess, s=90, c='r', marker='+')
+    axbig.scatter(log_energy_truth, log_energy_hist_guess, s=90, c='r', marker='+')
     fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_energy_guess.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'log energy truth'
-    label_y = 'log energy predict'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(log_energy_truth, log_energy_time_guess, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_energy_time_guess.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
     label_x = 'impact distance truth'
     label_y = 'impact distance predict'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(impact_truth, impact_image_guess, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_impact_image_guess.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'impact distance truth'
-    label_y = 'impact distance predict'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(impact_truth, impact_time_guess, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_impact_time_guess.png',bbox_inches='tight')
+    axbig.scatter(impact_truth, impact_hist_guess, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_impact_hist_guess.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -445,91 +483,30 @@ for img in range(0,len(training_id_list)):
     label_y = 'arrival predict'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(arrival_truth, arrival_image_guess, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_image_guess.png',bbox_inches='tight')
+    axbig.scatter(arrival_truth, arrival_hist_guess, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_guess.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'arrival truth'
-    label_y = 'arrival predict'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(arrival_truth, arrival_time_guess, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_time_guess.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'impact distance'
+    label_x = 'impact distance truth'
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(impact_image_guess, arrival_image_error, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_image_error_vs_impact.png',bbox_inches='tight')
+    axbig.scatter(impact_truth, arrival_hist_error, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_impact.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'arrival error (image)'
-    label_y = 'arrival error (timing)'
+    label_x = 'log energy truth'
+    label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(arrival_image_error, arrival_time_error, s=90, c='r', marker='+')
-    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_image_vs_time_error.png',bbox_inches='tight')
+    axbig.scatter(log_energy_truth, arrival_hist_error, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_energy.png',bbox_inches='tight')
     axbig.remove()
 
     #exit()
 
-#current_run = training_id_list[0][0]
-#current_event = training_id_list[0][1]
-#current_tel_id = training_id_list[0][2]
-#subarray = training_id_list[0][3]
-#geom = subarray.tel[current_tel_id].camera.geometry
-#
-#sim_energy = 0.4
-#sim_impact = 0.1
-#sim_log_energy = math.log10(sim_energy)
-#
-#latent_space = []
-#for r in range(0,rank):
-#    latent_space += [lookup_table[r].get_bin_content(sim_impact,sim_log_energy)]
-#latent_space = np.array(latent_space)
-#
-#sim_image = VT_eco.T @ latent_space
-#sim_image_2d = geom.image_to_cartesian_representation(sim_image)
-#
-#fig.clf()
-#axbig = fig.add_subplot()
-#label_x = 'X'
-#label_y = 'Y'
-#axbig.set_xlabel(label_x)
-#axbig.set_ylabel(label_y)
-#im = axbig.imshow(sim_image_2d,origin='lower')
-#cbar = fig.colorbar(im)
-#fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_energy{sim_energy}_impact{sim_impact}.png',bbox_inches='tight')
-#axbig.remove()
-#
-#sim_energy = 0.8
-#sim_impact = 0.2
-#sim_log_energy = math.log10(sim_energy)
-#
-#latent_space = []
-#for r in range(0,rank):
-#    latent_space += [lookup_table[r].get_bin_content(sim_impact,sim_log_energy)]
-#latent_space = np.array(latent_space)
-#
-#sim_image = VT_eco.T @ latent_space
-#sim_image_2d = geom.image_to_cartesian_representation(sim_image)
-#
-#fig.clf()
-#axbig = fig.add_subplot()
-#label_x = 'X'
-#label_y = 'Y'
-#axbig.set_xlabel(label_x)
-#axbig.set_ylabel(label_y)
-#im = axbig.imshow(sim_image_2d,origin='lower')
-#cbar = fig.colorbar(im)
-#fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_energy{sim_energy}_impact{sim_impact}.png',bbox_inches='tight')
-#axbig.remove()
-#
+
