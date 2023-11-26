@@ -196,6 +196,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     w = []
     for x_idx in range(0,num_cols):
         for y_idx in range(0,num_rows):
+            if image_input[y_idx,x_idx]==0.: continue
             x += [[x_axis[x_idx]-avg_x]]
             y += [[y_axis[y_idx]-avg_y]]
             w += [pow(image_input[y_idx,x_idx],1.0)]
@@ -493,18 +494,20 @@ def sum_square_difference_between_images_v_cam_xy(try_params,shower_core_x,showe
             for col in range(0,num_cols):
                 data = image_data_2d[row,col]
                 svd = image_svd_2d[row,col]
-                #chi2 += pow(data-svd,2)
-                chi2 += data*svd
+                chi2 += pow(data-svd,2)
+                #chi2 += data*svd
 
     toc = time.perf_counter()
-    print (f'chi2 = {chi2}')
-    print (f'SVD image trial completed in {toc - tic:0.4f} seconds')
+    #print (f'chi2 = {chi2}')
+    #print (f'SVD image trial completed in {toc - tic:0.4f} seconds')
+    #exit()
 
-    return 1./chi2
+    return chi2
+    #return 1./chi2
 
 def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table,lookup_table_arrival,eigenvectors):
 
-    fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y = fit_lines_to_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
+    fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y = fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
 
     tic = time.perf_counter()
 
@@ -525,7 +528,34 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         image_2d_matrix += [image_data_2d]
         time_2d_matrix += [time_data_2d]
 
+    image_data_2d = image_2d_matrix[0]
+    sky_xy_log_likelihood = np.zeros_like(image_data_2d)
+    num_rows, num_cols = sky_xy_log_likelihood.shape
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            sky_xy_log_likelihood[y_idx,x_idx] = 0.
+    sky_likelihood_xaxis = all_cam_axes[0][0]
+    sky_likelihood_yaxis = all_cam_axes[0][1]
+
+    n_bins_core = 200
+    grd_map_size = 2.
+    grd_xy_log_likelihood = np.zeros((n_bins_core,n_bins_core))
+    grd_likelihood_xaxis = []
+    grd_likelihood_yaxis = []
+    for x_idx  in range(0,n_bins_core):
+        grd_likelihood_xaxis += [-0.5*grd_map_size+x_idx*grd_map_size/float(n_bins_core)]
+    for y_idx  in range(0,n_bins_core):
+        grd_likelihood_yaxis += [-0.5*grd_map_size+y_idx*grd_map_size/float(n_bins_core)]
+    for x_idx  in range(0,n_bins_core):
+        for y_idx  in range(0,n_bins_core):
+            grd_xy_log_likelihood[y_idx,x_idx] = 0.
+
+
     avg_energy = 0.
+    avg_cam_x = 0.
+    avg_cam_y = 0.
+    avg_core_x = 0.
+    avg_core_y = 0.
     sum_weight = 0.
     for tel in range(0,len(image_matrix)):
 
@@ -596,24 +626,78 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         core_y = tel_y + delta_y
 
         avg_energy += pow(10.,fit_log_energy)/(fit_arrival_error*fit_arrival_error)
+        avg_cam_x += cam_x/(fit_arrival_error*fit_arrival_error)
+        avg_cam_y += cam_y/(fit_arrival_error*fit_arrival_error)
+        avg_core_x += core_x/(fit_arrival_error*fit_arrival_error)
+        avg_core_y += core_y/(fit_arrival_error*fit_arrival_error)
         sum_weight += 1./(fit_arrival_error*fit_arrival_error)
 
-    avg_energy = avg_energy/sum_weight
+        longi_error = fit_arrival_error*fit_arrival_error
+        trans_error = longi_error*semi_minor_sq/semi_major_sq
 
+        for x_idx in range(0,num_cols):
+            for y_idx in range(0,num_rows):
+                pix_x = sky_likelihood_xaxis[x_idx]
+                pix_y = sky_likelihood_yaxis[y_idx]
+                dist2center_sq = pow(pix_x-cam_x,2) + pow(pix_y-cam_y,2)
+                dist2line_sq = pow((line_a*pix_x-pix_y+line_b_sky),2)/(1.+line_a*line_a)
+                new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
+                sky_xy_log_likelihood[y_idx,x_idx] += new_likelihood
+
+        for x_idx in range(0,n_bins_core):
+            for y_idx in range(0,n_bins_core):
+                pix_x = grd_likelihood_xaxis[x_idx]
+                pix_y = grd_likelihood_yaxis[y_idx]
+                dist2center_sq = pow(pix_x-core_x,2) + pow(pix_y-core_y,2)
+                dist2line_sq = pow((line_a*pix_x-pix_y+line_b_grd),2)/(1.+line_a*line_a)
+                new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
+                grd_xy_log_likelihood[y_idx,x_idx] += new_likelihood
+
+
+    avg_energy = avg_energy/sum_weight
+    #avg_cam_x = avg_cam_x/sum_weight
+    #avg_cam_y = avg_cam_y/sum_weight
+    #avg_core_x = avg_core_x/sum_weight
+    #avg_core_y = avg_core_y/sum_weight
+    sum_error = pow(1./sum_weight,0.5)
+    print (f'sum_error = {sum_error}')
+
+    max_index = np.argmax(sky_xy_log_likelihood)
+    max_row, max_col = np.unravel_index(max_index, sky_xy_log_likelihood.shape)
+    max_log_likelihood = sky_xy_log_likelihood[max_row,max_col]
+    avg_cam_x = sky_likelihood_xaxis[max_col]
+    avg_cam_y = sky_likelihood_yaxis[max_row]
+
+    max_index = np.argmax(grd_xy_log_likelihood)
+    max_row, max_col = np.unravel_index(max_index, grd_xy_log_likelihood.shape)
+    max_log_likelihood = grd_xy_log_likelihood[max_row,max_col]
+    avg_core_x = grd_likelihood_xaxis[max_col]
+    avg_core_y = grd_likelihood_yaxis[max_row]
+
+    return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
+    diff_line_vs_temp = pow(pow(avg_cam_x-fit_line_cam_x,2)+pow(avg_cam_y-fit_line_cam_y,2),0.5)
+    if diff_line_vs_temp<0.02:
+        return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
 
     min_chi2 = 1e10
     fit_shower_energy = avg_energy
-    fit_shower_cam_x = fit_line_cam_x
-    fit_shower_cam_y = fit_line_cam_y
-    fit_shower_core_x = fit_line_core_x
-    fit_shower_core_y = fit_line_core_y
+    #fit_shower_cam_x = fit_line_cam_x
+    #fit_shower_cam_y = fit_line_cam_y
+    #fit_shower_core_x = fit_line_core_x
+    #fit_shower_core_y = fit_line_core_y
+    fit_shower_cam_x = avg_cam_x
+    fit_shower_cam_y = avg_cam_y
+    fit_shower_core_x = avg_core_x
+    fit_shower_core_y = avg_core_y
 
     stepsize = [0.005,0.005]
     try_params = [fit_shower_cam_x,fit_shower_cam_y]
+    bounds = [(fit_shower_cam_x-2.*sum_error,fit_shower_cam_x+2.*sum_error),(fit_shower_cam_y-2.*sum_error,fit_shower_cam_y+2.*sum_error)]
     solution = minimize(
         sum_square_difference_between_images_v_cam_xy,
         x0=try_params,
         args=(fit_line_core_x,fit_line_core_y,avg_energy,delta_foci_time,image_2d_matrix,telesc_position_matrix,all_cam_axes,geom,lookup_table,lookup_table_arrival,eigenvectors),
+        bounds=bounds,
         method='L-BFGS-B',
         jac=None,
         options={'eps':stepsize,'ftol':0.01},
@@ -1162,8 +1246,8 @@ for path in range(0,len(testing_sample_path)):
             truth_cam_x = truth_tel_coord[0]
             truth_cam_y = truth_tel_coord[1]
     
-            min_ntel = 3
-            max_ntel = 10
+            min_ntel = 2
+            max_ntel = 2
             if len(testing_image_matrix)<min_ntel or len(testing_image_matrix)>max_ntel: 
                 testing_image_matrix = []
                 testing_time_matrix = []
@@ -1175,7 +1259,7 @@ for path in range(0,len(testing_sample_path)):
                 continue
     
             min_energy = 0.1
-            max_energy = 1e10
+            max_energy = 1.0
             if truth_shower_energy<min_energy or truth_shower_energy>max_energy:
                 testing_image_matrix = []
                 testing_time_matrix = []
@@ -1247,21 +1331,20 @@ for path in range(0,len(testing_sample_path)):
             fit_temp_core_x = truth_shower_core_x/1000.
             fit_temp_core_y = truth_shower_core_y/1000.
             #fit_temp_energy, fit_temp_cam_x, fit_temp_cam_y, temp_weight_skymap, fit_temp_core_x, fit_temp_core_y, temp_weight_grdmap, temp_weight = fit_templates_to_individual_images(testing_image_matrix,testing_time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table_arrival_pkl,lookup_table_arrival_error_pkl,lookup_table_pkl,eigen_vectors_pkl, fit_line_cam_x, fit_line_cam_y,fit_line_core_x,fit_line_core_y,open_angle)
-
-            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            print ('individual template fit result:')
-            print (f'current_event = {current_event}')
-            print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-            print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-            print (f'fit_temp_cam_x = {fit_temp_cam_x:0.3f}')
-            print (f'fit_temp_cam_y = {fit_temp_cam_y:0.3f}')
-            print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-            print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-            print (f'fit_temp_core_x = {fit_temp_core_x*1000.:0.3f}')
-            print (f'fit_temp_core_y = {fit_temp_core_y*1000.:0.3f}')
-            print (f'truth_shower_energy = {truth_shower_energy:0.3f}')
-            print (f'fit_temp_energy = {fit_temp_energy:0.3f}')
-            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            #print ('individual template fit result:')
+            #print (f'current_event = {current_event}')
+            #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
+            #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
+            #print (f'fit_temp_cam_x = {fit_temp_cam_x:0.3f}')
+            #print (f'fit_temp_cam_y = {fit_temp_cam_y:0.3f}')
+            #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+            #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+            #print (f'fit_temp_core_x = {fit_temp_core_x*1000.:0.3f}')
+            #print (f'fit_temp_core_y = {fit_temp_core_y*1000.:0.3f}')
+            #print (f'truth_shower_energy = {truth_shower_energy:0.3f}')
+            #print (f'fit_temp_energy = {fit_temp_energy:0.3f}')
+            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
     
             #if temp_weight<2.*1e5: continue
     
@@ -1284,21 +1367,21 @@ for path in range(0,len(testing_sample_path)):
             fit_simul_temp_cam_y = fit_temp_cam_y
             fit_simul_temp_core_x = fit_temp_core_x
             fit_simul_temp_core_y = fit_temp_core_y
-            #fit_simul_temp_energy, fit_simul_temp_cam_x, fit_simul_temp_cam_y, fit_simul_temp_core_x, fit_simul_temp_core_y = fit_templates_to_all_images(testing_image_matrix,testing_time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table_pkl,lookup_table_arrival_pkl,eigen_vectors_pkl)
-            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            #print ('all template fit result:')
-            #print (f'current_event = {current_event}')
-            #print (f'truth_cam_x      = {truth_cam_x:0.3f}')
-            #print (f'truth_cam_y      = {truth_cam_y:0.3f}')
-            #print (f'fit_simul_temp_cam_x = {fit_simul_temp_cam_x:0.3f}')
-            #print (f'fit_simul_temp_cam_y = {fit_simul_temp_cam_y:0.3f}')
-            #print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
-            #print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
-            #print (f'fit_simul_temp_core_x = {fit_simul_temp_core_x*1000.:0.3f}')
-            #print (f'fit_simul_temp_core_y = {fit_simul_temp_core_y*1000.:0.3f}')
-            #print (f'truth_shower_energy = {truth_shower_energy:0.3f}')
-            #print (f'fit_simul_temp_energy = {fit_simul_temp_energy:0.3f}')
-            #print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            fit_simul_temp_energy, fit_simul_temp_cam_x, fit_simul_temp_cam_y, fit_simul_temp_core_x, fit_simul_temp_core_y = fit_templates_to_all_images(testing_image_matrix,testing_time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table_pkl,lookup_table_arrival_pkl,eigen_vectors_pkl)
+            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+            print ('all template fit result:')
+            print (f'current_event = {current_event}')
+            print (f'truth_cam_x      = {truth_cam_x:0.3f}')
+            print (f'truth_cam_y      = {truth_cam_y:0.3f}')
+            print (f'fit_simul_temp_cam_x = {fit_simul_temp_cam_x:0.3f}')
+            print (f'fit_simul_temp_cam_y = {fit_simul_temp_cam_y:0.3f}')
+            print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
+            print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
+            print (f'fit_simul_temp_core_x = {fit_simul_temp_core_x*1000.:0.3f}')
+            print (f'fit_simul_temp_core_y = {fit_simul_temp_core_y*1000.:0.3f}')
+            print (f'truth_shower_energy = {truth_shower_energy:0.3f}')
+            print (f'fit_simul_temp_energy = {fit_simul_temp_energy:0.3f}')
+            print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
     
             avg_indiv_line_impact = 0.
             avg_indiv_temp_impact = 0.
@@ -1464,27 +1547,27 @@ for path in range(0,len(testing_sample_path)):
                 fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_indiv_lines.png',bbox_inches='tight')
                 axbig.remove()
     
-                fig.clf()
-                axbig = fig.add_subplot()
-                label_x = 'X'
-                label_y = 'Y'
-                axbig.set_xlabel(label_x)
-                axbig.set_ylabel(label_y)
-                im = axbig.imshow(image_sum_svd_truth_temp,origin='lower',extent=(xmin,xmax,ymin,ymax))
-                line_x = np.linspace(xmin, xmax, 100)
-                for tel in range(0,len(list_img_a)):
-                    a = list_img_a[tel]
-                    b = list_img_b[tel]
-                    line_y = -(a*line_x + b)
-                    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-                axbig.set_xlim(xmin,xmax)
-                axbig.set_ylim(ymin,ymax)
-                axbig.scatter(truth_cam_x, -truth_cam_y, s=90, c='r', marker='+')
-                axbig.scatter(fit_temp_cam_x, -fit_temp_cam_y, s=90, c='g', marker='+')
-                cbar = fig.colorbar(im)
-                cbar.set_label('PE')
-                fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd_truth_temp.png',bbox_inches='tight')
-                axbig.remove()
+                #fig.clf()
+                #axbig = fig.add_subplot()
+                #label_x = 'X'
+                #label_y = 'Y'
+                #axbig.set_xlabel(label_x)
+                #axbig.set_ylabel(label_y)
+                #im = axbig.imshow(image_sum_svd_truth_temp,origin='lower',extent=(xmin,xmax,ymin,ymax))
+                #line_x = np.linspace(xmin, xmax, 100)
+                #for tel in range(0,len(list_img_a)):
+                #    a = list_img_a[tel]
+                #    b = list_img_b[tel]
+                #    line_y = -(a*line_x + b)
+                #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+                #axbig.set_xlim(xmin,xmax)
+                #axbig.set_ylim(ymin,ymax)
+                #axbig.scatter(truth_cam_x, -truth_cam_y, s=90, c='r', marker='+')
+                #axbig.scatter(fit_temp_cam_x, -fit_temp_cam_y, s=90, c='g', marker='+')
+                #cbar = fig.colorbar(im)
+                #cbar.set_label('PE')
+                #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd_truth_temp.png',bbox_inches='tight')
+                #axbig.remove()
     
                 #fig.clf()
                 #axbig = fig.add_subplot()
@@ -1508,27 +1591,27 @@ for path in range(0,len(testing_sample_path)):
                 #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd_indiv_temp.png',bbox_inches='tight')
                 #axbig.remove()
     
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #im = axbig.imshow(image_sum_svd_simul_temp,origin='lower',extent=(xmin,xmax,ymin,ymax))
-                #line_x = np.linspace(xmin, xmax, 100)
-                #for tel in range(0,len(list_img_a)):
-                #    a = list_img_a[tel]
-                #    b = list_img_b[tel]
-                #    line_y = -(a*line_x + b)
-                #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-                #axbig.set_xlim(xmin,xmax)
-                #axbig.set_ylim(ymin,ymax)
-                #axbig.scatter(truth_cam_x, -truth_cam_y, s=90, c='r', marker='+')
-                #axbig.scatter(fit_temp_cam_x, -fit_temp_cam_y, s=90, c='g', marker='+')
-                #cbar = fig.colorbar(im)
-                #cbar.set_label('PE')
-                #fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd_simul_temp.png',bbox_inches='tight')
-                #axbig.remove()
+                fig.clf()
+                axbig = fig.add_subplot()
+                label_x = 'X'
+                label_y = 'Y'
+                axbig.set_xlabel(label_x)
+                axbig.set_ylabel(label_y)
+                im = axbig.imshow(image_sum_svd_simul_temp,origin='lower',extent=(xmin,xmax,ymin,ymax))
+                line_x = np.linspace(xmin, xmax, 100)
+                for tel in range(0,len(list_img_a)):
+                    a = list_img_a[tel]
+                    b = list_img_b[tel]
+                    line_y = -(a*line_x + b)
+                    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+                axbig.set_xlim(xmin,xmax)
+                axbig.set_ylim(ymin,ymax)
+                axbig.scatter(truth_cam_x, -truth_cam_y, s=90, c='r', marker='+')
+                axbig.scatter(fit_simul_temp_cam_x, -fit_simul_temp_cam_y, s=90, c='g', marker='+')
+                cbar = fig.colorbar(im)
+                cbar.set_label('PE')
+                fig.savefig(f'{ctapipe_output}/output_plots/sum_image_evt{current_event}_svd_simul_temp.png',bbox_inches='tight')
+                axbig.remove()
     
                 #fig.clf()
                 #axbig = fig.add_subplot()
@@ -1674,7 +1757,7 @@ for path in range(0,len(testing_sample_path)):
             all_cam_axes = []
             telesc_position_matrix = []
 
-            if plot_count==10: exit()
+            #if plot_count==10: exit()
 
 
 

@@ -222,6 +222,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     w = []
     for x_idx in range(0,num_cols):
         for y_idx in range(0,num_rows):
+            if image_input[y_idx,x_idx]==0.: continue
             x += [[x_axis[x_idx]-avg_x]]
             y += [[y_axis[y_idx]-avg_y]]
             w += [pow(image_input[y_idx,x_idx],1.0)]
