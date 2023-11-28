@@ -23,6 +23,8 @@ from load_cta_data import load_training_samples
 from load_cta_data import NeuralNetwork
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
+subprocess.call(['sh', './clean_plots.sh'])
+subprocess.call(['sh', './clean_samples.sh'])
 
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
@@ -36,9 +38,7 @@ with open('train_sim_files.txt', 'r') as file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
 
 print ('loading training data... ')
-load_training_samples(training_sample_path,is_training=True,analysis_mode=2,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-#load_training_samples(training_sample_path,is_training=True,analysis_mode=1,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-#load_training_samples(training_sample_path,is_training=True,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+load_training_samples(training_sample_path,is_training=True,analysis_mode=4,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 
 
 

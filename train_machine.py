@@ -52,7 +52,8 @@ for path in range(0,len(training_sample_path)):
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/training_sample_noisy_clean_repose_run{run_id}.pkl'
+    #output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
     print (f'loading pickle trainging sample data: {output_filename}')
     if not os.path.exists(output_filename):
         print (f'file does not exist.')
@@ -126,7 +127,7 @@ big_training_moment_matrix = np.array(big_training_moment_matrix)
 
 
 print ('Compute big matrix SVD...')
-rank = 20
+rank = 100
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
@@ -135,7 +136,8 @@ output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(VT_eco, file)
 
-n_bins = 10
+n_bins = 20
+n_zbins = 1
 time_lower = -3.
 time_upper = 1.5
 impact_lower = 0.
@@ -143,12 +145,13 @@ impact_upper = 1.
 log_energy_lower = -1.
 log_energy_upper = 2.
 lookup_table = []
-lookup_table_arrival = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=3,start_z=time_lower,end_z=time_upper)
-lookup_table_norm = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=3,start_z=time_lower,end_z=time_upper)
+lookup_table_arrival = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
+lookup_table_norm = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
 for r in range(0,rank):
-    lookup_table += [MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=3,start_z=time_lower,end_z=time_upper)]
+    lookup_table += [MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)]
 for img in range(0,len(big_training_image_matrix)):
     delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+    semi_major_sq = big_training_moment_matrix[img][8]
     arrival = big_training_param_matrix[img][0]
     log_energy = big_training_param_matrix[img][1]
     impact = big_training_param_matrix[img][2]
@@ -162,9 +165,10 @@ for r in range(0,rank):
     lookup_table[r].divide(lookup_table_norm)
 lookup_table_arrival.divide(lookup_table_norm)
 
-lookup_table_arrival_rms = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=3,start_z=time_lower,end_z=time_upper)
+lookup_table_arrival_rms = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
 for img in range(0,len(big_training_image_matrix)):
     delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+    semi_major_sq = big_training_moment_matrix[img][8]
     arrival = big_training_param_matrix[img][0]
     log_energy = big_training_param_matrix[img][1]
     impact = big_training_param_matrix[img][2]

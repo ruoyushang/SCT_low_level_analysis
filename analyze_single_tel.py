@@ -53,7 +53,8 @@ for path in range(0,len(training_sample_path)):
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/training_sample_noisy_clean_repose_run{run_id}.pkl'
+    #output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
     print (f'loading pickle trainging sample data: {output_filename}')
     if not os.path.exists(output_filename):
         print (f'file does not exist.')
@@ -204,34 +205,6 @@ for r in range(0,rank):
     cbar = fig.colorbar(im)
     fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t0.png',bbox_inches='tight')
     axbig.remove()
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Impact [km]'
-    label_y = 'log Energy [TeV]'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    xmin = lookup_table_pkl[r].xaxis.min()
-    xmax = lookup_table_pkl[r].xaxis.max()
-    ymin = lookup_table_pkl[r].yaxis.min()
-    ymax = lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,1].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t1.png',bbox_inches='tight')
-    axbig.remove()
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Impact [km]'
-    label_y = 'log Energy [TeV]'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    xmin = lookup_table_pkl[r].xaxis.min()
-    xmax = lookup_table_pkl[r].xaxis.max()
-    ymin = lookup_table_pkl[r].yaxis.min()
-    ymax = lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,2].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t2.png',bbox_inches='tight')
-    axbig.remove()
 
 
 fig.clf()
@@ -249,35 +222,6 @@ cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t0.png',bbox_inches='tight')
 axbig.remove()
 
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Impact [km]'
-label_y = 'log Energy [TeV]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-xmin = lookup_table_arrival_pkl.xaxis.min()
-xmax = lookup_table_arrival_pkl.xaxis.max()
-ymin = lookup_table_arrival_pkl.yaxis.min()
-ymax = lookup_table_arrival_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,1].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
-cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t1.png',bbox_inches='tight')
-axbig.remove()
-
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Impact [km]'
-label_y = 'log Energy [TeV]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-xmin = lookup_table_arrival_pkl.xaxis.min()
-xmax = lookup_table_arrival_pkl.xaxis.max()
-ymin = lookup_table_arrival_pkl.yaxis.min()
-ymax = lookup_table_arrival_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,2].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
-cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t2.png',bbox_inches='tight')
-axbig.remove()
 
 
 fig.clf()
@@ -342,7 +286,12 @@ log_energy_hist_guess = []
 impact_hist_guess = []
 arrival_hist_guess = []
 arrival_hist_error = []
+delta_time = []
 image_size = []
+delta_time_good = []
+image_size_good = []
+delta_time_bad = []
+image_size_bad = []
 for img in range(0,len(training_id_list)):
 
     current_run = training_id_list[img][0]
@@ -364,7 +313,12 @@ for img in range(0,len(training_id_list)):
     #if img!=2: continue
     if sim_log_energy<0.: continue
 
+    image_foci_x1 = big_training_moment_matrix[img][2]
+    image_foci_y1 = big_training_moment_matrix[img][3]
+    image_foci_x2 = big_training_moment_matrix[img][4]
+    image_foci_y2 = big_training_moment_matrix[img][5]
     delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+    delta_foci_r = pow(pow(image_foci_x1-image_foci_x2,2)+pow(image_foci_y1-image_foci_y2,2),0.5)
 
     latent_space = []
     for r in range(0,rank):
@@ -406,12 +360,20 @@ for img in range(0,len(training_id_list)):
     impact_hist_guess += [fit_impact]
     arrival_hist_guess += [fit_arrival]
     arrival_hist_error += [fit_arrival-sim_arrival]
+    delta_time += [delta_foci_time]
 
 
     size = 0.
     for pix in range(0,len(sim_image)):
         size += sim_image[pix]
     image_size += [size]
+
+    if abs(fit_arrival-sim_arrival)<0.05:
+        delta_time_good += [delta_foci_time]
+        image_size_good += [size]
+    else:
+        delta_time_bad += [delta_foci_time]
+        image_size_bad += [size]
 
     fit_latent_space = []
     for r in range(0,rank):
@@ -421,7 +383,7 @@ for img in range(0,len(training_id_list)):
     fit_image = eigen_vectors_pkl.T @ fit_latent_space
     fit_image_2d = geom.image_to_cartesian_representation(fit_image)
 
-    if img%10==0:
+    if abs(fit_arrival-sim_arrival)>0.05:
         #fig.clf()
         #axbig = fig.add_subplot()
         #label_x = 'X'
@@ -493,7 +455,7 @@ for img in range(0,len(training_id_list)):
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(impact_truth, arrival_hist_error, s=90, c='r', marker='+')
+    axbig.scatter(impact_hist_guess, arrival_hist_error, s=90, c='r', marker='+')
     fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_impact.png',bbox_inches='tight')
     axbig.remove()
 
@@ -503,8 +465,41 @@ for img in range(0,len(training_id_list)):
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(log_energy_truth, arrival_hist_error, s=90, c='r', marker='+')
+    axbig.scatter(log_energy_hist_guess, arrival_hist_error, s=90, c='r', marker='+')
     fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_energy.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'delta time'
+    label_y = 'arrival error'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(delta_time, arrival_hist_error, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_delta_time.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'image size'
+    label_y = 'arrival error'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(image_size, arrival_hist_error, s=90, c='r', marker='+')
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_size.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'image size'
+    label_y = 'delta time'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(image_size_good, delta_time_good, s=90, c='g', marker='+')
+    axbig.scatter(image_size_bad, delta_time_bad, s=90, c='r', marker='+')
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_size_vs_time.png',bbox_inches='tight')
     axbig.remove()
 
     #exit()

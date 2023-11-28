@@ -41,6 +41,5 @@ with open('test_sim_files.txt', 'r') as file:
         testing_sample_path += [get_dataset_path(line.strip('\n'))]
 
 print ('loading testing data... ')
-load_training_samples(testing_sample_path,is_training=False,analysis_mode=3,min_energy=0.1,max_energy=100.0,max_evt=2e10)
-#load_training_samples(testing_sample_path,is_training=False,analysis_mode=0,min_energy=0.1,max_energy=100.0,max_evt=2e10)
+load_training_samples(testing_sample_path,is_training=False,analysis_mode=0,min_energy=0.1,max_energy=100.0,max_evt=2e10)
 

@@ -522,6 +522,10 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
         use_truth = True
         do_cleaning = False
         do_reposition = False
+    if analysis_mode==4:
+        use_truth = False
+        do_cleaning = True
+        do_reposition = True
 
     if use_truth:
         ana_tag += '_truth'
@@ -680,7 +684,7 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                         if analysis_image_2d[y_idx,x_idx]==0.: 
                             analysis_time_2d[y_idx,x_idx] = 0.
 
-                analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,20.)
+                analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,50.)
 
                 analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
                 analysis_time_1d = geom.image_from_cartesian_representation(analysis_time_2d)
