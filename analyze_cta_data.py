@@ -512,6 +512,42 @@ def sum_square_difference_between_images_v_cam_xy(try_params,shower_core_x,showe
     return chi2
     #return 1./chi2
 
+def sum_square_distance_to_image_lines_and_points(core_xy,list_tel_x,list_tel_y,list_line_a,list_line_w,list_core_x,list_core_y,list_point_w):
+
+    core_x = core_xy[0]
+    core_y = core_xy[1]
+
+    #open_angle_sq = 0.
+    #for t1 in range(0,len(list_line_a)-1):
+    #    for t2 in range(t1+1,len(list_line_a)):
+    #        a1 = float(list_line_a[t1])
+    #        a2 = float(list_line_a[t2])
+    #        open_angle_sq += pow(np.arctan(abs((a1-a2)/(1.+a1*a2))),2)
+
+    sum_dist_sq_line = 0.
+    for tel in range(0,len(list_line_w)):
+        tel_x = list_tel_x[tel]
+        tel_y = list_tel_y[tel]
+        a = list_line_a[tel]
+        b = tel_y-tel_x*a
+        dist_sq = distance_square_point_to_line(core_x,core_y,a,b)
+        sum_dist_sq_line += dist_sq*pow(list_line_w[tel],2)
+
+    sum_dist_sq_point = 0.
+    for tel in range(0,len(list_point_w)):
+        dist_sq = pow(core_x-list_core_x[tel],2) + pow(core_y-list_core_y[tel],2)
+        sum_dist_sq_point += dist_sq*pow(list_point_w[tel],2)
+
+    #print (f'open_angle_sq = {open_angle_sq}')
+    #print (f'sum_dist_sq_line = {sum_dist_sq_line}')
+    #print (f'sum_dist_sq_point = {sum_dist_sq_point}')
+    #exit()
+
+    alpha = 50.
+    #alpha = 50./open_angle_sq
+    sum_dist_sq = sum_dist_sq_line + alpha*sum_dist_sq_point
+    return sum_dist_sq
+
 def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table,lookup_table_arrival,lookup_table_arrival_rms,eigenvectors):
 
     fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
@@ -535,34 +571,46 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         image_2d_matrix += [image_data_2d]
         time_2d_matrix += [time_data_2d]
 
-    image_data_2d = image_2d_matrix[0]
-    sky_xy_log_likelihood = np.zeros_like(image_data_2d)
-    num_rows, num_cols = sky_xy_log_likelihood.shape
-    for x_idx in range(0,num_cols):
-        for y_idx in range(0,num_rows):
-            sky_xy_log_likelihood[y_idx,x_idx] = 0.
-    sky_likelihood_xaxis = all_cam_axes[0][0]
-    sky_likelihood_yaxis = all_cam_axes[0][1]
+    list_img_x = []
+    list_img_y = []
+    list_tel_x = []
+    list_tel_y = []
+    list_line_a = []
+    list_line_b = []
+    list_line_w = []
+    for tel in range(0,len(image_matrix)):
 
-    n_bins_core = 200
-    grd_map_size = 2.
-    grd_xy_log_likelihood = np.zeros((n_bins_core,n_bins_core))
-    grd_likelihood_xaxis = []
-    grd_likelihood_yaxis = []
-    for x_idx  in range(0,n_bins_core):
-        grd_likelihood_xaxis += [-0.5*grd_map_size+x_idx*grd_map_size/float(n_bins_core)]
-    for y_idx  in range(0,n_bins_core):
-        grd_likelihood_yaxis += [-0.5*grd_map_size+y_idx*grd_map_size/float(n_bins_core)]
-    for x_idx  in range(0,n_bins_core):
-        for y_idx  in range(0,n_bins_core):
-            grd_xy_log_likelihood[y_idx,x_idx] = 0.
+        image_data_1d = image_matrix[tel]
+        image_data_2d = image_2d_matrix[tel]
+
+        image_size = np.sum(image_data_1d)
+        tel_x = telesc_position_matrix[tel][2]/1000.
+        tel_y = telesc_position_matrix[tel][3]/1000.
+        list_tel_x += [tel_x]
+        list_tel_y += [tel_y]
+
+        avg_x, avg_y, sum_w = get_image_center(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        list_img_x += [avg_x]
+        list_img_y += [avg_y]
+
+        a, b, w = fit_image_to_line(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
+        aT, bT, wT = fit_image_to_line(np.array(image_data_2d).transpose(), all_cam_axes[tel][1], all_cam_axes[tel][0])
+        if w<wT:
+            a = 1./aT
+            b = -bT/aT
+            w = wT
+
+        list_line_a += [a]
+        list_line_b += [b]
+        list_line_w += [w]
 
 
+    list_cam_x = []
+    list_cam_y = []
+    list_core_x = []
+    list_core_y = []
+    list_point_w = []
     avg_energy = 0.
-    avg_cam_x = 0.
-    avg_cam_y = 0.
-    avg_core_x = 0.
-    avg_core_y = 0.
     sum_weight = 0.
     for tel in range(0,len(image_matrix)):
 
@@ -573,7 +621,6 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
         tel_x = telesc_position_matrix[tel][2]/1000.
         tel_y = telesc_position_matrix[tel][3]/1000.
-        fit_line_impact = pow(pow(fit_line_core_x-tel_x,2)+pow(fit_line_core_y-tel_y,2),0.5)
 
         image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(image_data_2d, time_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
         if open_angle>0.1:
@@ -607,21 +654,10 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         init_params = [fit_log_energy,fit_impact]
         n_bins_energy = len(lookup_table[0].yaxis)
         n_bins_impact = len(lookup_table[0].xaxis)
-        if open_angle<1.0:
-            for idx_x  in range(0,n_bins_impact):
-                for idx_y  in range(0,n_bins_energy):
-                    try_log_energy = lookup_table[0].yaxis[idx_y]
-                    try_impact = lookup_table[0].xaxis[idx_x]
-                    init_params = [try_log_energy,try_impact,delta_foci_time]
-                    try_chi2 = sqaure_difference_between_1d_images(init_params,all_cam_axes[tel],geom,image_data_rotate_1d,lookup_table,eigenvectors)
-                    if try_chi2<fit_chi2:
-                        fit_chi2 = try_chi2
-                        fit_log_energy = try_log_energy
-                        fit_impact = try_impact
-        else:
-            try_impact = fit_line_impact
+        for idx_x  in range(0,n_bins_impact):
             for idx_y  in range(0,n_bins_energy):
                 try_log_energy = lookup_table[0].yaxis[idx_y]
+                try_impact = lookup_table[0].xaxis[idx_x]
                 init_params = [try_log_energy,try_impact,delta_foci_time]
                 try_chi2 = sqaure_difference_between_1d_images(init_params,all_cam_axes[tel],geom,image_data_rotate_1d,lookup_table,eigenvectors)
                 if try_chi2<fit_chi2:
@@ -632,7 +668,6 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         print (f'fit_log_energy = {fit_log_energy}')
         fit_arrival = lookup_table_arrival.get_bin_content(fit_impact,fit_log_energy,delta_foci_time)
         fit_arrival_error = lookup_table_arrival_rms.get_bin_content(fit_impact,fit_log_energy,delta_foci_time)
-        #fit_arrival_error = fit_arrival
         if fit_arrival<0.01:
             fit_arrival = 0.01
         if fit_arrival_error<0.01:
@@ -651,61 +686,39 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         core_x = tel_x + delta_x
         core_y = tel_y + delta_y
 
-        print (f'fit_arrival_error = {fit_arrival_error}')
-        avg_energy += pow(10.,fit_log_energy)/(fit_arrival_error*fit_arrival_error)
-        avg_cam_x += cam_x/(fit_arrival_error*fit_arrival_error)
-        avg_cam_y += cam_y/(fit_arrival_error*fit_arrival_error)
-        avg_core_x += core_x/(fit_arrival_error*fit_arrival_error)
-        avg_core_y += core_y/(fit_arrival_error*fit_arrival_error)
         sum_weight += 1./(fit_arrival_error*fit_arrival_error)
-
-        longi_error = fit_arrival_error*fit_arrival_error
-        trans_error = longi_error*semi_minor_sq/semi_major_sq
-
-        for x_idx in range(0,num_cols):
-            for y_idx in range(0,num_rows):
-                pix_x = sky_likelihood_xaxis[x_idx]
-                pix_y = sky_likelihood_yaxis[y_idx]
-                dist2center_sq = pow(pix_x-cam_x,2) + pow(pix_y-cam_y,2)
-                dist2line_sq = pow((line_a*pix_x-pix_y+line_b_sky),2)/(1.+line_a*line_a)
-                new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
-                sky_xy_log_likelihood[y_idx,x_idx] += new_likelihood
-
-        for x_idx in range(0,n_bins_core):
-            for y_idx in range(0,n_bins_core):
-                pix_x = grd_likelihood_xaxis[x_idx]
-                pix_y = grd_likelihood_yaxis[y_idx]
-                dist2center_sq = pow(pix_x-core_x,2) + pow(pix_y-core_y,2)
-                dist2line_sq = pow((line_a*pix_x-pix_y+line_b_grd),2)/(1.+line_a*line_a)
-                new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
-                grd_xy_log_likelihood[y_idx,x_idx] += new_likelihood
+        avg_energy += pow(10.,fit_log_energy)/(fit_arrival_error*fit_arrival_error)
+        list_cam_x += [cam_x]
+        list_cam_y += [cam_y]
+        list_core_x += [core_x]
+        list_core_y += [core_y]
+        list_point_w += [1./(fit_arrival_error*fit_arrival_error)]
 
 
     avg_energy = avg_energy/sum_weight
-    #avg_cam_x = avg_cam_x/sum_weight
-    #avg_cam_y = avg_cam_y/sum_weight
-    #avg_core_x = avg_core_x/sum_weight
-    #avg_core_y = avg_core_y/sum_weight
     sum_error = pow(1./sum_weight,0.5)
     print (f'sum_error = {sum_error}')
 
-    max_index = np.argmax(sky_xy_log_likelihood)
-    max_row, max_col = np.unravel_index(max_index, sky_xy_log_likelihood.shape)
-    max_log_likelihood = sky_xy_log_likelihood[max_row,max_col]
-    avg_cam_x = sky_likelihood_xaxis[max_col]
-    avg_cam_y = sky_likelihood_yaxis[max_row]
+    try_params = [fit_line_core_x,fit_line_core_y]
+    solution = minimize(
+        sum_square_distance_to_image_lines_and_points,
+        x0=try_params,
+        args=(list_tel_x,list_tel_y,list_line_a,list_line_w,list_core_x,list_core_y,list_point_w),
+        method='L-BFGS-B',
+    )
+    avg_core_x = solution['x'][0]
+    avg_core_y = solution['x'][1]
 
-    max_index = np.argmax(grd_xy_log_likelihood)
-    max_row, max_col = np.unravel_index(max_index, grd_xy_log_likelihood.shape)
-    max_log_likelihood = grd_xy_log_likelihood[max_row,max_col]
-    avg_core_x = grd_likelihood_xaxis[max_col]
-    avg_core_y = grd_likelihood_yaxis[max_row]
+    try_params = [fit_line_cam_x,fit_line_cam_y]
+    solution = minimize(
+        sum_square_distance_to_image_lines_and_points,
+        x0=try_params,
+        args=(list_img_x,list_img_y,list_line_a,list_line_w,list_cam_x,list_cam_y,list_point_w),
+        method='L-BFGS-B',
+    )
+    avg_cam_x = solution['x'][0]
+    avg_cam_y = solution['x'][1]
 
-    if open_angle>1.0:
-        avg_cam_x = fit_line_cam_x 
-        avg_cam_y = fit_line_cam_y
-        avg_core_x = fit_line_core_x 
-        avg_core_y = fit_line_core_y
 
     return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
     #diff_line_vs_temp = pow(pow(avg_cam_x-fit_line_cam_x,2)+pow(avg_cam_y-fit_line_cam_y,2),0.5)
@@ -1141,7 +1154,7 @@ def construct_line_on_focalplane(cam_x,cam_y,impact_x,impact_y,transpose=False):
 def distance_square_point_to_line(x0,y0,a,b):
 
     d = pow(a*x0 - y0 + b,2)/(1 + a*a)
-    return d
+    return float(d)
 
 
 
@@ -1289,7 +1302,7 @@ for path in range(0,len(testing_sample_path)):
             truth_cam_y = truth_tel_coord[1]
     
             min_ntel = 3
-            max_ntel = 10
+            max_ntel = 1e10
             if len(testing_image_matrix)<min_ntel or len(testing_image_matrix)>max_ntel: 
                 testing_image_matrix = []
                 testing_time_matrix = []
@@ -1313,7 +1326,7 @@ for path in range(0,len(testing_sample_path)):
                 continue
 
             #if current_event != 130705: 
-            #if current_event != 174808: 
+            #if current_event != 24905: 
             #    testing_image_matrix = []
             #    testing_time_matrix = []
             #    testing_param_matrix = []
@@ -1566,7 +1579,7 @@ for path in range(0,len(testing_sample_path)):
             pointing_error = 180./math.pi*pow(pow(fit_simul_temp_evt_alt-truth_shower_alt,2)+pow(fit_simul_temp_evt_az-truth_shower_az,2),0.5)
             #pointing_error = 180./math.pi*pow(pow(fit_line_alt-truth_shower_alt,2)+pow(fit_line_az-truth_shower_az,2),0.5)
     
-            if pointing_error>0.3: 
+            if pointing_error>0.2: 
 
                 fig.clf()
                 axbig = fig.add_subplot()

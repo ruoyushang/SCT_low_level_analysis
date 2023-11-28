@@ -288,6 +288,7 @@ arrival_hist_guess = []
 arrival_hist_error = []
 delta_time = []
 image_size = []
+semi_major = []
 delta_time_good = []
 image_size_good = []
 delta_time_bad = []
@@ -317,6 +318,7 @@ for img in range(0,len(training_id_list)):
     image_foci_y1 = big_training_moment_matrix[img][3]
     image_foci_x2 = big_training_moment_matrix[img][4]
     image_foci_y2 = big_training_moment_matrix[img][5]
+    semi_major_sq = big_training_moment_matrix[img][8]
     delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
     delta_foci_r = pow(pow(image_foci_x1-image_foci_x2,2)+pow(image_foci_y1-image_foci_y2,2),0.5)
 
@@ -361,7 +363,7 @@ for img in range(0,len(training_id_list)):
     arrival_hist_guess += [fit_arrival]
     arrival_hist_error += [fit_arrival-sim_arrival]
     delta_time += [delta_foci_time]
-
+    semi_major += [pow(semi_major_sq,0.5)]
 
     size = 0.
     for pix in range(0,len(sim_image)):
@@ -488,6 +490,17 @@ for img in range(0,len(training_id_list)):
     axbig.scatter(image_size, arrival_hist_error, s=90, c='r', marker='+')
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_size.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'image size'
+    label_y = 'arrival error'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(semi_major, arrival_hist_error, s=90, c='r', marker='+')
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_semi_major.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
