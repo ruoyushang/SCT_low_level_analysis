@@ -696,7 +696,7 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
 
     avg_energy = avg_energy/sum_weight
-    sum_error = pow(1./sum_weight,0.5)
+    sum_error = 5.*pow(1./sum_weight,0.5)
     print (f'sum_error = {sum_error}')
 
     try_params = [fit_line_core_x,fit_line_core_y]
@@ -721,16 +721,9 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
 
     return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
-    #diff_line_vs_temp = pow(pow(avg_cam_x-fit_line_cam_x,2)+pow(avg_cam_y-fit_line_cam_y,2),0.5)
-    #if diff_line_vs_temp<0.02:
-    #    return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
 
     min_chi2 = 1e10
     fit_shower_energy = avg_energy
-    #fit_shower_cam_x = fit_line_cam_x
-    #fit_shower_cam_y = fit_line_cam_y
-    #fit_shower_core_x = fit_line_core_x
-    #fit_shower_core_y = fit_line_core_y
     fit_shower_cam_x = avg_cam_x
     fit_shower_cam_y = avg_cam_y
     fit_shower_core_x = avg_core_x
@@ -738,11 +731,11 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
     stepsize = [0.005,0.005,0.1]
     try_params = [fit_shower_cam_x,fit_shower_cam_y,math.log10(fit_shower_energy)]
-    bounds = [(fit_shower_cam_x-2.*sum_error,fit_shower_cam_x+2.*sum_error),(fit_shower_cam_y-2.*sum_error,fit_shower_cam_y+2.*sum_error),(math.log10(fit_shower_energy)-0.3,math.log10(fit_shower_energy)+0.3)]
+    bounds = [(fit_shower_cam_x-sum_error,fit_shower_cam_x+sum_error),(fit_shower_cam_y-sum_error,fit_shower_cam_y+sum_error),(math.log10(fit_shower_energy)-0.3,math.log10(fit_shower_energy)+0.3)]
     solution = minimize(
         sum_square_difference_between_images_v_cam_xy,
         x0=try_params,
-        args=(fit_line_core_x,fit_line_core_y,delta_foci_time,image_2d_matrix,telesc_position_matrix,all_cam_axes,geom,lookup_table,lookup_table_arrival,eigenvectors),
+        args=(fit_shower_core_x,fit_shower_core_y,delta_foci_time,image_2d_matrix,telesc_position_matrix,all_cam_axes,geom,lookup_table,lookup_table_arrival,eigenvectors),
         bounds=bounds,
         method='L-BFGS-B',
         jac=None,
@@ -1326,7 +1319,7 @@ for path in range(0,len(testing_sample_path)):
                 continue
 
             #if current_event != 130705: 
-            #if current_event != 24905: 
+            #if current_event != 6807: 
             #    testing_image_matrix = []
             #    testing_time_matrix = []
             #    testing_param_matrix = []
