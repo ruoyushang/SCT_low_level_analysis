@@ -164,6 +164,8 @@ def clean_image(image_data,image_mask):
 def find_mask(image_data):
 
     image_mask = np.zeros_like(image_data)
+    #mask_threshold = 5.
+    mask_threshold = 4.
 
     num_rows, num_cols = image_data.shape
 
@@ -190,7 +192,7 @@ def find_mask(image_data):
             if image_data[y_idx,x_idx]==0.: continue
             if image_mask[y_idx,x_idx]==1: continue
             significance = (image_data[y_idx,x_idx]-pix_mean)/pix_rms
-            if significance>5.:
+            if significance>mask_threshold:
                 image_mask[y_idx,x_idx] = 1
 
     return image_mask
@@ -666,7 +668,7 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                         if math.isnan(analysis_image_2d[y_idx,x_idx]): 
                             analysis_image_2d[y_idx,x_idx] = 0.
                             analysis_time_2d[y_idx,x_idx] = 0.
-    
+
                 x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
 
                 # image cleaning
@@ -683,6 +685,9 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                     for y_idx in range(0,num_rows):
                         if analysis_image_2d[y_idx,x_idx]==0.: 
                             analysis_time_2d[y_idx,x_idx] = 0.
+
+                image_size = np.sum(analysis_image_2d)
+                if image_size<=0.: continue
 
                 analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,50.)
 
@@ -713,8 +718,8 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 if do_reposition:
                     analysis_image_recenter = np.zeros_like(analysis_image_2d)
                     analysis_time_recenter = np.zeros_like(analysis_time_2d)
-                    shift_x = -image_foci_x
-                    shift_y = -image_foci_y
+                    shift_x = -image_center_x
+                    shift_y = -image_center_y
                     analysis_image_recenter = image_translation(analysis_image_2d, x_axis, y_axis, shift_x, shift_y)
                     analysis_time_recenter = image_translation(analysis_time_2d, x_axis, y_axis, shift_x, shift_y)
 
@@ -784,7 +789,7 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 evt_truth_height = shower_height
                 evt_truth_x_max = shower_x_max
 
-                foci_2_sky = pow(pow(evt_cam_x-image_foci_x,2)+pow(evt_cam_y-image_foci_y,2),0.5)
+                evt_truth_arrival = pow(pow(evt_cam_x-image_center_x,2)+pow(evt_cam_y-image_center_y,2),0.5)
 
                 id_list += [[run_id,event_id,tel_key,subarray]]
                 telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
@@ -794,8 +799,8 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
                 else:
                     big_image_matrix += [analysis_image_1d]
                     big_time_matrix += [analysis_time_1d]
-                big_param_matrix += [[foci_2_sky,evt_truth_energy,evt_truth_impact]]
-                big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq]]
+                big_param_matrix += [[evt_truth_arrival,evt_truth_energy,evt_truth_impact]]
+                big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq,image_size]]
                 #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
                 truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
                 cam_axes += [[x_axis,y_axis]]
@@ -1072,25 +1077,25 @@ def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_d
 
     fit_log_energy = init_params[0]
     fit_impact = init_params[1]
-    delta_foci_time = init_params[2]
 
     fit_latent_space = []
     for r in range(0,len(lookup_table)):
-        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy,delta_foci_time)]
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
-    data_latent_space = eigen_vectors @ image_1d_data
-    #print (f'fit_log_energy = {fit_log_energy}')
-    #print (f'fit_impact = {fit_impact}')
-    #print (f'data_latent_space = {data_latent_space}')
-    #print (f'fit_latent_space = {fit_latent_space}')
+    #image_1d_fit = eigen_vectors.T @ fit_latent_space
+    #sum_chi2 = 0.
+    #n_rows = len(image_1d_fit)
+    #for row in range(0,n_rows):
+    #    diff = image_1d_data[row] - image_1d_fit[row]
+    #    sum_chi2 += diff*diff
 
+    data_latent_space = eigen_vectors @ image_1d_data
     sum_chi2 = 0.
     n_rows = len(data_latent_space)
     for row in range(0,n_rows):
         diff = data_latent_space[row] - fit_latent_space[row]
         sum_chi2 += diff*diff
-    #print (f'sum_chi2 = {sum_chi2}')
 
     return sum_chi2
 

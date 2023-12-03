@@ -21,11 +21,12 @@ from ctapipe.visualization import CameraDisplay
 
 from load_cta_data import load_training_samples
 from load_cta_data import NeuralNetwork
-from load_cta_data import MyArray3D
+from load_cta_data import MyArray2D
 from load_cta_data import sqaure_difference_between_1d_images
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean_plots.sh'])
+subprocess.call(['sh', './clean_machine.sh'])
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -114,7 +115,7 @@ label_x = 'delta time'
 label_y = 'delta foci r'
 axbig.set_xlabel(label_x)
 axbig.set_ylabel(label_y)
-axbig.scatter(all_delta_time, all_delta_foci_r, s=90, c='r', marker='+')
+axbig.scatter(all_delta_time, all_delta_foci_r, s=90, c='r', marker='+', alpha=0.1)
 axbig.set_xlim(1e-3,50.)
 axbig.set_xscale('log')
 fig.savefig(f'{ctapipe_output}/output_plots/delta_time_vs_delta_foci_r.png',bbox_inches='tight')
@@ -125,61 +126,232 @@ big_training_time_matrix = np.array(big_training_time_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
 big_training_moment_matrix = np.array(big_training_moment_matrix)
 
+# neural network for lookup table
+
+nn_lookup_table_input = []
+nn_lookup_table_arrival_output = []
+nn_predict_input = []
+nn_predict_arrival_output = []
+nn_predict_impact_output = []
+nn_predict_log_energy_output = []
+for img in range(0,len(big_training_image_matrix)):
+
+    delta_foci_time = big_training_moment_matrix[img][7]
+    semi_major_sq = big_training_moment_matrix[img][8]
+    image_size = big_training_moment_matrix[img][10]
+    arrival = big_training_param_matrix[img][0]
+    log_energy = big_training_param_matrix[img][1]
+    impact = big_training_param_matrix[img][2]
+    image = np.array(big_training_image_matrix[img])
+
+    nn_lookup_table_input += [np.array([impact,log_energy])]
+    nn_lookup_table_arrival_output += [np.array([arrival])]
+
+    nn_predict_input += [np.array([delta_foci_time,pow(semi_major_sq,0.5),np.log10(image_size)])]
+    nn_predict_arrival_output += [np.array([arrival])]
+    nn_predict_impact_output += [np.array([impact])]
+    nn_predict_log_energy_output += [np.array([log_energy])]
+
+learning_rate = 0.1
+
+n_node = 200
+nn_lookup_table_arrival = NeuralNetwork(nn_lookup_table_input[0],nn_lookup_table_arrival_output[0],learning_rate,n_node)
+training_error_nn_lookup_table = nn_lookup_table_arrival.train(nn_lookup_table_input, nn_lookup_table_arrival_output, 10000)
+
+n_node = 3*2
+nn_predict_arrival = NeuralNetwork(nn_predict_input[0],nn_predict_arrival_output[0],learning_rate,n_node)
+training_error_nn_predict_arrival = nn_predict_arrival.train(nn_predict_input, nn_predict_arrival_output, 10000)
+nn_predict_impact = NeuralNetwork(nn_predict_input[0],nn_predict_impact_output[0],learning_rate,n_node)
+training_error_nn_predict_impact = nn_predict_impact.train(nn_predict_input, nn_predict_impact_output, 10000)
+nn_predict_log_energy = NeuralNetwork(nn_predict_input[0],nn_predict_log_energy_output[0],learning_rate,n_node)
+training_error_nn_predict_log_energy = nn_predict_log_energy.train(nn_predict_input, nn_predict_log_energy_output, 10000)
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Iterations'
+label_y = 'Error'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.plot(training_error_nn_lookup_table)
+fig.savefig(f'{ctapipe_output}/output_plots/training_error_nn_lookup_table.png',bbox_inches='tight')
+axbig.remove()
+
+list_arrival = []
+list_arrival_nn = []
+list_impact = []
+list_impact_nn = []
+list_log_energy = []
+list_log_energy_nn = []
+for img in range(0,len(big_training_image_matrix)):
+
+    delta_foci_time = big_training_moment_matrix[img][7]
+    semi_major_sq = big_training_moment_matrix[img][8]
+    image_size = big_training_moment_matrix[img][10]
+    arrival = big_training_param_matrix[img][0]
+    log_energy = big_training_param_matrix[img][1]
+    impact = big_training_param_matrix[img][2]
+    nn_arrival = nn_predict_arrival.predict(np.array([delta_foci_time,pow(semi_major_sq,0.5),np.log10(image_size)]))[:,0]
+    nn_impact = nn_predict_impact.predict(np.array([delta_foci_time,pow(semi_major_sq,0.5),np.log10(image_size)]))[:,0]
+    nn_log_energy = nn_predict_log_energy.predict(np.array([delta_foci_time,pow(semi_major_sq,0.5),np.log10(image_size)]))[:,0]
+
+    list_arrival += [arrival]
+    list_arrival_nn += [nn_arrival]
+    list_impact += [impact]
+    list_impact_nn += [nn_impact]
+    list_log_energy += [log_energy]
+    list_log_energy_nn += [nn_log_energy]
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'arrival'
+label_y = 'arrival nn'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_arrival, list_arrival_nn, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/nn_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'impact'
+label_y = 'impact nn'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_impact, list_impact_nn, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/nn_impact.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'log energy'
+label_y = 'log energy nn'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_log_energy, list_log_energy_nn, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/nn_log_energy.png',bbox_inches='tight')
+axbig.remove()
+
+n_bins = 20
+time_lower = -3.
+time_upper = 1.5
+impact_lower = 0.
+impact_upper = 0.6
+arrival_lower = 0.
+arrival_upper = 0.5
+log_energy_lower = -1.
+log_energy_upper = 1.
+
+hist_nn_lookup_table_arrival = MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)
+for x_idx in range(0,len(hist_nn_lookup_table_arrival.xaxis)):
+    for y_idx in range(0,len(hist_nn_lookup_table_arrival.yaxis)):
+        impact = hist_nn_lookup_table_arrival.xaxis[x_idx]
+        log_energy = hist_nn_lookup_table_arrival.yaxis[y_idx]
+        avg_arrival = nn_lookup_table_arrival.predict(np.array([impact,log_energy]))[:,0]
+        hist_nn_lookup_table_arrival.zaxis[x_idx,y_idx] = avg_arrival
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Impact [km]'
+label_y = 'log Energy [TeV]'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+xmin = hist_nn_lookup_table_arrival.xaxis.min()
+xmax = hist_nn_lookup_table_arrival.xaxis.max()
+ymin = hist_nn_lookup_table_arrival.yaxis.min()
+ymax = hist_nn_lookup_table_arrival.yaxis.max()
+im = axbig.imshow(hist_nn_lookup_table_arrival.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/hist_nn_lookup_table_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+exit()
+
 
 print ('Compute big matrix SVD...')
-rank = 100
+rank = 10
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
+
+u_full, s_full, vT_full = np.linalg.svd(big_training_time_matrix,full_matrices=False)
+u_eco = u_full[:, :rank]
+vT_eco = vT_full[:rank, :]
 
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(VT_eco, file)
 
-n_bins = 20
-n_zbins = 1
-time_lower = -3.
-time_upper = 1.5
-impact_lower = 0.
-impact_upper = 1.
-log_energy_lower = -1.
-log_energy_upper = 2.
+output_filename = f'{ctapipe_output}/output_machines/eigen_vectors_time.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(vT_eco, file)
+
 lookup_table = []
-lookup_table_arrival = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
-lookup_table_norm = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
+lookup_table_time = []
+lookup_table_arrival = MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)
+lookup_table_norm = MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)
+
+list_impact = []
+list_arrival = []
+list_log_energy = []
+list_semi_major = []
+list_delta_time = []
+list_size = []
+
 for r in range(0,rank):
-    lookup_table += [MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)]
+    lookup_table += [MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)]
+    lookup_table_time += [MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)]
+
 for img in range(0,len(big_training_image_matrix)):
-    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+
+    delta_foci_time = big_training_moment_matrix[img][7]
     semi_major_sq = big_training_moment_matrix[img][8]
+    image_size = big_training_moment_matrix[img][10]
     arrival = big_training_param_matrix[img][0]
     log_energy = big_training_param_matrix[img][1]
     impact = big_training_param_matrix[img][2]
+
     image = np.array(big_training_image_matrix[img])
     latent_space = VT_eco @ image
     for r in range(0,rank):
-        lookup_table[r].fill(impact,log_energy,delta_foci_time,weight=latent_space[r])
-    lookup_table_arrival.fill(impact,log_energy,delta_foci_time,weight=arrival)
-    lookup_table_norm.fill(impact,log_energy,delta_foci_time,weight=1.)
+        lookup_table[r].fill(impact,log_energy,weight=latent_space[r])
+
+    time = np.array(big_training_time_matrix[img])
+    latent_space_time = vT_eco @ time
+    for r in range(0,rank):
+        lookup_table_time[r].fill(impact,log_energy,weight=latent_space_time[r])
+
+    lookup_table_arrival.fill(impact,log_energy,weight=arrival)
+    lookup_table_norm.fill(impact,log_energy,weight=1.)
+
+    list_impact += [impact]
+    list_arrival += [arrival]
+    list_log_energy += [log_energy]
+    list_semi_major += [pow(semi_major_sq,0.5)]
+    list_delta_time += [delta_foci_time]
+    list_size += [image_size]
+
 for r in range(0,rank):
     lookup_table[r].divide(lookup_table_norm)
+    lookup_table_time[r].divide(lookup_table_norm)
 lookup_table_arrival.divide(lookup_table_norm)
 
-lookup_table_arrival_rms = MyArray3D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper,z_bins=n_zbins,start_z=time_lower,end_z=time_upper)
+lookup_table_arrival_rms = MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)
 for img in range(0,len(big_training_image_matrix)):
-    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
     semi_major_sq = big_training_moment_matrix[img][8]
     arrival = big_training_param_matrix[img][0]
     log_energy = big_training_param_matrix[img][1]
     impact = big_training_param_matrix[img][2]
-    avg_arrival = lookup_table_arrival.get_bin_content(impact,log_energy,delta_foci_time)
-    lookup_table_arrival_rms.fill(impact,log_energy,delta_foci_time,weight=pow(arrival-avg_arrival,2))
+    avg_arrival = lookup_table_arrival.get_bin_content(impact,log_energy)
+    lookup_table_arrival_rms.fill(impact,log_energy,weight=pow(arrival-avg_arrival,2))
 lookup_table_arrival_rms.divide(lookup_table_norm)
-lookup_table_arrival_rms.waxis = np.sqrt(lookup_table_arrival_rms.waxis)
+lookup_table_arrival_rms.zaxis = np.sqrt(lookup_table_arrival_rms.zaxis)
 
 output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(lookup_table, file)
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_time.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(lookup_table_time, file)
 output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(lookup_table_arrival, file)
@@ -198,6 +370,17 @@ axbig.plot(S_full)
 fig.savefig(f'{ctapipe_output}/output_plots/training_sample_image_signularvalue.png',bbox_inches='tight')
 axbig.remove()
 
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Rank'
+label_y = 'Signular value'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.set_xlim(0,100)
+axbig.plot(s_full)
+fig.savefig(f'{ctapipe_output}/output_plots/training_sample_time_signularvalue.png',bbox_inches='tight')
+axbig.remove()
+
 for r in range(0,rank):
     fig.clf()
     axbig = fig.add_subplot()
@@ -209,10 +392,76 @@ for r in range(0,rank):
     xmax = lookup_table[r].xaxis.max()
     ymin = lookup_table[r].yaxis.min()
     ymax = lookup_table[r].yaxis.max()
-    im = axbig.imshow(lookup_table[r].waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    im = axbig.imshow(lookup_table[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
     cbar = fig.colorbar(im)
     fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}.png',bbox_inches='tight')
     axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'impact'
+label_y = 'arrival'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_impact, list_arrival, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/correlation_impact_vs_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'semi major'
+label_y = 'arrival'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_semi_major, list_arrival, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/correlation_semi_major_vs_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'log energy'
+label_y = 'arrival'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_log_energy, list_arrival, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/correlation_log_energy_vs_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'delta time'
+label_y = 'arrival'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_delta_time, list_arrival, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/correlation_delta_time_vs_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'image size'
+label_y = 'arrival'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+axbig.scatter(list_size, list_arrival, s=90, c='r', marker='+', alpha=0.1)
+fig.savefig(f'{ctapipe_output}/output_plots/correlation_size_vs_arrival.png',bbox_inches='tight')
+axbig.remove()
+
+
+fig.clf()
+axbig = fig.add_subplot()
+label_x = 'Impact [km]'
+label_y = 'log Energy [TeV]'
+axbig.set_xlabel(label_x)
+axbig.set_ylabel(label_y)
+xmin = lookup_table_norm.xaxis.min()
+xmax = lookup_table_norm.xaxis.max()
+ymin = lookup_table_norm.yaxis.min()
+ymax = lookup_table_norm.yaxis.max()
+im = axbig.imshow(lookup_table_norm.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+cbar = fig.colorbar(im)
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_norm.png',bbox_inches='tight')
+axbig.remove()
 
 fig.clf()
 axbig = fig.add_subplot()
@@ -224,7 +473,7 @@ xmin = lookup_table_arrival.xaxis.min()
 xmax = lookup_table_arrival.xaxis.max()
 ymin = lookup_table_arrival.yaxis.min()
 ymax = lookup_table_arrival.yaxis.max()
-im = axbig.imshow(lookup_table_arrival.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival.png',bbox_inches='tight')
 axbig.remove()
@@ -239,45 +488,10 @@ xmin = lookup_table_arrival.xaxis.min()
 xmax = lookup_table_arrival.xaxis.max()
 ymin = lookup_table_arrival.yaxis.min()
 ymax = lookup_table_arrival.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_rms.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival_rms.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_rms.png',bbox_inches='tight')
 axbig.remove()
 
 
 
-## neural network for lookup table
-#
-#nn_input = []
-#nn_output = []
-#for img in range(0,len(big_training_image_matrix)):
-#
-#    img_moment = big_training_moment_matrix[img]
-#    delta_foci_time = img_moment[7]
-#
-#    arrival = big_training_param_matrix[img][0]
-#    log_energy = big_training_param_matrix[img][1]
-#    impact = big_training_param_matrix[img][2]
-#    image = np.array(big_training_image_matrix[img])
-#    latent_space = VT_eco @ image
-#
-#    nn_input += [latent_space+[delta_foci_time]]
-#    nn_output += [[arrival,log_energy,impact]]
-#
-#learning_rate = 0.1
-#n_node = 20
-#nn_lookup_table = NeuralNetwork(nn_input[0],nn_output[0],learning_rate,n_node)
-#training_error = nn_cleaner.train(nn_input, nn_output, 10000)
-#
-#fig.clf()
-#axbig = fig.add_subplot()
-#label_x = 'Iterations'
-#label_y = 'Error'
-#axbig.set_xlabel(label_x)
-#axbig.set_ylabel(label_y)
-#axbig.plot(training_error)
-#fig.savefig(f'{ctapipe_output}/output_plots/training_error.png',bbox_inches='tight')
-#axbig.remove()
-#
-#exit()
-#
