@@ -439,7 +439,8 @@ def image_rotation(input_image_2d, x_axis, y_axis, angle_rad):
             if rot_row>=num_rows: continue
             if rot_col<0: continue
             if rot_col>=num_cols: continue
-            image_rotate[rot_row,rot_col] += input_image_2d[y_idx,x_idx]
+            #image_rotate[rot_row,rot_col] += input_image_2d[y_idx,x_idx]
+            image_rotate[rot_row,rot_col] = input_image_2d[y_idx,x_idx]
 
     return image_rotate
 

@@ -9,6 +9,7 @@ from astropy import units as u
 from scipy.optimize import least_squares, minimize, brute, dual_annealing
 from matplotlib import pyplot as plt
 from matplotlib import colors
+from matplotlib import patheffects
 import pickle
 
 from ctapipe import utils
@@ -33,6 +34,7 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
+font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
@@ -171,7 +173,6 @@ big_training_image_matrix = np.array(big_training_image_matrix)
 big_training_time_matrix = np.array(big_training_time_matrix)
 big_training_param_matrix = np.array(big_training_param_matrix)
 big_training_moment_matrix = np.array(big_training_moment_matrix)
-big_training_time_matrix = big_training_time_matrix * big_training_image_matrix
 
 
 
@@ -179,8 +180,14 @@ print ('loading svd pickle data... ')
 output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
 lookup_table_pkl = pickle.load(open(output_filename, "rb"))
 
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_time.pkl'
+lookup_table_time_pkl = pickle.load(open(output_filename, "rb"))
+
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
 eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+
+output_filename = f'{ctapipe_output}/output_machines/eigen_vectors_time.pkl'
+eigen_vectors_time_pkl = pickle.load(open(output_filename, "rb"))
 
 output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival.pkl'
 lookup_table_arrival_pkl = pickle.load(open(output_filename, "rb"))
@@ -201,7 +208,7 @@ for r in range(0,rank):
     xmax = lookup_table_pkl[r].xaxis.max()
     ymin = lookup_table_pkl[r].yaxis.min()
     ymax = lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(lookup_table_pkl[r].waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    im = axbig.imshow(lookup_table_pkl[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
     cbar = fig.colorbar(im)
     fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t0.png',bbox_inches='tight')
     axbig.remove()
@@ -217,7 +224,7 @@ xmin = lookup_table_arrival_pkl.xaxis.min()
 xmax = lookup_table_arrival_pkl.xaxis.max()
 ymin = lookup_table_arrival_pkl.yaxis.min()
 ymax = lookup_table_arrival_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_pkl.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t0.png',bbox_inches='tight')
 axbig.remove()
@@ -234,7 +241,7 @@ xmin = lookup_table_arrival_rms_pkl.xaxis.min()
 xmax = lookup_table_arrival_rms_pkl.xaxis.max()
 ymin = lookup_table_arrival_rms_pkl.yaxis.min()
 ymax = lookup_table_arrival_rms_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_rms_pkl.waxis[:,:,0].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+im = axbig.imshow(lookup_table_arrival_rms_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_rms_t0.png',bbox_inches='tight')
 axbig.remove()
@@ -285,6 +292,7 @@ arrival_truth = []
 log_energy_hist_guess = []
 impact_hist_guess = []
 arrival_hist_guess = []
+arrival_hist_rms = []
 arrival_hist_error = []
 delta_time = []
 image_size = []
@@ -304,6 +312,17 @@ for img in range(0,len(training_id_list)):
     truth_image = big_training_image_matrix[img]
     truth_image_2d = geom.image_to_cartesian_representation(truth_image)
 
+    truth_time = big_training_time_matrix[img]
+    truth_time_2d = geom.image_to_cartesian_representation(truth_time)
+
+    image_foci_x1 = big_training_moment_matrix[img][2]
+    image_foci_y1 = big_training_moment_matrix[img][3]
+    image_foci_x2 = big_training_moment_matrix[img][4]
+    image_foci_y2 = big_training_moment_matrix[img][5]
+    semi_major_sq = big_training_moment_matrix[img][8]
+    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
+    delta_foci_r = pow(pow(image_foci_x1-image_foci_x2,2)+pow(image_foci_y1-image_foci_y2,2),0.5)
+
     sim_arrival = big_training_param_matrix[img][0]
     sim_log_energy = big_training_param_matrix[img][1]
     sim_impact = big_training_param_matrix[img][2]
@@ -314,26 +333,29 @@ for img in range(0,len(training_id_list)):
     #if img!=2: continue
     if sim_log_energy<0.: continue
 
-    image_foci_x1 = big_training_moment_matrix[img][2]
-    image_foci_y1 = big_training_moment_matrix[img][3]
-    image_foci_x2 = big_training_moment_matrix[img][4]
-    image_foci_y2 = big_training_moment_matrix[img][5]
-    semi_major_sq = big_training_moment_matrix[img][8]
-    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
-    delta_foci_r = pow(pow(image_foci_x1-image_foci_x2,2)+pow(image_foci_y1-image_foci_y2,2),0.5)
-
     latent_space = []
     for r in range(0,rank):
-        latent_space += [lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy,delta_foci_time)]
+        latent_space += [lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
     latent_space = np.array(latent_space)
 
     sim_image = eigen_vectors_pkl.T @ latent_space
     sim_image_2d = geom.image_to_cartesian_representation(sim_image)
 
+    latent_space_time = []
+    for r in range(0,rank):
+        latent_space_time += [lookup_table_time_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
+    latent_space_time = np.array(latent_space_time)
+
+    sim_time = eigen_vectors_time_pkl.T @ latent_space_time
+    sim_time_2d = geom.image_to_cartesian_representation(sim_time)
+
     fit_log_energy = 0.
     fit_impact = 0.1
-    init_params = [fit_log_energy,fit_impact,delta_foci_time]
-    fit_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+    init_params = [fit_log_energy,fit_impact]
+    image_weight = 1./np.sum(np.array(truth_image)*np.array(truth_image))
+    time_weight = 1./np.sum(np.array(truth_time)*np.array(truth_time))
+    fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+    fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
     print (f'init_log_energy = {fit_log_energy}')
     print (f'init_impact = {fit_impact}')
     print (f'init_chi2 = {fit_chi2}')
@@ -343,8 +365,9 @@ for img in range(0,len(training_id_list)):
         for idx_y  in range(0,n_bins_energy):
             try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
             try_impact = lookup_table_pkl[0].xaxis[idx_x]
-            init_params = [try_log_energy,try_impact,delta_foci_time]
-            try_chi2 = sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+            init_params = [try_log_energy,try_impact]
+            try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+            try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
             if try_chi2<fit_chi2:
                 fit_chi2 = try_chi2
                 fit_log_energy = try_log_energy
@@ -353,7 +376,8 @@ for img in range(0,len(training_id_list)):
     print (f'fit_impact = {fit_impact}')
     print (f'fit_chi2 = {fit_chi2}')
 
-    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy,delta_foci_time)
+    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy)
+    fit_arrival_rms = lookup_table_arrival_rms_pkl.get_bin_content(fit_impact,fit_log_energy)
 
     log_energy_truth += [sim_log_energy]
     impact_truth += [sim_impact]
@@ -361,6 +385,7 @@ for img in range(0,len(training_id_list)):
     log_energy_hist_guess += [fit_log_energy]
     impact_hist_guess += [fit_impact]
     arrival_hist_guess += [fit_arrival]
+    arrival_hist_rms += [fit_arrival_rms]
     arrival_hist_error += [fit_arrival-sim_arrival]
     delta_time += [delta_foci_time]
     semi_major += [pow(semi_major_sq,0.5)]
@@ -370,7 +395,7 @@ for img in range(0,len(training_id_list)):
         size += sim_image[pix]
     image_size += [size]
 
-    if abs(fit_arrival-sim_arrival)<0.05:
+    if abs(fit_arrival-sim_arrival)<0.03:
         delta_time_good += [delta_foci_time]
         image_size_good += [size]
     else:
@@ -379,23 +404,55 @@ for img in range(0,len(training_id_list)):
 
     fit_latent_space = []
     for r in range(0,rank):
-        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_impact,fit_log_energy,delta_foci_time)]
+        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
+
+    fit_latent_space_time = []
+    for r in range(0,rank):
+        fit_latent_space_time += [lookup_table_time_pkl[r].get_bin_content(fit_impact,fit_log_energy)]
+    fit_latent_space_time = np.array(fit_latent_space_time)
 
     fit_image = eigen_vectors_pkl.T @ fit_latent_space
     fit_image_2d = geom.image_to_cartesian_representation(fit_image)
 
+    fit_time = eigen_vectors_time_pkl.T @ fit_latent_space_time
+    fit_time_2d = geom.image_to_cartesian_representation(fit_time)
+
     if abs(fit_arrival-sim_arrival)>0.05:
-        #fig.clf()
-        #axbig = fig.add_subplot()
-        #label_x = 'X'
-        #label_y = 'Y'
-        #axbig.set_xlabel(label_x)
-        #axbig.set_ylabel(label_y)
-        #im = axbig.imshow(fit_image_2d,origin='lower')
-        #cbar = fig.colorbar(im)
-        #fig.savefig(f'{ctapipe_output}/output_plots/image_{img}_fit.png',bbox_inches='tight')
-        #axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(fit_image_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'fit impact = %0.2f'%(fit_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_fit.png',bbox_inches='tight')
+        axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(fit_time_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'fit impact = %0.2f'%(fit_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_fit.png',bbox_inches='tight')
+        axbig.remove()
 
         fig.clf()
         axbig = fig.add_subplot()
@@ -405,7 +462,30 @@ for img in range(0,len(training_id_list)):
         axbig.set_ylabel(label_y)
         im = axbig.imshow(sim_image_2d,origin='lower')
         cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
         fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_sim.png',bbox_inches='tight')
+        axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(sim_time_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_sim.png',bbox_inches='tight')
         axbig.remove()
 
         fig.clf()
@@ -416,7 +496,30 @@ for img in range(0,len(training_id_list)):
         axbig.set_ylabel(label_y)
         im = axbig.imshow(truth_image_2d,origin='lower')
         cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
         fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_truth.png',bbox_inches='tight')
+        axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(truth_time_2d,origin='lower')
+        cbar = fig.colorbar(im)
+        txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+        txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+        fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_truth.png',bbox_inches='tight')
         axbig.remove()
 
         #exit()
@@ -453,7 +556,17 @@ for img in range(0,len(training_id_list)):
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'impact distance truth'
+    label_x = 'arrival rms'
+    label_y = 'arrival error'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(arrival_hist_rms, arrival_hist_error, s=90, c='r', marker='+')
+    fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_rms.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'impact distance guess'
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
@@ -463,7 +576,7 @@ for img in range(0,len(training_id_list)):
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'log energy truth'
+    label_x = 'log energy guess'
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
@@ -494,7 +607,7 @@ for img in range(0,len(training_id_list)):
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'image size'
+    label_x = 'semi major'
     label_y = 'arrival error'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)

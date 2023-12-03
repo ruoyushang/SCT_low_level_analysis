@@ -264,11 +264,11 @@ cbar = fig.colorbar(im)
 fig.savefig(f'{ctapipe_output}/output_plots/hist_nn_lookup_table_arrival.png',bbox_inches='tight')
 axbig.remove()
 
-exit()
+#exit()
 
 
 print ('Compute big matrix SVD...')
-rank = 10
+rank = 50
 U_full, S_full, VT_full = np.linalg.svd(big_training_image_matrix,full_matrices=False)
 U_eco = U_full[:, :rank]
 VT_eco = VT_full[:rank, :]
