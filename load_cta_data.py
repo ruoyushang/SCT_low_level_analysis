@@ -498,7 +498,7 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training=False, analysis_mode=0, min_energy=0.1, max_energy=1000., max_evt=1e10):
+def load_training_samples(training_sample_path, is_training=False, use_truth=False, do_cleaning=True, do_reposition=False, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     fig, ax = plt.subplots()
     figsize_x = 8.6
@@ -509,26 +509,6 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
     ana_tag = 'testing_sample'
     if is_training:
         ana_tag = 'training_sample'
-
-    use_truth = False
-    do_cleaning = True
-    do_reposition = False
-    if analysis_mode==1:
-        use_truth = False
-        do_cleaning = False
-        do_reposition = False
-    if analysis_mode==2:
-        use_truth = True
-        do_cleaning = False
-        do_reposition = True
-    if analysis_mode==3:
-        use_truth = True
-        do_cleaning = False
-        do_reposition = False
-    if analysis_mode==4:
-        use_truth = False
-        do_cleaning = True
-        do_reposition = True
 
     if use_truth:
         ana_tag += '_truth'
@@ -543,276 +523,279 @@ def load_training_samples(training_sample_path, is_training=False, analysis_mode
     else:
         ana_tag += '_origin'
 
-    for path in range(0,len(training_sample_path)):
     
-        id_list = []
-        truth_shower_position_matrix = []
-        cam_axes = []
-        telesc_position_matrix = []
-        big_image_matrix = []
-        big_time_matrix = []
-        big_param_matrix = []
-        big_moment_matrix = []
-        hillas_param_matrix = []
+    id_list = []
+    truth_shower_position_matrix = []
+    cam_axes = []
+    telesc_position_matrix = []
+    big_image_matrix = []
+    big_time_matrix = []
+    big_param_matrix = []
+    big_moment_matrix = []
+    hillas_param_matrix = []
 
-        print (f'loading file: {training_sample_path[path]}')
-        source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
+    print (f'loading file: {training_sample_path}')
+    source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
     
-        # Explore the instrument description
-        subarray = source.subarray
-        #print (subarray.to_table())
+    # Explore the instrument description
+    subarray = source.subarray
+    #print (subarray.to_table())
     
-        ob_keys = source.observation_blocks.keys()
-        run_id = list(ob_keys)[0]
-        print (f'run_id = {run_id}')
+    ob_keys = source.observation_blocks.keys()
+    run_id = list(ob_keys)[0]
+    print (f'run_id = {run_id}')
     
-        tel_pointing_alt = float(source.observation_blocks[run_id].subarray_pointing_lat/u.rad)
-        tel_pointing_az = float(source.observation_blocks[run_id].subarray_pointing_lon/u.rad)
-        if tel_pointing_alt>1.*math.pi:
-            tel_pointing_alt = tel_pointing_alt-2.*math.pi
-        if tel_pointing_az>1.*math.pi:
-            tel_pointing_az = tel_pointing_az-2.*math.pi
-        
-        # Apply some calibration and trace integration
-        calib = CameraCalibrator(subarray=subarray)
-        image_processor = ImageProcessor(subarray=subarray)
-        shower_processor = ShowerProcessor(subarray=subarray)
+    tel_pointing_alt = float(source.observation_blocks[run_id].subarray_pointing_lat/u.rad)
+    tel_pointing_az = float(source.observation_blocks[run_id].subarray_pointing_lon/u.rad)
+    if tel_pointing_alt>1.*math.pi:
+        tel_pointing_alt = tel_pointing_alt-2.*math.pi
+    if tel_pointing_az>1.*math.pi:
+        tel_pointing_az = tel_pointing_az-2.*math.pi
     
-        evt_idx = 0
-        for event in source:
-        
-            if max_evt==evt_idx: continue
-
-            event_id = event.index['event_id']
+    # Apply some calibration and trace integration
+    calib = CameraCalibrator(subarray=subarray)
+    image_processor = ImageProcessor(subarray=subarray)
+    shower_processor = ShowerProcessor(subarray=subarray)
     
-            ntel = len(event.r0.tel)
-        
-            shower_energy = float(event.simulation.shower.energy/u.TeV)
-            shower_core_x = float(event.simulation.shower.core_x/u.m)
-            shower_core_y = float(event.simulation.shower.core_y/u.m)
-            shower_alt = float(event.simulation.shower.alt/u.rad)
-            shower_az = float(event.simulation.shower.az/u.rad)
-            shower_height = float(event.simulation.shower.h_first_int/u.m)
-            shower_x_max = float(event.simulation.shower.x_max/(u.g/(u.cm*u.cm)))
-            if shower_alt>1.*math.pi:
-                shower_alt = shower_alt-2.*math.pi
-            if shower_az>1.*math.pi:
-                shower_az = shower_az-2.*math.pi
+    evt_idx = -1
+    for event in source:
     
-            if shower_energy<min_energy: continue
-            if shower_energy>max_energy: continue
+        evt_idx += 1
+
+        if max_evt==evt_idx: continue
+        if not is_training:
+            if (evt_idx % 2)==0: continue
+
+        event_id = event.index['event_id']
     
-            calib(event)  # fills in r1, dl0, and dl1
-            image_processor(event)
-            shower_processor(event)
-            ranked_tel_key_array = rank_brightest_telescope(event.r0.tel)
+        ntel = len(event.r0.tel)
+    
+        shower_energy = float(event.simulation.shower.energy/u.TeV)
+        shower_core_x = float(event.simulation.shower.core_x/u.m)
+        shower_core_y = float(event.simulation.shower.core_y/u.m)
+        shower_alt = float(event.simulation.shower.alt/u.rad)
+        shower_az = float(event.simulation.shower.az/u.rad)
+        shower_height = float(event.simulation.shower.h_first_int/u.m)
+        shower_x_max = float(event.simulation.shower.x_max/(u.g/(u.cm*u.cm)))
+        if shower_alt>1.*math.pi:
+            shower_alt = shower_alt-2.*math.pi
+        if shower_az>1.*math.pi:
+            shower_az = shower_az-2.*math.pi
+    
+        if shower_energy<min_energy: continue
+        if shower_energy>max_energy: continue
+    
+        calib(event)  # fills in r1, dl0, and dl1
+        image_processor(event)
+        shower_processor(event)
+        ranked_tel_key_array = rank_brightest_telescope(event.r0.tel)
 
-            #stereo = event.dl2.stereo.geometry["HillasReconstructor"]
-            #hillas_shower_alt = 0.
-            #hillas_shower_az = 0.
-            #hillas_shower_height = 0.
-            #hillas_shower_core_x = 0.
-            #hillas_shower_core_y = 0.
-            #if stereo.is_valid:
-            #    hillas_shower_alt = float(stereo.alt/u.rad)
-            #    hillas_shower_az = float(stereo.az/u.rad)
-            #    hillas_shower_height = float(stereo.h_max/u.m)
-            #    hillas_shower_core_x = float(stereo.core_x/u.m)
-            #    hillas_shower_core_y = float(stereo.core_y/u.m)
-            #    print ('Hillas Reconstruction is successful.')
-            #else:
-            #    print ('Hillas Reconstruction is invalid.')
+        #stereo = event.dl2.stereo.geometry["HillasReconstructor"]
+        #hillas_shower_alt = 0.
+        #hillas_shower_az = 0.
+        #hillas_shower_height = 0.
+        #hillas_shower_core_x = 0.
+        #hillas_shower_core_y = 0.
+        #if stereo.is_valid:
+        #    hillas_shower_alt = float(stereo.alt/u.rad)
+        #    hillas_shower_az = float(stereo.az/u.rad)
+        #    hillas_shower_height = float(stereo.h_max/u.m)
+        #    hillas_shower_core_x = float(stereo.core_x/u.m)
+        #    hillas_shower_core_y = float(stereo.core_y/u.m)
+        #    print ('Hillas Reconstruction is successful.')
+        #else:
+        #    print ('Hillas Reconstruction is invalid.')
     
 
-            mean_tel_x = 0.
-            mean_tel_y = 0.
-            n_tel = 0.
-            for tel_idx in range(0,len(ranked_tel_key_array)):
-                tel_key = ranked_tel_key_array[tel_idx][0]
-                tel_x = float(subarray.positions[tel_key][0]/u.m)
-                tel_y = float(subarray.positions[tel_key][1]/u.m)
-                mean_tel_x += tel_x
-                mean_tel_y += tel_y
-                n_tel += 1.
-            mean_tel_x = mean_tel_x/n_tel
-            mean_tel_y = mean_tel_y/n_tel
+        mean_tel_x = 0.
+        mean_tel_y = 0.
+        n_tel = 0.
+        for tel_idx in range(0,len(ranked_tel_key_array)):
+            tel_key = ranked_tel_key_array[tel_idx][0]
+            tel_x = float(subarray.positions[tel_key][0]/u.m)
+            tel_y = float(subarray.positions[tel_key][1]/u.m)
+            mean_tel_x += tel_x
+            mean_tel_y += tel_y
+            n_tel += 1.
+        mean_tel_x = mean_tel_x/n_tel
+        mean_tel_y = mean_tel_y/n_tel
 
-            list_img_a = []
-            list_img_b = []
-            list_img_w = []
-        
-            for tel_idx in range(0,len(ranked_tel_key_array)):
+        list_img_a = []
+        list_img_b = []
+        list_img_w = []
     
-                tel_key = ranked_tel_key_array[tel_idx][0]
-                tel_instrument = subarray.tel[tel_key]
+        for tel_idx in range(0,len(ranked_tel_key_array)):
     
-                sim_tel = event.simulation.tel[tel_key]
-                sim_tel_impact = float(sim_tel.impact['distance']/u.m)
-                true_image = sim_tel.true_image
-                #true_time = sim_tel.peak_time # simulation camera container does not have peak_time
-
-                dl1tel = event.dl1.tel[tel_key]
-                noisy_image = dl1tel.image
-                noisy_time = dl1tel.peak_time
-        
-                # Define a camera geometry
-                geom = subarray.tel[tel_key].camera.geometry
-                # The CameraGeometry has functions to convert the 1d image arrays to 2d arrays and back to the 1d array
-                analysis_image_2d = geom.image_to_cartesian_representation(noisy_image)
-                if use_truth:
-                    analysis_image_2d = geom.image_to_cartesian_representation(true_image)
-                analysis_time_2d = geom.image_to_cartesian_representation(noisy_time)
-
-                num_rows, num_cols = analysis_image_2d.shape
-                for x_idx in range(0,num_cols):
-                    for y_idx in range(0,num_rows):
-                        if math.isnan(analysis_image_2d[y_idx,x_idx]): 
-                            analysis_image_2d[y_idx,x_idx] = 0.
-                            analysis_time_2d[y_idx,x_idx] = 0.
-
-                x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
-
-                # image cleaning
-                if do_cleaning:
-                    analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
-                    image_mask = np.zeros_like(analysis_image_smooth)
-                    image_mask = find_mask(analysis_image_smooth)
-                    renormalize_background(analysis_image_smooth,image_mask)
-                    image_mask = find_mask(analysis_image_smooth)
-                    renormalize_background(analysis_image_2d,image_mask)
-                    analysis_image_2d = clean_image(analysis_image_2d,image_mask)
-
-                for x_idx in range(0,num_cols):
-                    for y_idx in range(0,num_rows):
-                        if analysis_image_2d[y_idx,x_idx]==0.: 
-                            analysis_time_2d[y_idx,x_idx] = 0.
-
-                image_size = np.sum(analysis_image_2d)
-                if image_size<=0.: continue
-
-                analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,50.)
-
-                analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
-                analysis_time_1d = geom.image_from_cartesian_representation(analysis_time_2d)
+            tel_key = ranked_tel_key_array[tel_idx][0]
+            tel_instrument = subarray.tel[tel_key]
     
-                tel_focal_length = float(geom.frame.focal_length/u.m)
-                tel_x = float(subarray.positions[tel_key][0]/u.m)
-                tel_y = float(subarray.positions[tel_key][1]/u.m)
+            sim_tel = event.simulation.tel[tel_key]
+            sim_tel_impact = float(sim_tel.impact['distance']/u.m)
+            true_image = sim_tel.true_image
+            #true_time = sim_tel.peak_time # simulation camera container does not have peak_time
 
-                tel_info = [tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]
-                array_coord = [shower_alt,shower_az,shower_core_x,shower_core_y]
-                tel_coord = convert_array_coord_to_tel_coord(array_coord,tel_info)
-                evt_cam_x = tel_coord[0]
-                evt_cam_y = tel_coord[1]
-                evt_impact_x = tel_coord[2]
-                evt_impact_y = tel_coord[3]
-
-                image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_2d, analysis_time_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
-                image_foci_x = image_foci_x1
-                image_foci_y = image_foci_y1
-
-                for x_idx in range(0,num_cols):
-                    for y_idx in range(0,num_rows):
-                        if analysis_time_2d[y_idx,x_idx]==0.: continue
-                        analysis_time_2d[y_idx,x_idx] = analysis_time_2d[y_idx,x_idx]-center_time
-
-                if do_reposition:
-                    analysis_image_recenter = np.zeros_like(analysis_image_2d)
-                    analysis_time_recenter = np.zeros_like(analysis_time_2d)
-                    shift_x = -image_center_x
-                    shift_y = -image_center_y
-                    analysis_image_recenter = image_translation(analysis_image_2d, x_axis, y_axis, shift_x, shift_y)
-                    analysis_time_recenter = image_translation(analysis_time_2d, x_axis, y_axis, shift_x, shift_y)
-
-                    analysis_image_rotate = np.zeros_like(analysis_image_2d)
-                    analysis_time_rotate = np.zeros_like(analysis_time_2d)
-                    angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
-                    analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
-                    analysis_time_rotate = image_rotation(analysis_time_recenter, x_axis, y_axis, angle_rad)
+            dl1tel = event.dl1.tel[tel_key]
+            noisy_image = dl1tel.image
+            noisy_time = dl1tel.peak_time
     
-                    analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
-                    analysis_time_rotate_1d = geom.image_from_cartesian_representation(analysis_time_rotate)
+            # Define a camera geometry
+            geom = subarray.tel[tel_key].camera.geometry
+            # The CameraGeometry has functions to convert the 1d image arrays to 2d arrays and back to the 1d array
+            analysis_image_2d = geom.image_to_cartesian_representation(noisy_image)
+            if use_truth:
+                analysis_image_2d = geom.image_to_cartesian_representation(true_image)
+            analysis_time_2d = geom.image_to_cartesian_representation(noisy_time)
 
-                
-                #hillas_params = hillas_parameters(geom, analysis_image_1d)
-                #hillas_intensity = hillas_params['intensity']
-                #hillas_r = hillas_params['r']/u.m
-                #hillas_length = hillas_params['length']/u.m
-                #hillas_width = hillas_params['width']/u.m
+            num_rows, num_cols = analysis_image_2d.shape
+            for x_idx in range(0,num_cols):
+                for y_idx in range(0,num_rows):
+                    if math.isnan(analysis_image_2d[y_idx,x_idx]): 
+                        analysis_image_2d[y_idx,x_idx] = 0.
+                        analysis_time_2d[y_idx,x_idx] = 0.
 
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #im = axbig.imshow(analysis_image_2d,origin='lower')
-                #cbar = fig.colorbar(im)
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_original.png',bbox_inches='tight')
-                #axbig.remove()
+            x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
+
+            # image cleaning
+            if do_cleaning:
+                analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
+                image_mask = np.zeros_like(analysis_image_smooth)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_smooth,image_mask)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_2d,image_mask)
+                analysis_image_2d = clean_image(analysis_image_2d,image_mask)
+
+            for x_idx in range(0,num_cols):
+                for y_idx in range(0,num_rows):
+                    if analysis_image_2d[y_idx,x_idx]==0.: 
+                        analysis_time_2d[y_idx,x_idx] = 0.
+
+            image_size = np.sum(analysis_image_2d)
+            if image_size<=0.: continue
+
+            analysis_time_2d = smooth_time_image(analysis_time_2d,analysis_image_2d,x_axis,y_axis,50.)
+
+            analysis_image_1d = geom.image_from_cartesian_representation(analysis_image_2d)
     
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #im = axbig.imshow(analysis_image_recenter,origin='lower')
-                #cbar = fig.colorbar(im)
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_recenter.png',bbox_inches='tight')
-                #axbig.remove()
+            tel_focal_length = float(geom.frame.focal_length/u.m)
+            tel_x = float(subarray.positions[tel_key][0]/u.m)
+            tel_y = float(subarray.positions[tel_key][1]/u.m)
+
+            tel_info = [tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]
+            array_coord = [shower_alt,shower_az,shower_core_x,shower_core_y]
+            tel_coord = convert_array_coord_to_tel_coord(array_coord,tel_info)
+            evt_cam_x = tel_coord[0]
+            evt_cam_y = tel_coord[1]
+            evt_impact_x = tel_coord[2]
+            evt_impact_y = tel_coord[3]
+
+            image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(analysis_image_2d, analysis_time_2d, x_axis, y_axis, guided=True, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
+            image_foci_x = image_foci_x1
+            image_foci_y = image_foci_y1
+
+            for x_idx in range(0,num_cols):
+                for y_idx in range(0,num_rows):
+                    if analysis_time_2d[y_idx,x_idx]==0.: continue
+                    analysis_time_2d[y_idx,x_idx] = analysis_time_2d[y_idx,x_idx]-center_time
+
+            analysis_time_1d = geom.image_from_cartesian_representation(analysis_time_2d)
+
+            if do_reposition:
+                analysis_image_recenter = np.zeros_like(analysis_image_2d)
+                analysis_time_recenter = np.zeros_like(analysis_time_2d)
+                shift_x = -image_center_x
+                shift_y = -image_center_y
+                analysis_image_recenter = image_translation(analysis_image_2d, x_axis, y_axis, shift_x, shift_y)
+                analysis_time_recenter = image_translation(analysis_time_2d, x_axis, y_axis, shift_x, shift_y)
+
+                analysis_image_rotate = np.zeros_like(analysis_image_2d)
+                analysis_time_rotate = np.zeros_like(analysis_time_2d)
+                angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+                analysis_image_rotate = image_rotation(analysis_image_recenter, x_axis, y_axis, angle_rad)
+                analysis_time_rotate = image_rotation(analysis_time_recenter, x_axis, y_axis, angle_rad)
     
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #im = axbig.imshow(analysis_image_rotate,origin='lower')
-                #cbar = fig.colorbar(im)
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_rotate.png',bbox_inches='tight')
-                #axbig.remove()
+                analysis_image_rotate_1d = geom.image_from_cartesian_representation(analysis_image_rotate)
+                analysis_time_rotate_1d = geom.image_from_cartesian_representation(analysis_time_rotate)
 
-                #fig.clf()
-                #axbig = fig.add_subplot()
-                #label_x = 'X'
-                #label_y = 'Y'
-                #axbig.set_xlabel(label_x)
-                #axbig.set_ylabel(label_y)
-                #im = axbig.imshow(analysis_time_rotate,origin='lower')
-                #cbar = fig.colorbar(im)
-                #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_time_rotate.png',bbox_inches='tight')
-                #axbig.remove()
-                #if evt_idx==5: exit()
+            
+            #hillas_params = hillas_parameters(geom, analysis_image_1d)
+            #hillas_intensity = hillas_params['intensity']
+            #hillas_r = hillas_params['r']/u.m
+            #hillas_length = hillas_params['length']/u.m
+            #hillas_width = hillas_params['width']/u.m
+
+            #fig.clf()
+            #axbig = fig.add_subplot()
+            #label_x = 'X'
+            #label_y = 'Y'
+            #axbig.set_xlabel(label_x)
+            #axbig.set_ylabel(label_y)
+            #im = axbig.imshow(analysis_image_2d,origin='lower')
+            #cbar = fig.colorbar(im)
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_original.png',bbox_inches='tight')
+            #axbig.remove()
     
-                evt_truth_energy = math.log10(shower_energy)
-                evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
-                evt_truth_height = shower_height
-                evt_truth_x_max = shower_x_max
+            #fig.clf()
+            #axbig = fig.add_subplot()
+            #label_x = 'X'
+            #label_y = 'Y'
+            #axbig.set_xlabel(label_x)
+            #axbig.set_ylabel(label_y)
+            #im = axbig.imshow(analysis_image_recenter,origin='lower')
+            #cbar = fig.colorbar(im)
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_recenter.png',bbox_inches='tight')
+            #axbig.remove()
+    
+            #fig.clf()
+            #axbig = fig.add_subplot()
+            #label_x = 'X'
+            #label_y = 'Y'
+            #axbig.set_xlabel(label_x)
+            #axbig.set_ylabel(label_y)
+            #im = axbig.imshow(analysis_image_rotate,origin='lower')
+            #cbar = fig.colorbar(im)
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_rotate.png',bbox_inches='tight')
+            #axbig.remove()
 
-                evt_truth_arrival = pow(pow(evt_cam_x-image_center_x,2)+pow(evt_cam_y-image_center_y,2),0.5)
+            #fig.clf()
+            #axbig = fig.add_subplot()
+            #label_x = 'X'
+            #label_y = 'Y'
+            #axbig.set_xlabel(label_x)
+            #axbig.set_ylabel(label_y)
+            #im = axbig.imshow(analysis_time_rotate,origin='lower')
+            #cbar = fig.colorbar(im)
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_time_rotate.png',bbox_inches='tight')
+            #axbig.remove()
+            #if evt_idx==5: exit()
+    
+            evt_truth_energy = math.log10(shower_energy)
+            evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
+            evt_truth_height = shower_height
+            evt_truth_x_max = shower_x_max
 
-                id_list += [[run_id,event_id,tel_key,subarray]]
-                telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
-                if do_reposition:
-                    big_image_matrix += [analysis_image_rotate_1d]
-                    big_time_matrix += [analysis_time_rotate_1d]
-                else:
-                    big_image_matrix += [analysis_image_1d]
-                    big_time_matrix += [analysis_time_1d]
-                big_param_matrix += [[evt_truth_arrival,evt_truth_energy,evt_truth_impact]]
-                big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq,image_size]]
-                #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
-                truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
-                cam_axes += [[x_axis,y_axis]]
+            evt_truth_arrival = pow(pow(evt_cam_x-image_center_x,2)+pow(evt_cam_y-image_center_y,2),0.5)
 
-        
-            evt_idx += 1
+            id_list += [[run_id,event_id,tel_key,subarray]]
+            telesc_position_matrix += [[tel_pointing_alt,tel_pointing_az,tel_x,tel_y,tel_focal_length]]
+            if do_reposition:
+                big_image_matrix += [analysis_image_rotate_1d]
+                big_time_matrix += [analysis_time_rotate_1d]
+            else:
+                big_image_matrix += [analysis_image_1d]
+                big_time_matrix += [analysis_time_1d]
+            big_param_matrix += [[evt_truth_arrival,evt_truth_energy,evt_truth_impact]]
+            big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq,image_size]]
+            #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
+            truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
+            cam_axes += [[x_axis,y_axis]]
 
-        output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
-        print (f'writing file to {output_filename}')
-        with open(output_filename,"wb") as file:
-            pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_time_matrix, big_param_matrix, big_moment_matrix], file)
+    
+
+    output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
+    print (f'writing file to {output_filename}')
+    with open(output_filename,"wb") as file:
+        pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_time_matrix, big_param_matrix, big_moment_matrix], file)
 
 
 class NeuralNetwork:

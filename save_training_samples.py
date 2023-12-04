@@ -26,19 +26,11 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean_plots.sh'])
 subprocess.call(['sh', './clean_samples.sh'])
 
-training_sample_path = []
-#training_sample_path += [get_dataset_path("gamma_40deg_0deg_run1933___cta-prod3-sct_desert-2150m-Paranal-SCT_cone10.simtel.gz")]
-#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run876___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run860___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run859___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-
-with open('train_sim_files.txt', 'r') as file:
+with open('sim_files.txt', 'r') as file:
     for line in file:
-        training_sample_path += [get_dataset_path(line.strip('\n'))]
-
-print ('loading training data... ')
-load_training_samples(training_sample_path,is_training=True,analysis_mode=4,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+        training_sample_path = get_dataset_path(line.strip('\n'))
+        load_training_samples(training_sample_path,is_training=True,use_truth=False,do_cleaning=True,do_reposition=True,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+        load_training_samples(training_sample_path,is_training=False,use_truth=False,do_cleaning=True,do_reposition=False,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 
 
 

@@ -21,9 +21,14 @@ from ctapipe.io import EventSource, SimTelEventSource, HDF5TableWriter
 from ctapipe.visualization import CameraDisplay
 
 from load_cta_data import load_training_samples
+from load_cta_data import rank_brightest_telescope
+from load_cta_data import image_translation
+from load_cta_data import image_rotation
 from load_cta_data import NeuralNetwork
-from load_cta_data import MyArray2D
 from load_cta_data import sqaure_difference_between_1d_images
+from load_cta_data import find_image_moments_guided
+from load_cta_data import get_average
+from load_cta_data import MyArray2D
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean_plots.sh'])
@@ -38,7 +43,7 @@ font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'r
 
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-with open('train_sim_files.txt', 'r') as file:
+with open('sim_files.txt', 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
 
@@ -55,8 +60,8 @@ for path in range(0,len(training_sample_path)):
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_noisy_clean_repose_run{run_id}.pkl'
-    #output_filename = f'{ctapipe_output}/output_samples/training_sample_truth_dirty_repose_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/testing_sample_noisy_clean_origin_run{run_id}.pkl'
+    #output_filename = f'{ctapipe_output}/output_samples/training_sample_noisy_clean_repose_run{run_id}.pkl'
     print (f'loading pickle trainging sample data: {output_filename}')
     if not os.path.exists(output_filename):
         print (f'file does not exist.')
@@ -308,6 +313,7 @@ for img in range(0,len(training_id_list)):
     current_tel_id = training_id_list[img][2]
     subarray = training_id_list[img][3]
     geom = subarray.tel[current_tel_id].camera.geometry
+    cam_axes = train_cam_axes[img]
 
     truth_image = big_training_image_matrix[img]
     truth_image_2d = geom.image_to_cartesian_representation(truth_image)
@@ -315,23 +321,51 @@ for img in range(0,len(training_id_list)):
     truth_time = big_training_time_matrix[img]
     truth_time_2d = geom.image_to_cartesian_representation(truth_time)
 
-    image_foci_x1 = big_training_moment_matrix[img][2]
-    image_foci_y1 = big_training_moment_matrix[img][3]
-    image_foci_x2 = big_training_moment_matrix[img][4]
-    image_foci_y2 = big_training_moment_matrix[img][5]
-    semi_major_sq = big_training_moment_matrix[img][8]
-    delta_foci_time = np.log10(max(1e-3,big_training_moment_matrix[img][7]))
-    delta_foci_r = pow(pow(image_foci_x1-image_foci_x2,2)+pow(image_foci_y1-image_foci_y2,2),0.5)
+    num_rows, num_cols = truth_image_2d.shape
+    for row in range(0,num_rows):
+        for col in range(0,num_cols):
+            if math.isnan(truth_image_2d[row,col]): 
+                truth_image_2d[row,col] = 0.
+                truth_time_2d[row,col] = 0.
+
+    size = np.sum(truth_image)
+    if size<=0.: continue
 
     sim_arrival = big_training_param_matrix[img][0]
     sim_log_energy = big_training_param_matrix[img][1]
     sim_impact = big_training_param_matrix[img][2]
     print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
     print (f'img = {img}')
+    print (f'image_size = {size}')
     print (f'sim_log_energy = {sim_log_energy}')
     print (f'sim_impact = {sim_impact}')
     #if img!=2: continue
     if sim_log_energy<0.: continue
+
+
+    image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(truth_image_2d, truth_time_2d, cam_axes[0], cam_axes[1])
+
+    image_foci_x = image_foci_x1
+    image_foci_y = image_foci_y1
+    image_data_recenter = np.zeros_like(truth_image_2d)
+    time_data_recenter = np.zeros_like(truth_time_2d)
+    shift_x = -image_center_x
+    shift_y = -image_center_y
+    image_data_recenter = image_translation(truth_image_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
+    time_data_recenter = image_translation(truth_time_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
+
+    image_data_rotate = np.zeros_like(truth_image_2d)
+    time_data_rotate = np.zeros_like(truth_time_2d)
+    angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+    image_data_rotate = image_rotation(image_data_recenter, cam_axes[0], cam_axes[1], angle_rad)
+    time_data_rotate = image_rotation(time_data_recenter, cam_axes[0], cam_axes[1], angle_rad)
+    
+    image_data_rotate_1d = geom.image_from_cartesian_representation(image_data_rotate)
+    time_data_rotate_1d = geom.image_from_cartesian_representation(time_data_rotate)
+
+    print (f'shift_x = {shift_x}')
+    print (f'shift_y = {shift_y}')
+    print (f'angle_rad = {angle_rad}')
 
     latent_space = []
     for r in range(0,rank):
@@ -354,8 +388,10 @@ for img in range(0,len(training_id_list)):
     init_params = [fit_log_energy,fit_impact]
     image_weight = 1./np.sum(np.array(truth_image)*np.array(truth_image))
     time_weight = 1./np.sum(np.array(truth_time)*np.array(truth_time))
-    fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
-    fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
+    #fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+    #fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
+    fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,image_data_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
+    fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,time_data_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
     print (f'init_log_energy = {fit_log_energy}')
     print (f'init_impact = {fit_impact}')
     print (f'init_chi2 = {fit_chi2}')
@@ -366,8 +402,10 @@ for img in range(0,len(training_id_list)):
             try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
             try_impact = lookup_table_pkl[0].xaxis[idx_x]
             init_params = [try_log_energy,try_impact]
-            try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
-            try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
+            #try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_image,lookup_table_pkl,eigen_vectors_pkl)
+            #try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,truth_time,lookup_table_time_pkl,eigen_vectors_time_pkl)
+            try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,image_data_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
+            try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,train_cam_axes[img],geom,time_data_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
             if try_chi2<fit_chi2:
                 fit_chi2 = try_chi2
                 fit_log_energy = try_log_energy
@@ -379,6 +417,10 @@ for img in range(0,len(training_id_list)):
     fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy)
     fit_arrival_rms = lookup_table_arrival_rms_pkl.get_bin_content(fit_impact,fit_log_energy)
 
+    print (f'sim_arrival = {sim_arrival}')
+    print (f'fit_arrival = {fit_arrival}')
+
+    image_size += [size]
     log_energy_truth += [sim_log_energy]
     impact_truth += [sim_impact]
     arrival_truth += [sim_arrival]
@@ -389,11 +431,6 @@ for img in range(0,len(training_id_list)):
     arrival_hist_error += [fit_arrival-sim_arrival]
     delta_time += [delta_foci_time]
     semi_major += [pow(semi_major_sq,0.5)]
-
-    size = 0.
-    for pix in range(0,len(sim_image)):
-        size += sim_image[pix]
-    image_size += [size]
 
     if abs(fit_arrival-sim_arrival)<0.03:
         delta_time_good += [delta_foci_time]
@@ -494,7 +531,8 @@ for img in range(0,len(training_id_list)):
         label_y = 'Y'
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
-        im = axbig.imshow(truth_image_2d,origin='lower')
+        #im = axbig.imshow(truth_image_2d,origin='lower')
+        im = axbig.imshow(image_data_rotate,origin='lower')
         cbar = fig.colorbar(im)
         txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
         txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
@@ -511,7 +549,8 @@ for img in range(0,len(training_id_list)):
         label_y = 'Y'
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
-        im = axbig.imshow(truth_time_2d,origin='lower')
+        #im = axbig.imshow(truth_time_2d,origin='lower')
+        im = axbig.imshow(time_data_rotate,origin='lower')
         cbar = fig.colorbar(im)
         txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
         txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
