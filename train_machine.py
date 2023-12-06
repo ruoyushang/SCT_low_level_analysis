@@ -36,7 +36,7 @@ fig.set_figwidth(figsize_x)
 
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-with open('train_sim_files.txt', 'r') as file:
+with open('sim_files.txt', 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
 
@@ -232,14 +232,10 @@ fig.savefig(f'{ctapipe_output}/output_plots/nn_log_energy.png',bbox_inches='tigh
 axbig.remove()
 
 n_bins = 20
-time_lower = -3.
-time_upper = 1.5
 impact_lower = 0.
-impact_upper = 0.6
-arrival_lower = 0.
-arrival_upper = 0.5
+impact_upper = 0.8
 log_energy_lower = -1.
-log_energy_upper = 1.
+log_energy_upper = 2.
 
 hist_nn_lookup_table_arrival = MyArray2D(x_bins=n_bins,start_x=impact_lower,end_x=impact_upper,y_bins=n_bins,start_y=log_energy_lower,end_y=log_energy_upper)
 for x_idx in range(0,len(hist_nn_lookup_table_arrival.xaxis)):

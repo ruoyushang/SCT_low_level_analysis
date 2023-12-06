@@ -1098,3 +1098,61 @@ def get_average(xdata_list,ydata_list,x_axis):
 
     return avg
 
+def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_arrival_pkl,lookup_table_arrival_rms_pkl, guided=False, arrival_x=0., arrival_y=0.):
+
+    input_image_2d = geom.image_to_cartesian_representation(input_image)
+    input_time_2d = geom.image_to_cartesian_representation(input_time)
+
+    num_rows, num_cols = input_image_2d.shape
+    for row in range(0,num_rows):
+        for col in range(0,num_cols):
+            if math.isnan(input_image_2d[row,col]): 
+                input_image_2d[row,col] = 0.
+                input_time_2d[row,col] = 0.
+
+    image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(input_image_2d, input_time_2d, cam_axes[0], cam_axes[1], guided=guided, arrival_x=arrival_x, arrival_y=arrival_y)
+    image_foci_x = image_foci_x1
+    image_foci_y = image_foci_y1
+
+    image_recenter = np.zeros_like(input_image_2d)
+    time_recenter = np.zeros_like(input_time_2d)
+    shift_x = -image_center_x
+    shift_y = -image_center_y
+    image_recenter = image_translation(input_image_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
+    time_recenter = image_translation(input_time_2d, cam_axes[0], cam_axes[1], shift_x, shift_y)
+
+    image_rotate = np.zeros_like(input_image_2d)
+    time_rotate = np.zeros_like(input_time_2d)
+    angle_rad = -np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+    image_rotate = image_rotation(image_recenter, cam_axes[0], cam_axes[1], angle_rad)
+    time_rotate = image_rotation(time_recenter, cam_axes[0], cam_axes[1], angle_rad)
+    
+    image_rotate_1d = geom.image_from_cartesian_representation(image_rotate)
+    time_rotate_1d = geom.image_from_cartesian_representation(time_rotate)
+
+    fit_log_energy = 0.
+    fit_impact = 0.1
+    init_params = [fit_log_energy,fit_impact]
+    image_weight = 1./np.sum(np.array(input_image)*np.array(input_image))
+    time_weight = 1./np.sum(np.array(input_time)*np.array(input_time))
+    fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
+    fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
+    n_bins_energy = len(lookup_table_pkl[0].yaxis)
+    n_bins_impact = len(lookup_table_pkl[0].xaxis)
+    for idx_x  in range(0,n_bins_impact):
+        for idx_y  in range(0,n_bins_energy):
+            try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
+            try_impact = lookup_table_pkl[0].xaxis[idx_x]
+            init_params = [try_log_energy,try_impact]
+            try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
+            try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
+            if try_chi2<fit_chi2:
+                fit_chi2 = try_chi2
+                fit_log_energy = try_log_energy
+                fit_impact = try_impact
+
+    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy)
+    fit_arrival_rms = lookup_table_arrival_rms_pkl.get_bin_content(fit_impact,fit_log_energy)
+
+    return fit_arrival, fit_impact, fit_log_energy
+
