@@ -41,6 +41,8 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
+image_size_cut = 3e2
+
 def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
 
     pair_x = []
@@ -63,7 +65,7 @@ def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
             else:
                 x = (b2 - b1) / (a1 - a2)
                 y = a1 * ((b2 - b1) / (a1 - a2)) + b1
-                w = (image_w[img1]*image_w[img2])*np.arctan(abs((a1-a2)/(1.+a1*a2)))
+                w = (image_w[img1]+image_w[img2])*np.arctan(abs((a1-a2)/(1.+a1*a2)))
             pair_x += [x]
             pair_y += [y]
             pair_w += [w]
@@ -554,6 +556,7 @@ def sum_square_distance_to_image_lines_and_points(core_xy,list_tel_x,list_tel_y,
 def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_arrival,lookup_table_arrival_rms):
 
     fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
+    list_img_a, list_img_b, list_line_cam_x, list_line_cam_y, list_line_core_x, list_line_core_y, list_line_weight = fit_intersections_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
 
     tic = time.perf_counter()
 
@@ -574,45 +577,11 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         image_2d_matrix += [image_data_2d]
         time_2d_matrix += [time_data_2d]
 
-    list_img_x = []
-    list_img_y = []
-    list_tel_x = []
-    list_tel_y = []
-    list_line_a = []
-    list_line_b = []
-    list_line_w = []
-    for tel in range(0,len(image_matrix)):
-
-        image_data_1d = image_matrix[tel]
-        image_data_2d = image_2d_matrix[tel]
-
-        image_size = np.sum(image_data_1d)
-        tel_x = telesc_position_matrix[tel][2]/1000.
-        tel_y = telesc_position_matrix[tel][3]/1000.
-        list_tel_x += [tel_x]
-        list_tel_y += [tel_y]
-
-        avg_x, avg_y, sum_w = get_image_center(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
-        list_img_x += [avg_x]
-        list_img_y += [avg_y]
-
-        a, b, w = fit_image_to_line(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
-        aT, bT, wT = fit_image_to_line(np.array(image_data_2d).transpose(), all_cam_axes[tel][1], all_cam_axes[tel][0])
-        if w<wT:
-            a = 1./aT
-            b = -bT/aT
-            w = wT
-
-        list_line_a += [a]
-        list_line_b += [b]
-        list_line_w += [image_size]
-
-
-    list_cam_x = []
-    list_cam_y = []
-    list_core_x = []
-    list_core_y = []
-    list_point_w = []
+    list_svd_cam_x = []
+    list_svd_cam_y = []
+    list_svd_core_x = []
+    list_svd_core_y = []
+    list_svd_weight = []
     avg_energy = 0.
     sum_weight = 0.
     for tel in range(0,len(image_matrix)):
@@ -624,11 +593,15 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
         time_data_2d = time_2d_matrix[tel]
         image_size = np.sum(image_data_2d)
 
-        if image_size<3e2: continue
+        if image_size<image_size_cut: continue
 
         guided=True
         arrival_x=fit_line_cam_x
         arrival_y=fit_line_cam_y
+        #open_angle_cut = 0.05
+        #if tel==0 and open_angle<open_angle_cut:
+        #    guided=False
+
         image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(image_data_2d, time_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1], guided=guided, arrival_x=arrival_x, arrival_y=arrival_y)
         image_foci_x = image_foci_x1
         image_foci_y = image_foci_y1
@@ -651,12 +624,17 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
         sum_weight += image_size
         avg_energy += pow(10.,fit_log_energy)*image_size
-        list_cam_x += [cam_x]
-        list_cam_y += [cam_y]
-        list_core_x += [core_x]
-        list_core_y += [core_y]
-        list_point_w += [image_size]
+        list_svd_cam_x += [cam_x]
+        list_svd_cam_y += [cam_y]
+        list_svd_core_x += [core_x]
+        list_svd_core_y += [core_y]
+        list_svd_weight += [image_size]
 
+    list_cam_x = list_svd_cam_x + list_line_cam_x
+    list_cam_y = list_svd_cam_y + list_line_cam_y
+    list_core_x = list_svd_core_x + list_line_core_x
+    list_core_y = list_svd_core_y + list_line_core_y
+    list_weight = list_svd_weight + list_line_weight
 
     avg_energy = avg_energy/sum_weight
     sum_error = 5.*pow(1./sum_weight,0.5)
@@ -664,9 +642,9 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
     try_params = [fit_line_core_x,fit_line_core_y]
     solution = minimize(
-        sum_square_distance_to_image_lines_and_points,
+        sum_square_distance_to_points,
         x0=try_params,
-        args=(list_tel_x,list_tel_y,list_line_a,list_line_w,list_core_x,list_core_y,list_point_w),
+        args=(list_core_x,list_core_y,list_weight),
         method='L-BFGS-B',
     )
     avg_core_x = solution['x'][0]
@@ -674,9 +652,9 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
     try_params = [fit_line_cam_x,fit_line_cam_y]
     solution = minimize(
-        sum_square_distance_to_image_lines_and_points,
+        sum_square_distance_to_points,
         x0=try_params,
-        args=(list_img_x,list_img_y,list_line_a,list_line_w,list_cam_x,list_cam_y,list_point_w),
+        args=(list_cam_x,list_cam_y,list_weight),
         method='L-BFGS-B',
     )
     avg_cam_x = solution['x'][0]
@@ -886,18 +864,18 @@ def fit_templates_to_individual_images(image_matrix,time_matrix,telesc_position_
 
     return avg_energy, avg_cam_x, avg_cam_y, sky_xy_log_likelihood, avg_core_x, avg_core_y, grd_xy_log_likelihood, sum_weight
 
-def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_cam_axes):
+def fit_intersections_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes):
 
     list_all_img_a = []
     list_all_img_b = []
     list_all_img_w = []
     for tel in range(0,len(image_matrix)):
         rad2deg = 180./np.pi
-        tel_x = telesc_position_matrix[tel][2]
-        tel_y = telesc_position_matrix[tel][3]
+        tel_x = telesc_position_matrix[tel][2]/1000.
+        tel_y = telesc_position_matrix[tel][3]/1000.
 
-        tel_x_axis = np.array(all_cam_axes[tel][0])
-        tel_y_axis = np.array(all_cam_axes[tel][1])
+        cam_x_axis = np.array(all_cam_axes[tel][0])
+        cam_y_axis = np.array(all_cam_axes[tel][1])
 
         tel_image_1d = image_matrix[tel]
         tel_image_2d = geom.image_to_cartesian_representation(tel_image_1d)
@@ -907,8 +885,8 @@ def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_
             for y_idx in range(0,num_rows):
                 if math.isnan(tel_image_2d[y_idx,x_idx]): tel_image_2d[y_idx,x_idx] = 0.
 
-        a, b, w = fit_image_to_line(tel_image_2d,tel_x_axis,tel_y_axis)
-        aT, bT, wT = fit_image_to_line(np.array(tel_image_2d).transpose(),tel_y_axis,tel_x_axis)
+        a, b, w = fit_image_to_line(tel_image_2d,cam_x_axis,cam_y_axis)
+        aT, bT, wT = fit_image_to_line(np.array(tel_image_2d).transpose(),cam_y_axis,cam_x_axis)
         if w<wT:
             a = 1./aT
             b = -bT/aT
@@ -924,23 +902,19 @@ def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_
     avg_ls_evt_core_x = 0.
     avg_ls_evt_core_y = 0.
     ls_evt_weight = 0.
-    list_pair_images = []
-    list_pair_telpos = []
-    list_pair_weight = []
-    list_pair_a = []
+    list_cam_x = []
+    list_cam_y = []
+    list_core_x = []
+    list_core_y = []
+    list_weight = []
     for tel1 in range(0,len(image_matrix)-1):
         for tel2 in range(tel1+1,len(image_matrix)):
 
             rad2deg = 180./np.pi
-            tel1_x = telesc_position_matrix[tel1][2]
-            tel1_y = telesc_position_matrix[tel1][3]
-            tel2_x = telesc_position_matrix[tel2][2]
-            tel2_y = telesc_position_matrix[tel2][3]
-
-            tel1_x_axis = np.array(all_cam_axes[tel1][0])
-            tel1_y_axis = np.array(all_cam_axes[tel1][1])
-            tel2_x_axis = np.array(all_cam_axes[tel2][0])
-            tel2_y_axis = np.array(all_cam_axes[tel2][1])
+            tel1_x = telesc_position_matrix[tel1][2]/1000.
+            tel1_y = telesc_position_matrix[tel1][3]/1000.
+            tel2_x = telesc_position_matrix[tel2][2]/1000.
+            tel2_y = telesc_position_matrix[tel2][3]/1000.
 
             tel1_image_1d = image_matrix[tel1]
             tel2_image_1d = image_matrix[tel2]
@@ -966,14 +940,14 @@ def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_
 
             a1 = list_all_img_a[tel1]
             b1 = list_all_img_b[tel1]
-            w1 = list_all_img_w[tel1]
+            w1 = np.sum(tel1_image_1d)
             list_img_a += [a1]
             list_img_b += [b1]
             list_img_w += [w1]
 
             a2 = list_all_img_a[tel2]
             b2 = list_all_img_b[tel2]
-            w2 = list_all_img_w[tel2]
+            w2 = np.sum(tel2_image_1d)
             list_img_a += [a2]
             list_img_b += [b2]
             list_img_w += [w2]
@@ -981,25 +955,13 @@ def fit_lines_to_individual_images(image_matrix,telesc_position_matrix,geom,all_
             ls_cam_x, ls_cam_y, ls_sky_weight = find_intersection_on_focalplane(list_tel_x,list_tel_y,list_img_a,list_img_b,list_img_w)
             ls_core_x, ls_core_y, ls_core_weight = find_intersection_on_ground(list_tel_x,list_tel_y,list_img_a,list_img_b,list_img_w)
 
-            ls_pair_weight = ls_sky_weight
-            avg_ls_evt_cam_x += ls_cam_x*ls_pair_weight
-            avg_ls_evt_cam_y += ls_cam_y*ls_pair_weight
-            avg_ls_evt_core_x += ls_core_x*ls_pair_weight
-            avg_ls_evt_core_y += ls_core_y*ls_pair_weight
-            ls_evt_weight += ls_pair_weight
+            list_cam_x += [ls_cam_x]
+            list_cam_y += [ls_cam_y]
+            list_core_x += [ls_core_x]
+            list_core_y += [ls_core_y]
+            list_weight += [ls_sky_weight]
 
-            list_pair_images += [[tel1_image_1d,tel2_image_1d]]
-            list_pair_a += [[a1,a2]]
-            list_pair_weight += [ls_core_weight]
-            list_pair_telpos += [[telesc_position_matrix[tel1],telesc_position_matrix[tel2]]]
-
-    if ls_evt_weight!=0.:
-        avg_ls_evt_cam_x = avg_ls_evt_cam_x/ls_evt_weight
-        avg_ls_evt_cam_y = avg_ls_evt_cam_y/ls_evt_weight
-        avg_ls_evt_core_x = avg_ls_evt_core_x/ls_evt_weight
-        avg_ls_evt_core_y = avg_ls_evt_core_y/ls_evt_weight
-
-    return [avg_ls_evt_cam_x, avg_ls_evt_cam_y, avg_ls_evt_core_x/1000., avg_ls_evt_core_y/1000.], list_all_img_a, list_all_img_b, list_all_img_w, list_pair_images, list_pair_a, list_pair_weight, list_pair_telpos
+    return list_all_img_a, list_all_img_b, list_cam_x, list_cam_y, list_core_x, list_core_y, list_weight
 
 def sum_square_distance_to_image_lines(core_xy,list_tel_x,list_tel_y,list_img_a,list_img_w):
 
@@ -1015,6 +977,19 @@ def sum_square_distance_to_image_lines(core_xy,list_tel_x,list_tel_y,list_img_a,
         sum_dist_sq += dist_sq*pow(list_img_w[tel],2)
     return sum_dist_sq
 
+def sum_square_distance_to_points(core_xy,list_point_x,list_point_y,list_point_w):
+
+    core_x = core_xy[0]
+    core_y = core_xy[1]
+
+    sum_dist_sq_point = 0.
+    for tel in range(0,len(list_point_w)):
+        dist_sq = pow(core_x-list_point_x[tel],2) + pow(core_y-list_point_y[tel],2)
+        sum_dist_sq_point += dist_sq*pow(list_point_w[tel],2)
+
+    return sum_dist_sq_point
+
+
 def fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes):
 
     init_cam_x = 0.
@@ -1022,49 +997,13 @@ def fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axe
     init_core_x = 0.
     init_core_y = 0.
 
-    list_img_x = []
-    list_img_y = []
-    list_tel_x = []
-    list_tel_y = []
-    list_img_a = []
-    list_img_b = []
-    list_img_w = []
-    for tel in range(0,len(image_matrix)):
-
-        image_data_1d = image_matrix[tel]
-        image_data_2d = geom.image_to_cartesian_representation(image_data_1d)
-        num_rows, num_cols = image_data_2d.shape
-        for x_idx in range(0,num_cols):
-            for y_idx in range(0,num_rows):
-                if math.isnan(image_data_2d[y_idx,x_idx]): 
-                    image_data_2d[y_idx,x_idx] = 0.
-
-        image_size = np.sum(image_data_1d)
-        tel_x = telesc_position_matrix[tel][2]/1000.
-        tel_y = telesc_position_matrix[tel][3]/1000.
-        list_tel_x += [tel_x]
-        list_tel_y += [tel_y]
-
-        avg_x, avg_y, sum_w = get_image_center(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
-        list_img_x += [avg_x]
-        list_img_y += [avg_y]
-
-        a, b, w = fit_image_to_line(image_data_2d, all_cam_axes[tel][0], all_cam_axes[tel][1])
-        aT, bT, wT = fit_image_to_line(np.array(image_data_2d).transpose(), all_cam_axes[tel][1], all_cam_axes[tel][0])
-        if w<wT:
-            a = 1./aT
-            b = -bT/aT
-            w = wT
-
-        list_img_a += [a]
-        list_img_b += [b]
-        list_img_w += [w]
+    list_img_a, list_img_b, list_cam_x, list_cam_y, list_core_x, list_core_y, list_weight = fit_intersections_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
 
     try_params = [init_core_x,init_core_y]
     solution = minimize(
-        sum_square_distance_to_image_lines,
+        sum_square_distance_to_points,
         x0=try_params,
-        args=(list_tel_x,list_tel_y,list_img_a,list_img_w),
+        args=(list_core_x,list_core_y,list_weight),
         method='L-BFGS-B',
     )
     fit_core_x = solution['x'][0]
@@ -1072,9 +1011,9 @@ def fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axe
 
     try_params = [init_cam_x,init_cam_y]
     solution = minimize(
-        sum_square_distance_to_image_lines,
+        sum_square_distance_to_points,
         x0=try_params,
-        args=(list_img_x,list_img_y,list_img_a,list_img_w),
+        args=(list_cam_x,list_cam_y,list_weight),
         method='L-BFGS-B',
     )
     fit_cam_x = solution['x'][0]
@@ -1243,8 +1182,7 @@ for path in range(0,len(testing_sample_path)):
                 telesc_position_matrix = []
                 continue
     
-            if np.sum(testing_image_matrix[0])<3e2: 
-            #if np.sum(testing_image_matrix[0])<1e3: 
+            if np.sum(testing_image_matrix[0])<image_size_cut: 
                 testing_image_matrix = []
                 testing_time_matrix = []
                 testing_param_matrix = []
@@ -1274,8 +1212,8 @@ for path in range(0,len(testing_sample_path)):
             truth_cam_x = truth_tel_coord[0]
             truth_cam_y = truth_tel_coord[1]
     
-            min_ntel = 3
-            max_ntel = 5
+            min_ntel = 2
+            max_ntel = 2
             if len(testing_image_matrix)<min_ntel or len(testing_image_matrix)>max_ntel: 
                 testing_image_matrix = []
                 testing_time_matrix = []
@@ -1309,13 +1247,9 @@ for path in range(0,len(testing_sample_path)):
             #    telesc_position_matrix = []
             #    continue
     
-            fit_all_cam_x, fit_all_cam_y, fit_all_core_x, fit_all_core_y, open_angle = fit_lines_to_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
+            fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
     
-            ls_evt_line_vec, list_img_a, list_img_b, list_img_w, list_pair_images, list_pair_a, list_pair_weight, list_pair_telpos = fit_lines_to_individual_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
-            fit_line_cam_x = float(ls_evt_line_vec[0])
-            fit_line_cam_y = float(ls_evt_line_vec[1])
-            fit_line_core_x = float(ls_evt_line_vec[2])
-            fit_line_core_y = float(ls_evt_line_vec[3])
+            list_img_a, list_img_b, list_cam_x, list_cam_y, list_core_x, list_core_y, list_weight = fit_intersections_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
 
             print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
             print ('individual line fit result:')
@@ -1324,14 +1258,10 @@ for path in range(0,len(testing_sample_path)):
             print (f'truth_cam_y      = {truth_cam_y:0.3f}')
             print (f'fit_line_cam_x = {fit_line_cam_x:0.3f}')
             print (f'fit_line_cam_y = {fit_line_cam_y:0.3f}')
-            print (f'fit_all_cam_x = {fit_all_cam_x:0.3f}')
-            print (f'fit_all_cam_y = {fit_all_cam_y:0.3f}')
             print (f'truth_shower_core_x = {truth_shower_core_x:0.3f}')
             print (f'truth_shower_core_y = {truth_shower_core_y:0.3f}')
             print (f'fit_line_core_x = {fit_line_core_x*1000.:0.3f}')
             print (f'fit_line_core_y = {fit_line_core_y*1000.:0.3f}')
-            print (f'fit_all_core_x = {fit_all_core_x*1000.:0.3f}')
-            print (f'fit_all_core_y = {fit_all_core_y*1000.:0.3f}')
             print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
             
@@ -1341,9 +1271,9 @@ for path in range(0,len(testing_sample_path)):
             fit_line_az = fit_indiv_array_coord[1]
     
             # Sort based on the values of elements in the first list
-            combined_lists = list(zip(list_pair_weight, list_pair_images, list_pair_telpos))
-            sorted_lists = sorted(combined_lists, key=lambda x: x[0], reverse=True)
-            list_pair_weight, list_pair_images, list_pair_telpos = zip(*sorted_lists)
+            #combined_lists = list(zip(list_pair_weight, list_pair_images, list_pair_telpos))
+            #sorted_lists = sorted(combined_lists, key=lambda x: x[0], reverse=True)
+            #list_pair_weight, list_pair_images, list_pair_telpos = zip(*sorted_lists)
 
             #open_angle = 0.
             #for tp in range(0,len(list_pair_a)):
@@ -1686,12 +1616,9 @@ for path in range(0,len(testing_sample_path)):
                 log_energy_axis += [pow(10.,-1+x*0.5)]
             hist_line_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(indiv_line_fit_sky_err),2),log_energy_axis)
             hist_line_sky_err_vs_energy.yaxis = pow(np.array(hist_line_sky_err_vs_energy.yaxis),0.5)
-            hist_temp_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(indiv_temp_fit_sky_err),2),log_energy_axis)
-            hist_temp_sky_err_vs_energy.yaxis = pow(np.array(hist_temp_sky_err_vs_energy.yaxis),0.5)
             hist_simul_temp_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(simul_temp_fit_sky_err),2),log_energy_axis)
             hist_simul_temp_sky_err_vs_energy.yaxis = pow(np.array(hist_simul_temp_sky_err_vs_energy.yaxis),0.5)
             print (f'hist_line_sky_err_vs_energy.yaxis = {hist_line_sky_err_vs_energy.yaxis}')
-            print (f'hist_temp_sky_err_vs_energy.yaxis = {hist_temp_sky_err_vs_energy.yaxis}')
             print (f'hist_simul_temp_sky_err_vs_energy.yaxis = {hist_simul_temp_sky_err_vs_energy.yaxis}')
     
             fig.clf()
