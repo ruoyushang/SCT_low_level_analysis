@@ -154,23 +154,25 @@ axbig.remove()
 #axbig.remove()
 
 
-log_energy_truth_filt = []
-arrival_hist_error_filt = []
-log_energy_truth = []
-impact_truth = []
-arrival_truth = []
-log_energy_hist_guess = []
-impact_hist_guess = []
-arrival_hist_guess = []
-arrival_hist_error = []
-delta_time = []
-image_size = []
-semi_major = []
-delta_time_good = []
-image_size_good = []
-delta_time_bad = []
-image_size_bad = []
 for path in range(0,len(training_sample_path)):
+
+    log_energy_truth_filt = []
+    arrival_hist_error_filt = []
+    log_energy_truth = []
+    impact_truth = []
+    arrival_truth = []
+    log_energy_hist_guess = []
+    impact_hist_guess = []
+    arrival_hist_guess = []
+    arrival_hist_error = []
+    delta_time = []
+    image_size = []
+    semi_major = []
+    delta_time_good = []
+    image_size_good = []
+    delta_time_bad = []
+    image_size_bad = []
+
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()
@@ -481,102 +483,117 @@ for path in range(0,len(training_sample_path)):
     
             #exit()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'log energy truth'
-        label_y = 'log energy predict'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(log_energy_truth, log_energy_hist_guess, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_energy_guess.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'log energy truth'
+        #label_y = 'log energy predict'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(log_energy_truth, log_energy_hist_guess, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_energy_guess.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'impact distance truth'
-        label_y = 'impact distance predict'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(impact_truth, impact_hist_guess, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_impact_hist_guess.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'impact distance truth'
+        #label_y = 'impact distance predict'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(impact_truth, impact_hist_guess, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_impact_hist_guess.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'arrival truth'
-        label_y = 'arrival predict'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(arrival_truth, arrival_hist_guess, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_guess.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'arrival truth'
+        #label_y = 'arrival predict'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(arrival_truth, arrival_hist_guess, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_guess.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'impact distance guess'
-        label_y = 'arrival error'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(impact_hist_guess, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_impact.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'impact distance guess'
+        #label_y = 'arrival error'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(impact_hist_guess, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_impact.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'log energy guess'
-        label_y = 'arrival error'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(log_energy_hist_guess, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_energy.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'log energy guess'
+        #label_y = 'arrival error'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(log_energy_hist_guess, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_energy.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'delta time'
-        label_y = 'arrival error'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(delta_time, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_delta_time.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'delta time'
+        #label_y = 'arrival error'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(delta_time, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_delta_time.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'image size'
-        label_y = 'arrival error'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(image_size, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
-        axbig.errorbar(hist_sky_err_vs_size.xaxis,np.zeros_like(hist_sky_err_vs_size.xaxis),yerr=hist_sky_err_vs_size.yaxis,c='k')
-        for x in range(0,len(hist_sky_err_vs_size.xaxis)):
-            axbig.text(hist_sky_err_vs_size.xaxis[x], hist_sky_err_vs_size.yaxis[x], '%0.2f'%(hist_sky_err_vs_size.yaxis[x]))
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_size.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'image size'
+        #label_y = 'arrival error'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(image_size, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
+        #axbig.errorbar(hist_sky_err_vs_size.xaxis,np.zeros_like(hist_sky_err_vs_size.xaxis),yerr=hist_sky_err_vs_size.yaxis,c='k')
+        #for x in range(0,len(hist_sky_err_vs_size.xaxis)):
+        #    axbig.text(hist_sky_err_vs_size.xaxis[x], hist_sky_err_vs_size.yaxis[x], '%0.2f'%(hist_sky_err_vs_size.yaxis[x]))
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_size.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'semi major'
-        label_y = 'arrival error'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(semi_major, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
-        axbig.set_xscale('log')
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_semi_major.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'semi major'
+        #label_y = 'arrival error'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(semi_major, arrival_hist_error, s=90, c='r', marker='+', alpha=0.2)
+        #axbig.set_xscale('log')
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_arrival_hist_error_vs_semi_major.png',bbox_inches='tight')
+        #axbig.remove()
     
-        fig.clf()
-        axbig = fig.add_subplot()
-        label_x = 'image size'
-        label_y = 'delta time'
-        axbig.set_xlabel(label_x)
-        axbig.set_ylabel(label_y)
-        axbig.scatter(image_size_good, delta_time_good, s=90, c='g', marker='+', alpha=0.2)
-        axbig.scatter(image_size_bad, delta_time_bad, s=90, c='r', marker='+', alpha=0.2)
-        axbig.set_xscale('log')
-        fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_size_vs_time.png',bbox_inches='tight')
-        axbig.remove()
+        #fig.clf()
+        #axbig = fig.add_subplot()
+        #label_x = 'image size'
+        #label_y = 'delta time'
+        #axbig.set_xlabel(label_x)
+        #axbig.set_ylabel(label_y)
+        #axbig.scatter(image_size_good, delta_time_good, s=90, c='g', marker='+', alpha=0.2)
+        #axbig.scatter(image_size_bad, delta_time_bad, s=90, c='r', marker='+', alpha=0.2)
+        #axbig.set_xscale('log')
+        #fig.savefig(f'{ctapipe_output}/output_plots/reconstruction_size_vs_time.png',bbox_inches='tight')
+        #axbig.remove()
     
         #exit()
 
+    single_tel_ana_output = []
+    single_tel_ana_output += [log_energy_truth_filt]
+    single_tel_ana_output += [arrival_hist_error_filt]
+    single_tel_ana_output += [log_energy_truth]
+    single_tel_ana_output += [impact_truth]
+    single_tel_ana_output += [arrival_truth]
+    single_tel_ana_output += [log_energy_hist_guess]
+    single_tel_ana_output += [impact_hist_guess]
+    single_tel_ana_output += [arrival_hist_guess]
+    single_tel_ana_output += [arrival_hist_error]
+    single_tel_ana_output += [image_size]
+
+    output_filename = f'{ctapipe_output}/output_analysis/single_tel_ana_output_run{run_id}.pkl'
+    with open(output_filename,"wb") as file:
+        pickle.dump(single_tel_ana_output, file)
 

@@ -557,6 +557,7 @@ def fit_templates_to_all_images(image_matrix,time_matrix,telesc_position_matrix,
 
     fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
     list_img_a, list_img_b, list_line_cam_x, list_line_cam_y, list_line_core_x, list_line_core_y, list_line_weight = fit_intersections_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
+    print (f'open_angle = {open_angle}')
 
     tic = time.perf_counter()
 
@@ -1090,12 +1091,14 @@ testing_time_matrix = []
 testing_param_matrix = []
 testing_moment_matrix = []
 truth_shower_position_matrix = []
+hillas_shower_position_matrix = []
 all_cam_axes = []
 telesc_position_matrix = []
 
 all_truth_energy = []
 indiv_temp_fit_energy = []
 simul_temp_fit_energy = []
+hillas_sky_err = []
 indiv_line_fit_sky_err = []
 indiv_temp_fit_sky_err = []
 simul_temp_fit_sky_err = []
@@ -1112,6 +1115,7 @@ for path in range(0,len(testing_sample_path)):
     testing_id_list = []
     big_telesc_position_matrix = []
     big_truth_shower_position_matrix = []
+    big_hillas_shower_position_matrix = []
     test_cam_axes = []
     big_testing_image_matrix = []
     big_testing_time_matrix = []
@@ -1137,6 +1141,7 @@ for path in range(0,len(testing_sample_path)):
     big_testing_time_matrix += training_sample[5]
     big_testing_param_matrix += training_sample[6]
     big_testing_moment_matrix += training_sample[7]
+    big_hillas_shower_position_matrix += training_sample[8]
 
     big_testing_image_matrix = np.array(big_testing_image_matrix)
     big_testing_time_matrix = np.array(big_testing_time_matrix)
@@ -1161,6 +1166,7 @@ for path in range(0,len(testing_sample_path)):
             testing_param_matrix += [big_testing_param_matrix[img]]
             testing_moment_matrix += [big_testing_moment_matrix[img]]
             truth_shower_position_matrix += [big_truth_shower_position_matrix[img]]
+            hillas_shower_position_matrix += [big_hillas_shower_position_matrix[img]]
             all_cam_axes += [test_cam_axes[img]]
             telesc_position_matrix += [big_telesc_position_matrix[img]]
         else:
@@ -1178,6 +1184,7 @@ for path in range(0,len(testing_sample_path)):
                 testing_param_matrix = []
                 testing_moment_matrix = []
                 truth_shower_position_matrix = []
+                hillas_shower_position_matrix = []
                 all_cam_axes = []
                 telesc_position_matrix = []
                 continue
@@ -1188,6 +1195,7 @@ for path in range(0,len(testing_sample_path)):
                 testing_param_matrix = []
                 testing_moment_matrix = []
                 truth_shower_position_matrix = []
+                hillas_shower_position_matrix = []
                 all_cam_axes = []
                 telesc_position_matrix = []
                 continue
@@ -1207,31 +1215,50 @@ for path in range(0,len(testing_sample_path)):
             truth_shower_energy = pow(10.,truth_shower_position_matrix[0][4])
             truth_shower_height = 20000.
     
+            hillas_shower_alt = hillas_shower_position_matrix[0][0]
+            hillas_shower_az = hillas_shower_position_matrix[0][1]
+            hillas_shower_core_x = hillas_shower_position_matrix[0][2]
+            hillas_shower_core_y = hillas_shower_position_matrix[0][3]
+            hillas_valid = hillas_shower_position_matrix[0][4]
+
             truth_array_coord = [truth_shower_alt,truth_shower_az,truth_shower_core_x,truth_shower_core_y]
             truth_tel_coord = convert_array_coord_to_tel_coord(truth_array_coord,tel_info)
             truth_cam_x = truth_tel_coord[0]
             truth_cam_y = truth_tel_coord[1]
+
+            if hillas_valid:
+                testing_image_matrix = []
+                testing_time_matrix = []
+                testing_param_matrix = []
+                testing_moment_matrix = []
+                truth_shower_position_matrix = []
+                hillas_shower_position_matrix = []
+                all_cam_axes = []
+                telesc_position_matrix = []
+                continue
     
             min_ntel = 2
-            max_ntel = 2
+            max_ntel = 1e10
             if len(testing_image_matrix)<min_ntel or len(testing_image_matrix)>max_ntel: 
                 testing_image_matrix = []
                 testing_time_matrix = []
                 testing_param_matrix = []
                 testing_moment_matrix = []
                 truth_shower_position_matrix = []
+                hillas_shower_position_matrix = []
                 all_cam_axes = []
                 telesc_position_matrix = []
                 continue
     
             min_energy = 0.1
-            max_energy = 10.0
+            max_energy = 100.0
             if truth_shower_energy<min_energy or truth_shower_energy>max_energy:
                 testing_image_matrix = []
                 testing_time_matrix = []
                 testing_param_matrix = []
                 testing_moment_matrix = []
                 truth_shower_position_matrix = []
+                hillas_shower_position_matrix = []
                 all_cam_axes = []
                 telesc_position_matrix = []
                 continue
@@ -1243,6 +1270,7 @@ for path in range(0,len(testing_sample_path)):
             #    testing_param_matrix = []
             #    testing_moment_matrix = []
             #    truth_shower_position_matrix = []
+            #    hillas_shower_position_matrix = []
             #    all_cam_axes = []
             #    telesc_position_matrix = []
             #    continue
@@ -1367,6 +1395,13 @@ for path in range(0,len(testing_sample_path)):
             fit_simul_temp_evt_az = fit_simul_temp_array_coord[1]
     
     
+            print (f'truth_shower_alt = {truth_shower_alt}')
+            print (f'hillas_shower_alt = {hillas_shower_alt}')
+            print (f'fit_simul_temp_evt_alt = {fit_simul_temp_evt_alt}')
+            print (f'truth_shower_az = {truth_shower_az}')
+            print (f'hillas_shower_az = {hillas_shower_az}')
+            print (f'fit_simul_temp_evt_az = {fit_simul_temp_evt_az}')
+            hillas_sky_err += [180./math.pi*pow(pow(hillas_shower_alt-truth_shower_alt,2)+pow(hillas_shower_az-truth_shower_az,2),0.5)]
             indiv_line_fit_sky_err += [180./math.pi*pow(pow(fit_line_alt-truth_shower_alt,2)+pow(fit_line_az-truth_shower_az,2),0.5)]
             indiv_temp_fit_sky_err += [180./math.pi*pow(pow(fit_temp_evt_alt-truth_shower_alt,2)+pow(fit_temp_evt_az-truth_shower_az,2),0.5)]
             simul_temp_fit_sky_err += [180./math.pi*pow(pow(fit_simul_temp_evt_alt-truth_shower_alt,2)+pow(fit_simul_temp_evt_az-truth_shower_az,2),0.5)]
@@ -1614,10 +1649,13 @@ for path in range(0,len(testing_sample_path)):
             log_energy_axis = []
             for x in range(0,6):
                 log_energy_axis += [pow(10.,-1+x*0.5)]
+            hist_hillas_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(hillas_sky_err),2),log_energy_axis)
+            hist_hillas_sky_err_vs_energy.yaxis = pow(np.array(hist_hillas_sky_err_vs_energy.yaxis),0.5)
             hist_line_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(indiv_line_fit_sky_err),2),log_energy_axis)
             hist_line_sky_err_vs_energy.yaxis = pow(np.array(hist_line_sky_err_vs_energy.yaxis),0.5)
             hist_simul_temp_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(simul_temp_fit_sky_err),2),log_energy_axis)
             hist_simul_temp_sky_err_vs_energy.yaxis = pow(np.array(hist_simul_temp_sky_err_vs_energy.yaxis),0.5)
+            print (f'hist_hillas_sky_err_vs_energy.yaxis = {hist_hillas_sky_err_vs_energy.yaxis}')
             print (f'hist_line_sky_err_vs_energy.yaxis = {hist_line_sky_err_vs_energy.yaxis}')
             print (f'hist_simul_temp_sky_err_vs_energy.yaxis = {hist_simul_temp_sky_err_vs_energy.yaxis}')
     
@@ -1627,8 +1665,8 @@ for path in range(0,len(testing_sample_path)):
             label_y = 'Sky coordinate error'
             axbig.set_xlabel(label_x)
             axbig.set_ylabel(label_y)
-            axbig.scatter(all_truth_energy, indiv_line_fit_sky_err, s=90, c='r', marker='+')
-            axbig.scatter(all_truth_energy, indiv_temp_fit_sky_err, s=90, c='g', marker='+')
+            axbig.scatter(all_truth_energy, hillas_sky_err, s=90, c='r', marker='+')
+            axbig.scatter(all_truth_energy, indiv_line_fit_sky_err, s=90, c='g', marker='+')
             axbig.scatter(all_truth_energy, simul_temp_fit_sky_err, s=90, c='b', marker='+')
             axbig.set_xscale('log')
             #axbig.set_yscale('log')
@@ -1710,6 +1748,7 @@ for path in range(0,len(testing_sample_path)):
             testing_param_matrix = []
             testing_moment_matrix = []
             truth_shower_position_matrix = []
+            hillas_shower_position_matrix = []
             all_cam_axes = []
             telesc_position_matrix = []
 

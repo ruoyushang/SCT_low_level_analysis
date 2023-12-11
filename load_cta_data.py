@@ -498,7 +498,7 @@ def convert_tel_coord_to_array_coord(tel_coord,tel_info):
     shower_az = cam_y/tel_focal_length + tel_az
     return [shower_alt, shower_az]
 
-def load_training_samples(training_sample_path, is_training=False, use_truth=False, do_cleaning=True, do_reposition=False, min_energy=0.1, max_energy=1000., max_evt=1e10):
+def load_training_samples(training_sample_path, is_gamma=True, is_training=False, use_truth=False, do_cleaning=True, do_reposition=False, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     fig, ax = plt.subplots()
     figsize_x = 8.6
@@ -526,13 +526,13 @@ def load_training_samples(training_sample_path, is_training=False, use_truth=Fal
     
     id_list = []
     truth_shower_position_matrix = []
+    hillas_shower_position_matrix = []
     cam_axes = []
     telesc_position_matrix = []
     big_image_matrix = []
     big_time_matrix = []
     big_param_matrix = []
     big_moment_matrix = []
-    hillas_param_matrix = []
 
     print (f'loading file: {training_sample_path}')
     source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
@@ -590,21 +590,26 @@ def load_training_samples(training_sample_path, is_training=False, use_truth=Fal
         shower_processor(event)
         ranked_tel_key_array = rank_brightest_telescope(event.r0.tel)
 
-        #stereo = event.dl2.stereo.geometry["HillasReconstructor"]
-        #hillas_shower_alt = 0.
-        #hillas_shower_az = 0.
-        #hillas_shower_height = 0.
-        #hillas_shower_core_x = 0.
-        #hillas_shower_core_y = 0.
-        #if stereo.is_valid:
-        #    hillas_shower_alt = float(stereo.alt/u.rad)
-        #    hillas_shower_az = float(stereo.az/u.rad)
-        #    hillas_shower_height = float(stereo.h_max/u.m)
-        #    hillas_shower_core_x = float(stereo.core_x/u.m)
-        #    hillas_shower_core_y = float(stereo.core_y/u.m)
-        #    print ('Hillas Reconstruction is successful.')
-        #else:
-        #    print ('Hillas Reconstruction is invalid.')
+        stereo = event.dl2.stereo.geometry["HillasReconstructor"]
+        hillas_shower_alt = 0.
+        hillas_shower_az = 0.
+        hillas_shower_height = 0.
+        hillas_shower_core_x = 0.
+        hillas_shower_core_y = 0.
+        hillas_valid = False
+        if stereo.is_valid:
+            hillas_shower_alt = float(stereo.alt/u.rad)
+            hillas_shower_az = float(stereo.az/u.rad)
+            if hillas_shower_az>np.pi:
+                hillas_shower_az = hillas_shower_az - 2.*np.pi
+            hillas_shower_height = float(stereo.h_max/u.m)
+            hillas_shower_core_x = float(stereo.core_x/u.m)
+            hillas_shower_core_y = float(stereo.core_y/u.m)
+            hillas_valid = True
+            print ('Hillas Reconstruction is successful.')
+        else:
+            hillas_valid = False
+            print ('Hillas Reconstruction is invalid.')
     
 
         mean_tel_x = 0.
@@ -786,16 +791,18 @@ def load_training_samples(training_sample_path, is_training=False, use_truth=Fal
                 big_time_matrix += [analysis_time_1d]
             big_param_matrix += [[evt_truth_arrival,evt_truth_energy,evt_truth_impact]]
             big_moment_matrix += [[image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq,image_size]]
-            #hillas_param_matrix += [[hillas_intensity,hillas_r,hillas_length,hillas_width]]
             truth_shower_position_matrix += [[shower_alt,shower_az,shower_core_x,shower_core_y,evt_truth_energy]]
+            hillas_shower_position_matrix += [[hillas_shower_alt,hillas_shower_az,hillas_shower_core_x,hillas_shower_core_y,hillas_valid]]
             cam_axes += [[x_axis,y_axis]]
 
     
 
     output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
+    if not is_gamma:
+        output_filename = f'{ctapipe_output}/output_proton_samples/{ana_tag}_run{run_id}.pkl'
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
-        pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_time_matrix, big_param_matrix, big_moment_matrix], file)
+        pickle.dump([id_list, telesc_position_matrix, truth_shower_position_matrix, cam_axes, big_image_matrix, big_time_matrix, big_param_matrix, big_moment_matrix, hillas_shower_position_matrix], file)
 
 
 class NeuralNetwork:
