@@ -43,7 +43,7 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-image_size_cut = 3e2
+image_size_cut = 1e2
 
 def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
 
@@ -909,6 +909,10 @@ def fit_lines_to_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axe
     init_cam_y = 0.
     init_core_x = 0.
     init_core_y = 0.
+    open_angle = 0.
+
+    if len(image_matrix)==1:
+        return init_cam_x, init_cam_y, init_core_x, init_core_y, open_angle
 
     list_img_a, list_img_b, list_img_w, list_cam_x, list_cam_y, list_core_x, list_core_y, list_weight = fit_intersections_all_images(image_matrix,telesc_position_matrix,geom,all_cam_axes)
 
@@ -1007,18 +1011,17 @@ hillas_shower_position_matrix = []
 all_cam_axes = []
 telesc_position_matrix = []
 
-all_truth_energy = []
-temp_fit_energy = []
-hillas_sky_err = []
-line_fit_sky_err = []
-temp_fit_sky_err = []
-all_open_angle = []
-line_impact = []
-temp_impact = []
-all_temp_chi2 = []
-all_line_chi2 = []
-
 for path in range(0,len(testing_sample_path)):
+
+    all_truth_energy = []
+    all_hillas_valid = []
+    temp_fit_energy = []
+    hillas_sky_err = []
+    line_fit_sky_err = []
+    temp_fit_sky_err = []
+    all_open_angle = []
+    line_impact = []
+    temp_impact = []
 
     testing_id_list = []
     big_telesc_position_matrix = []
@@ -1085,28 +1088,23 @@ for path in range(0,len(testing_sample_path)):
             print (f'current_run = {current_run}')
             print (f'current_event = {current_event}')
             print (f'len(testing_image_matrix) = {len(testing_image_matrix)}')
+
+            skip_the_event = False
     
             if len(testing_image_matrix)==0: 
-                testing_image_matrix = []
-                testing_time_matrix = []
-                testing_param_matrix = []
-                testing_moment_matrix = []
-                truth_shower_position_matrix = []
-                hillas_shower_position_matrix = []
-                all_cam_axes = []
-                telesc_position_matrix = []
+                skip_the_event = True
                 continue
     
-            if np.sum(testing_image_matrix[0])<image_size_cut: 
-                testing_image_matrix = []
-                testing_time_matrix = []
-                testing_param_matrix = []
-                testing_moment_matrix = []
-                truth_shower_position_matrix = []
-                hillas_shower_position_matrix = []
-                all_cam_axes = []
-                telesc_position_matrix = []
-                continue
+            max_image_size = 0.
+            for img in range(0,len(testing_image_matrix)):
+                current_image_size = np.sum(testing_image_matrix[img])
+                if max_image_size<current_image_size:
+                    max_image_size = current_image_size
+            print (f'max_image_size = {max_image_size}')
+
+            if max_image_size<image_size_cut: 
+                skip_the_event = True
+                print ('event rejected because of size cut.')
     
             deg2rad = np.pi/180.
             rad2deg = 180./np.pi
@@ -1134,33 +1132,23 @@ for path in range(0,len(testing_sample_path)):
             truth_cam_x = truth_tel_coord[0]
             truth_cam_y = truth_tel_coord[1]
 
-            if not hillas_valid:
-                testing_image_matrix = []
-                testing_time_matrix = []
-                testing_param_matrix = []
-                testing_moment_matrix = []
-                truth_shower_position_matrix = []
-                hillas_shower_position_matrix = []
-                all_cam_axes = []
-                telesc_position_matrix = []
-                continue
+            #if not hillas_valid:
+            #    skip_the_event = True
+            #    print ('event rejected because of hillas reconstruction.')
     
             min_ntel = 2
             max_ntel = 1e10
             if len(testing_image_matrix)<min_ntel or len(testing_image_matrix)>max_ntel: 
-                testing_image_matrix = []
-                testing_time_matrix = []
-                testing_param_matrix = []
-                testing_moment_matrix = []
-                truth_shower_position_matrix = []
-                hillas_shower_position_matrix = []
-                all_cam_axes = []
-                telesc_position_matrix = []
-                continue
+                skip_the_event = True
+                print ('event rejected because of n tel cut.')
     
             min_energy = 0.1
             max_energy = 100.0
             if truth_shower_energy<min_energy or truth_shower_energy>max_energy:
+                skip_the_event = True
+                print ('event rejected because of energy cut.')
+
+            if skip_the_event:
                 testing_image_matrix = []
                 testing_time_matrix = []
                 testing_param_matrix = []
@@ -1182,6 +1170,12 @@ for path in range(0,len(testing_sample_path)):
             #    telesc_position_matrix = []
             #    continue
     
+            all_truth_energy += [truth_shower_energy]
+            if hillas_valid:
+                all_hillas_valid += [1]
+            else:
+                all_hillas_valid += [0]
+
             fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
     
             list_img_a, list_img_b, list_img_w, list_cam_x, list_cam_y, list_core_x, list_core_y, list_weight = fit_intersections_all_images(testing_image_matrix,telesc_position_matrix,geom,all_cam_axes)
@@ -1265,7 +1259,6 @@ for path in range(0,len(testing_sample_path)):
             hillas_sky_err += [180./math.pi*pow(pow(hillas_shower_alt-truth_shower_alt,2)+pow(hillas_shower_az-truth_shower_az,2),0.5)]
             line_fit_sky_err += [180./math.pi*pow(pow(fit_line_alt-truth_shower_alt,2)+pow(fit_line_az-truth_shower_az,2),0.5)]
             temp_fit_sky_err += [180./math.pi*pow(pow(fit_temp_evt_alt-truth_shower_alt,2)+pow(fit_temp_evt_az-truth_shower_az,2),0.5)]
-            all_truth_energy += [truth_shower_energy]
             temp_fit_energy += [fit_temp_energy]
     
             image_sum_truth = None
@@ -1342,11 +1335,6 @@ for path in range(0,len(testing_sample_path)):
                     image_sum_svd_line += svd_image_2d_line
                     image_sum_svd_temp += svd_image_2d_temp
                     image_sum_svd_truth_temp += svd_image_2d_truth_temp
-
-            all_line_chi2 += [line_chi2/baseline_chi2]
-            all_temp_chi2 += [temp_chi2/baseline_chi2]
-            print (f'line_chi2/baseline_chi2 = {line_chi2/baseline_chi2}')
-            print (f'temp_chi2/baseline_chi2 = {temp_chi2/baseline_chi2}')
     
     
     
@@ -1438,61 +1426,6 @@ for path in range(0,len(testing_sample_path)):
                 plot_count += 1
                 #exit()
     
-            log_energy_axis = []
-            for x in range(0,6):
-                log_energy_axis += [pow(10.,-1+x*0.5)]
-            hist_hillas_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(hillas_sky_err),2),log_energy_axis)
-            hist_hillas_sky_err_vs_energy.yaxis = pow(np.array(hist_hillas_sky_err_vs_energy.yaxis),0.5)
-            hist_line_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(line_fit_sky_err),2),log_energy_axis)
-            hist_line_sky_err_vs_energy.yaxis = pow(np.array(hist_line_sky_err_vs_energy.yaxis),0.5)
-            hist_temp_sky_err_vs_energy = get_average(all_truth_energy,pow(np.array(temp_fit_sky_err),2),log_energy_axis)
-            hist_temp_sky_err_vs_energy.yaxis = pow(np.array(hist_temp_sky_err_vs_energy.yaxis),0.5)
-            print (f'hist_hillas_sky_err_vs_energy.yaxis = {hist_hillas_sky_err_vs_energy.yaxis}')
-            print (f'hist_line_sky_err_vs_energy.yaxis = {hist_line_sky_err_vs_energy.yaxis}')
-            print (f'hist_temp_sky_err_vs_energy.yaxis = {hist_temp_sky_err_vs_energy.yaxis}')
-    
-            fig.clf()
-            axbig = fig.add_subplot()
-            label_x = 'Energy'
-            label_y = 'Sky coordinate error'
-            axbig.set_xlabel(label_x)
-            axbig.set_ylabel(label_y)
-            axbig.scatter(all_truth_energy, hillas_sky_err, s=90, c='r', marker='+', label='Hillas')
-            axbig.scatter(all_truth_energy, line_fit_sky_err, s=90, c='g', marker='+', label='line')
-            axbig.scatter(all_truth_energy, temp_fit_sky_err, s=90, c='b', marker='+', label='template')
-            axbig.set_xscale('log')
-            axbig.set_yscale('log')
-            axbig.legend(loc='best')
-            fig.savefig(f'{ctapipe_output}/output_plots/sky_error_vs_energy.png',bbox_inches='tight')
-            axbig.remove()
-            
-            fig.clf()
-            axbig = fig.add_subplot()
-            label_x = 'Sum square open angles'
-            label_y = 'Sky coordinate error'
-            axbig.set_xlabel(label_x)
-            axbig.set_ylabel(label_y)
-            axbig.scatter(all_open_angle, hillas_sky_err, s=90, c='r', marker='+', label='Hillas')
-            axbig.scatter(all_open_angle, line_fit_sky_err, s=90, c='g', marker='+', label='line')
-            axbig.scatter(all_open_angle, temp_fit_sky_err, s=90, c='b', marker='+', label='template')
-            axbig.set_xscale('log')
-            axbig.set_yscale('log')
-            axbig.legend(loc='best')
-            fig.savefig(f'{ctapipe_output}/output_plots/sky_error_vs_angle.png',bbox_inches='tight')
-            axbig.remove()
-    
-            fig.clf()
-            axbig = fig.add_subplot()
-            label_x = 'Energy (truth)'
-            label_y = 'Energy (reconstruction)'
-            axbig.set_xlabel(label_x)
-            axbig.set_ylabel(label_y)
-            axbig.scatter(all_truth_energy, all_truth_energy, s=90, c='r', marker='+')
-            axbig.scatter(all_truth_energy, temp_fit_energy, s=90, c='g', marker='+')
-            axbig.set_xscale('log')
-            axbig.set_yscale('log')
-            fig.savefig(f'{ctapipe_output}/output_plots/energy_reconstruction_error.png',bbox_inches='tight')
-            axbig.remove()
     
             testing_image_matrix = []
             testing_time_matrix = []
@@ -1504,6 +1437,23 @@ for path in range(0,len(testing_sample_path)):
             telesc_position_matrix = []
 
             #if plot_count==10: exit()
+
+    cta_array_ana_output = []
+    cta_array_ana_output += [all_truth_energy]
+    cta_array_ana_output += [all_hillas_valid]
+    cta_array_ana_output += [temp_fit_energy]
+    cta_array_ana_output += [hillas_sky_err]
+    cta_array_ana_output += [line_fit_sky_err]
+    cta_array_ana_output += [temp_fit_sky_err]
+    cta_array_ana_output += [all_open_angle]
+    cta_array_ana_output += [line_impact]
+    cta_array_ana_output += [temp_impact]
+
+    output_filename = f'{ctapipe_output}/output_analysis/cta_array_ana_output_run{run_id}.pkl'
+    with open(output_filename,"wb") as file:
+        pickle.dump(cta_array_ana_output, file)
+
+    #exit()
 
 
 

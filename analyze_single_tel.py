@@ -42,6 +42,8 @@ fig.set_figwidth(figsize_x)
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
+image_size_cut = 3e2
+
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run853___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 with open('sim_files.txt', 'r') as file:
@@ -317,8 +319,7 @@ for path in range(0,len(training_sample_path)):
             delta_time_bad += [delta_foci_time]
             image_size_bad += [size]
     
-        #if size>2e2:
-        if size>3e2:
+        if size>image_size_cut:
             log_energy_truth_filt += [sim_log_energy]
             arrival_hist_error_filt += [(fit_arrival-sim_arrival)/focal_length*180./np.pi]
 
