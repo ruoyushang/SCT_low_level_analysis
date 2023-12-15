@@ -16,6 +16,7 @@ from ctapipe.image import hillas_parameters, tailcuts_clean, ImageProcessor
 from ctapipe.reco import ShowerProcessor
 from ctapipe.io import EventSource, SimTelEventSource, HDF5TableWriter
 from ctapipe.visualization import CameraDisplay
+from traitlets.config import Config
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -146,7 +147,7 @@ def renormalize_background(image_data,image_mask):
             if image_data[y_idx,x_idx]==0.: continue
             image_data[y_idx,x_idx] += -1.*pix_mean
 
-def clean_image(image_data,image_mask):
+def my_clean_image(image_data,image_mask):
 
     num_rows, num_cols = image_data.shape
     image_clean = np.zeros_like(image_data)
@@ -539,7 +540,7 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
     
     # Explore the instrument description
     subarray = source.subarray
-    #print (subarray.to_table())
+    print (subarray.to_table())
     
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
@@ -551,11 +552,36 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
         tel_pointing_alt = tel_pointing_alt-2.*math.pi
     if tel_pointing_az>1.*math.pi:
         tel_pointing_az = tel_pointing_az-2.*math.pi
+
+    image_processor_config = Config(
+            {
+                "ImageProcessor": {
+                    "image_cleaner_type": "TailcutsImageCleaner",
+                    "TailcutsImageCleaner": {
+                        "picture_threshold_pe": [
+                            ("type", "LST_LST_LSTCam", 7.5),
+                            ("type", "MST_MST_FlashCam", 8),
+                            ("type", "MST_MST_NectarCam", 8),
+                            ("type", "MST_SCT_SCTCam", 8),
+                            ("type", "SST_ASTRI_CHEC", 7),
+                            ],
+                        "boundary_threshold_pe": [
+                            ("type", "LST_LST_LSTCam", 5),
+                            ("type", "MST_MST_FlashCam", 4),
+                            ("type", "MST_MST_NectarCam", 4),
+                            ("type", "MST_SCT_SCTCam", 4),
+                            ("type", "SST_ASTRI_CHEC", 4),
+                            ],
+                        },
+                    }
+                }
+            )
     
     # Apply some calibration and trace integration
     calib = CameraCalibrator(subarray=subarray)
-    image_processor = ImageProcessor(subarray=subarray)
+    image_processor = ImageProcessor(subarray=subarray,config=image_processor_config)
     shower_processor = ShowerProcessor(subarray=subarray)
+
     
     evt_idx = -1
     for event in source:
@@ -564,7 +590,7 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
 
         if max_evt==evt_idx: continue
         if not is_training:
-            if (evt_idx % 2)==0: continue
+            if (evt_idx % 5)==0: continue
 
         event_id = event.index['event_id']
     
@@ -586,9 +612,42 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
         if shower_energy>max_energy: continue
     
         calib(event)  # fills in r1, dl0, and dl1
-        image_processor(event)
+        image_processor(event) # Takes DL1/Image data and cleans and parametrizes the images into DL1/parameters. Should be run after CameraCalibrator.
         shower_processor(event)
         ranked_tel_key_array = rank_brightest_telescope(event.r0.tel)
+
+        for tel_idx in range(0,len(ranked_tel_key_array)):
+    
+            tel_key = ranked_tel_key_array[tel_idx][0]
+            geom = subarray.tel[tel_key].camera.geometry
+
+            dl1tel = event.dl1.tel[tel_key]
+            clean_image = dl1tel.image
+
+            # image cleaning
+            if do_cleaning:
+                analysis_image_2d = geom.image_to_cartesian_representation(dl1tel.image)
+                x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
+                num_rows, num_cols = analysis_image_2d.shape
+                for x_idx in range(0,num_cols):
+                    for y_idx in range(0,num_rows):
+                        if math.isnan(analysis_image_2d[y_idx,x_idx]): 
+                            analysis_image_2d[y_idx,x_idx] = 0.
+                analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
+                image_mask = np.zeros_like(analysis_image_smooth)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_smooth,image_mask)
+                image_mask = find_mask(analysis_image_smooth)
+                renormalize_background(analysis_image_2d,image_mask)
+                analysis_image_2d = my_clean_image(analysis_image_2d,image_mask)
+                clean_image = geom.image_from_cartesian_representation(analysis_image_2d)
+                #clean_image = tailcuts_clean(geom,dl1tel.image,boundary_thresh=4,picture_thresh=8,min_number_picture_neighbors=2)
+
+            for pix in range(0,len(clean_image)):
+                if clean_image[pix]==0.:
+                    dl1tel.image[pix] = 0.
+                    dl1tel.peak_time[pix] = 0.
+    
 
         stereo = event.dl2.stereo.geometry["HillasReconstructor"]
         hillas_shower_alt = 0.
@@ -659,16 +718,6 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
                         analysis_time_2d[y_idx,x_idx] = 0.
 
             x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
-
-            # image cleaning
-            if do_cleaning:
-                analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
-                image_mask = np.zeros_like(analysis_image_smooth)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_smooth,image_mask)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_2d,image_mask)
-                analysis_image_2d = clean_image(analysis_image_2d,image_mask)
 
             for x_idx in range(0,num_cols):
                 for y_idx in range(0,num_rows):
