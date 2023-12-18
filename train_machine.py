@@ -28,6 +28,9 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 subprocess.call(['sh', './clean_plots.sh'])
 subprocess.call(['sh', './clean_machine.sh'])
 
+#image_size_cut = 0.
+image_size_cut = 100.
+
 fig, ax = plt.subplots()
 figsize_x = 8.6
 figsize_y = 6.4
@@ -97,9 +100,9 @@ for img in range(0,len(old_big_training_image_matrix)):
     foci_r2 = pow(image_foci_x2*image_foci_x2+image_foci_y2*image_foci_y2,0.5)
     all_delta_time += [delta_foci_time]
     all_delta_foci_r += [foci_r2-foci_r1]
+    image_size = np.sum(old_big_training_image_matrix[img])
     
-    if delta_foci_time>30.: continue
-    if delta_foci_time<0.: continue
+    if image_size<image_size_cut: continue
     training_id_list += [old_training_id_list[img]]
     training_telesc_position_matrix += [old_training_telesc_position_matrix[img]]
     training_truth_shower_position_matrix += [old_training_truth_shower_position_matrix[img]]

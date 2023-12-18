@@ -459,9 +459,9 @@ def get_cam_coord_axes(geom,image_2d):
     x_axis = []
     y_axis = []
     for x_idx in range(0,num_cols):
-        x_axis += [min_pix_x+x_idx*delta_pix_x]
+        x_axis += [min_pix_x+x_idx*delta_pix_x+0.5*delta_pix_x]
     for y_idx in range(0,num_rows):
-        y_axis += [max_pix_y-y_idx*delta_pix_y]
+        y_axis += [max_pix_y-y_idx*delta_pix_y-0.5*delta_pix_y]
 
     return x_axis, y_axis
 
@@ -623,6 +623,9 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
 
             dl1tel = event.dl1.tel[tel_key]
             clean_image = dl1tel.image
+
+            image_size = np.sum(clean_image)
+            if image_size<=0.: continue
 
             # image cleaning
             if do_cleaning:
