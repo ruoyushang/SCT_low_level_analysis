@@ -45,7 +45,7 @@ fig.set_figwidth(figsize_x)
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
 image_size_cut = 100.
-make_plots = True
+make_plots = False
 
 
 print ('loading svd pickle data... ')
@@ -61,18 +61,18 @@ eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors_time.pkl'
 eigen_vectors_time_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival.pkl'
-lookup_table_arrival_pkl = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact.pkl'
+lookup_table_impact_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival_rms.pkl'
-lookup_table_arrival_rms_pkl = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact_rms.pkl'
+lookup_table_impact_rms_pkl = pickle.load(open(output_filename, "rb"))
 
 rank = len(lookup_table_pkl)
 
 for r in range(0,rank):
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'Impact [km]'
+    label_x = 'Arrival'
     label_y = 'log Energy [TeV]'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
@@ -87,32 +87,32 @@ for r in range(0,rank):
 
 fig.clf()
 axbig = fig.add_subplot()
-label_x = 'Impact [km]'
+label_x = 'Arrival'
 label_y = 'log Energy [TeV]'
 axbig.set_xlabel(label_x)
 axbig.set_ylabel(label_y)
-xmin = lookup_table_arrival_pkl.xaxis.min()
-xmax = lookup_table_arrival_pkl.xaxis.max()
-ymin = lookup_table_arrival_pkl.yaxis.min()
-ymax = lookup_table_arrival_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+xmin = lookup_table_impact_pkl.xaxis.min()
+xmax = lookup_table_impact_pkl.xaxis.max()
+ymin = lookup_table_impact_pkl.yaxis.min()
+ymax = lookup_table_impact_pkl.yaxis.max()
+im = axbig.imshow(lookup_table_impact_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_t0.png',bbox_inches='tight')
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_impact_t0.png',bbox_inches='tight')
 axbig.remove()
 
 fig.clf()
 axbig = fig.add_subplot()
-label_x = 'Impact [km]'
+label_x = 'Arrival'
 label_y = 'log Energy [TeV]'
 axbig.set_xlabel(label_x)
 axbig.set_ylabel(label_y)
-xmin = lookup_table_arrival_rms_pkl.xaxis.min()
-xmax = lookup_table_arrival_rms_pkl.xaxis.max()
-ymin = lookup_table_arrival_rms_pkl.yaxis.min()
-ymax = lookup_table_arrival_rms_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_arrival_rms_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
+xmin = lookup_table_impact_rms_pkl.xaxis.min()
+xmax = lookup_table_impact_rms_pkl.xaxis.max()
+ymin = lookup_table_impact_rms_pkl.yaxis.min()
+ymax = lookup_table_impact_rms_pkl.yaxis.max()
+im = axbig.imshow(lookup_table_impact_rms_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
 cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_arrival_rms_t0.png',bbox_inches='tight')
+fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_impact_rms_t0.png',bbox_inches='tight')
 axbig.remove()
 
 ## neural network for lookup table
@@ -260,7 +260,7 @@ for img in range(0,len(training_id_list)):
 
     latent_space = []
     for r in range(0,rank):
-        latent_space += [lookup_table_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
+        latent_space += [lookup_table_pkl[r].get_bin_content(sim_arrival,sim_log_energy)]
     latent_space = np.array(latent_space)
 
     sim_image = eigen_vectors_pkl.T @ latent_space
@@ -268,7 +268,7 @@ for img in range(0,len(training_id_list)):
 
     latent_space_time = []
     for r in range(0,rank):
-        latent_space_time += [lookup_table_time_pkl[r].get_bin_content(sim_impact,sim_log_energy)]
+        latent_space_time += [lookup_table_time_pkl[r].get_bin_content(sim_arrival,sim_log_energy)]
     latent_space_time = np.array(latent_space_time)
 
     sim_time = eigen_vectors_time_pkl.T @ latent_space_time
@@ -280,7 +280,7 @@ for img in range(0,len(training_id_list)):
                 sim_image_2d[row,col] = 0.
                 sim_time_2d[row,col] = 0.
 
-    fit_arrival, fit_impact, fit_log_energy = signle_image_reconstruction(truth_image,truth_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_arrival_pkl,lookup_table_arrival_rms_pkl)
+    fit_arrival, fit_impact, fit_log_energy = signle_image_reconstruction(truth_image,truth_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_impact_pkl,lookup_table_impact_rms_pkl)
 
     print (f'sim_log_energy = {sim_log_energy}')
     print (f'fit_log_energy = {fit_log_energy}')
@@ -335,12 +335,12 @@ for img in range(0,len(training_id_list)):
 
     fit_latent_space = []
     for r in range(0,rank):
-        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_impact,fit_log_energy)]
+        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_arrival,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
     fit_latent_space_time = []
     for r in range(0,rank):
-        fit_latent_space_time += [lookup_table_time_pkl[r].get_bin_content(fit_impact,fit_log_energy)]
+        fit_latent_space_time += [lookup_table_time_pkl[r].get_bin_content(fit_arrival,fit_log_energy)]
     fit_latent_space_time = np.array(fit_latent_space_time)
 
     fit_image = eigen_vectors_pkl.T @ fit_latent_space

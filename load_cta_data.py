@@ -1119,11 +1119,11 @@ class MyArray1D:
 def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_data,lookup_table,eigen_vectors):
 
     fit_log_energy = init_params[0]
-    fit_impact = init_params[1]
+    fit_arrival = init_params[1]
 
     fit_latent_space = []
     for r in range(0,len(lookup_table)):
-        fit_latent_space += [lookup_table[r].get_bin_content(fit_impact,fit_log_energy)]
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
     #image_1d_fit = eigen_vectors.T @ fit_latent_space
@@ -1157,7 +1157,7 @@ def get_average(xdata_list,ydata_list,x_axis):
 
     return avg
 
-def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_arrival_pkl,lookup_table_arrival_rms_pkl, guided=False, arrival_x=0., arrival_y=0.):
+def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_impact_pkl,lookup_table_impact_rms_pkl, guided=False, arrival_x=0., arrival_y=0.):
 
     input_image_2d = geom.image_to_cartesian_representation(input_image)
     input_time_2d = geom.image_to_cartesian_representation(input_time)
@@ -1190,28 +1190,28 @@ def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_tabl
     time_rotate_1d = geom.image_from_cartesian_representation(time_rotate)
 
     fit_log_energy = 0.
-    fit_impact = 0.1
-    init_params = [fit_log_energy,fit_impact]
+    fit_arrival = 0.1
+    init_params = [fit_log_energy,fit_arrival]
     image_weight = 1./np.sum(np.array(input_image)*np.array(input_image))
     time_weight = 1./np.sum(np.array(input_time)*np.array(input_time))
     fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
     fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
     n_bins_energy = len(lookup_table_pkl[0].yaxis)
-    n_bins_impact = len(lookup_table_pkl[0].xaxis)
-    for idx_x  in range(0,n_bins_impact):
+    n_bins_arrival = len(lookup_table_pkl[0].xaxis)
+    for idx_x  in range(0,n_bins_arrival):
         for idx_y  in range(0,n_bins_energy):
             try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
-            try_impact = lookup_table_pkl[0].xaxis[idx_x]
-            init_params = [try_log_energy,try_impact]
+            try_arrival = lookup_table_pkl[0].xaxis[idx_x]
+            init_params = [try_log_energy,try_arrival]
             try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
             try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
             if try_chi2<fit_chi2:
                 fit_chi2 = try_chi2
                 fit_log_energy = try_log_energy
-                fit_impact = try_impact
+                fit_arrival = try_arrival
 
-    fit_arrival = lookup_table_arrival_pkl.get_bin_content(fit_impact,fit_log_energy)
-    fit_arrival_rms = lookup_table_arrival_rms_pkl.get_bin_content(fit_impact,fit_log_energy)
+    fit_impact = lookup_table_impact_pkl.get_bin_content(fit_arrival,fit_log_energy)
+    fit_impact_rms = lookup_table_impact_rms_pkl.get_bin_content(fit_arrival,fit_log_energy)
 
     return fit_arrival, fit_impact, fit_log_energy
 

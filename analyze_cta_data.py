@@ -44,6 +44,7 @@ fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
 image_size_cut = 100.
+open_angle_threshold = 0.4
 
 def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
 
@@ -67,7 +68,7 @@ def find_intersection_on_focalplane(image_x,image_y,image_a,image_b,image_w):
             else:
                 x = (b2 - b1) / (a1 - a2)
                 y = a1 * ((b2 - b1) / (a1 - a2)) + b1
-                w = min(image_w[img1],image_w[img2])*pow(abs(np.arctan(abs((a1-a2)/(1.+a1*a2)))),2)
+                w = min(image_w[img1],image_w[img2])*abs(np.arctan(abs((a1-a2)/(1.+a1*a2))))/open_angle_threshold
             pair_x += [x]
             pair_y += [y]
             pair_w += [w]
@@ -293,7 +294,7 @@ def get_image_center(evt_image_2d,x_axis,y_axis):
     avg_y = avg_y/sum_w
     return avg_x, avg_y, sum_w
 
-def create_svd_image(shower_params,tel_pos,cam_axes,geom,lookup_table,lookup_table_arrival,eigen_vectors):
+def create_svd_image(shower_params,tel_pos,cam_axes,geom,lookup_table,lookup_table_impact,eigen_vectors):
 
     shower_cam_x = float(shower_params[0])
     shower_cam_y = float(shower_params[1])
@@ -318,7 +319,7 @@ def create_svd_image(shower_params,tel_pos,cam_axes,geom,lookup_table,lookup_tab
     latent_space = np.array(latent_space)
     #print (f'latent_space = {latent_space}')
 
-    arrival = lookup_table_arrival.get_bin_content(shower_impact,shower_log_energy)
+    arrival = lookup_table_impact.get_bin_content(shower_impact,shower_log_energy)
     #print (f'arrival = {arrival}')
     
     evt_image = eigen_vectors.T @ latent_space
@@ -481,23 +482,18 @@ def weighted_distance_between_two_images(image_a, image_b, cam_geom, cam_axes):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def sum_square_difference_between_images_1d(try_params,image_1d_matrix,time_1d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigenvectors,lookup_table_time,eigenvectors_time,lookup_table_arrival,fit_line_core_x,fit_line_core_y):
+def sum_square_difference_between_images_1d(try_params,image_1d_matrix,time_1d_matrix,image_center,cam_axes,geom,lookup_table,eigenvectors,lookup_table_time,eigenvectors_time,lookup_table_impact):
 
-    try_shower_core_x = try_params[0]
-    try_shower_core_y = try_params[1]
+    try_shower_cam_x = try_params[0]
+    try_shower_cam_y = try_params[1]
     try_log_energy = try_params[2]
 
 
     tic = time.perf_counter()
     chi2 = 0.
     for tel in range(0,len(image_1d_matrix)):
-        tel_x = tel_pos_matrix[tel][2]/1000.
-        tel_y = tel_pos_matrix[tel][3]/1000.
-
-        line_angle_rad = np.arctan2(fit_line_core_y-tel_y,fit_line_core_x-tel_x)
-        try_angle_rad = np.arctan2(try_shower_core_y-tel_y,try_shower_core_x-tel_x)
-        angle_chi2 = abs(line_angle_rad-try_angle_rad)
-        #print (f'angle_chi2 = {angle_chi2}')
+        img_x = image_center[tel][0]
+        img_y = image_center[tel][1]
 
         image_data_1d = image_1d_matrix[tel]
         time_data_1d = time_1d_matrix[tel]
@@ -505,10 +501,11 @@ def sum_square_difference_between_images_1d(try_params,image_1d_matrix,time_1d_m
         #image_weight = 1./np.sum(np.array(image_data_1d)*np.array(image_data_1d))
         #time_weight = 1./np.sum(np.array(time_data_1d)*np.array(time_data_1d))
         image_weight = 1.
-        time_weight = 1.*np.sum(np.array(image_data_1d)*np.array(image_data_1d))/np.sum(np.array(time_data_1d)*np.array(time_data_1d))
+        time_weight = 1.
+        #time_weight = 1.*np.sum(np.array(image_data_1d)*np.array(image_data_1d))/np.sum(np.array(time_data_1d)*np.array(time_data_1d))
 
-        try_impact = pow(pow(tel_x-try_shower_core_x,2)+pow(tel_y-try_shower_core_y,2),0.5)
-        init_params = [try_log_energy,try_impact]
+        try_arrival = pow(pow(img_x-try_shower_cam_x,2)+pow(img_y-try_shower_cam_y,2),0.5)
+        init_params = [try_log_energy,try_arrival]
         image_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_data_1d,lookup_table,eigenvectors)
         time_chi2 = time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_data_1d,lookup_table_time,eigenvectors_time)
         #print (f'image_chi2 = {image_chi2}')
@@ -516,15 +513,15 @@ def sum_square_difference_between_images_1d(try_params,image_1d_matrix,time_1d_m
 
         chi2 += image_chi2
         #chi2 += time_chi2
-        #chi2 += angle_chi2
 
     toc = time.perf_counter()
     #print (f'SVD image trial completed in {toc - tic:0.4f} seconds')
     #exit()
+    #print (f'chi2 = {chi2}')
 
     return chi2
 
-def sum_square_difference_between_images_2d(try_params,image_2d_matrix,time_2d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigenvectors,lookup_table_time,eigenvectors_time,lookup_table_arrival,fit_shower_core_x,fit_shower_core_y,fit_log_energy):
+def sum_square_difference_between_images_2d(try_params,image_2d_matrix,time_2d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigenvectors,lookup_table_time,eigenvectors_time,lookup_table_impact,fit_shower_core_x,fit_shower_core_y,fit_log_energy):
 
     try_shower_cam_x = try_params[0]
     try_shower_cam_y = try_params[1]
@@ -538,7 +535,7 @@ def sum_square_difference_between_images_2d(try_params,image_2d_matrix,time_2d_m
 
         evt_param = [try_shower_cam_x,try_shower_cam_y,fit_shower_core_x,fit_shower_core_y,fit_log_energy]
         evt_param = np.array(evt_param)
-        svd_image_2d = create_svd_image(evt_param,tel_pos,cam_axes[tel],geom,lookup_table,lookup_table_arrival,eigenvectors)
+        svd_image_2d = create_svd_image(evt_param,tel_pos,cam_axes[tel],geom,lookup_table,lookup_table_impact,eigenvectors)
 
         svd_image_2d = np.array(svd_image_2d)
         data_image_2d = np.array(image_2d_matrix[tel])
@@ -591,7 +588,7 @@ def sum_square_distance_to_image_lines_and_points(core_xy,list_tel_x,list_tel_y,
     sum_dist_sq = line_weight*sum_dist_sq_line + point_weight*sum_dist_sq_point
     return sum_dist_sq
 
-def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam_axes,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_arrival,lookup_table_arrival_rms):
+def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam_axes,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_impact,lookup_table_impact_rms):
 
     fit_line_cam_x, fit_line_cam_y, fit_line_core_x, fit_line_core_y, open_angle = fit_lines_to_all_images(image_matrix,tel_pos_matrix,geom,cam_axes)
     list_img_a, list_img_b, list_img_w, list_line_cam_x, list_line_cam_y, list_line_core_x, list_line_core_y, list_line_weight = fit_intersections_all_images(image_matrix,tel_pos_matrix,geom,cam_axes)
@@ -660,7 +657,7 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
         list_tel_y += [tel_y]
         list_image_2d += [image_data_2d]
 
-        fit_arrival, fit_impact, fit_log_energy = signle_image_reconstruction(image_matrix[tel],time_matrix[tel],geom,cam_axes[tel],lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_arrival,lookup_table_arrival_rms, guided=guided, arrival_x=arrival_x, arrival_y=arrival_y)
+        fit_arrival, fit_impact, fit_log_energy = signle_image_reconstruction(image_matrix[tel],time_matrix[tel],geom,cam_axes[tel],lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_impact,lookup_table_impact_rms, guided=guided, arrival_x=arrival_x, arrival_y=arrival_y)
 
         angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
         delta_x = fit_arrival*np.cos(-angle_rad)
@@ -689,16 +686,16 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
         list_svd_weight += [image_size]
 
 
-    #list_cam_x = list_svd_cam_x + list_line_cam_x
-    #list_cam_y = list_svd_cam_y + list_line_cam_y
-    #list_core_x = list_svd_core_x + list_line_core_x
-    #list_core_y = list_svd_core_y + list_line_core_y
-    #list_weight = list_svd_weight + list_line_weight
-    list_cam_x = list_svd_cam_x
-    list_cam_y = list_svd_cam_y
-    list_core_x = list_svd_core_x
-    list_core_y = list_svd_core_y
-    list_weight = list_svd_weight
+    list_cam_x = list_svd_cam_x + list_line_cam_x
+    list_cam_y = list_svd_cam_y + list_line_cam_y
+    list_core_x = list_svd_core_x + list_line_core_x
+    list_core_y = list_svd_core_y + list_line_core_y
+    list_weight = list_svd_weight + list_line_weight
+    #list_cam_x = list_svd_cam_x
+    #list_cam_y = list_svd_cam_y
+    #list_core_x = list_svd_core_x
+    #list_core_y = list_svd_core_y
+    #list_weight = list_svd_weight
 
     avg_energy = avg_energy/sum_weight
 
@@ -727,7 +724,9 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
     avg_cam_y = 0.
     avg_core_x = 0.
     avg_core_y = 0.
+    max_weight = max(list_weight)
     for entry in range(0,len(list_cam_x)):
+        if list_weight[entry]<0.5*max_weight: continue
         total_weight += list_weight[entry]
         avg_cam_x += list_cam_x[entry]*list_weight[entry]
         avg_cam_y += list_cam_y[entry]*list_weight[entry]
@@ -741,10 +740,12 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
 
     #if len(image_matrix)>10:
     #    return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
+    return avg_energy, avg_cam_x, avg_cam_y, avg_core_x, avg_core_y
 
 
     image_repos_1d_matrix = []
     time_repos_1d_matrix = []
+    list_img_center = []
     for tel in range(0,len(image_matrix)):
 
         image_data_2d = image_2d_matrix[tel]
@@ -757,6 +758,8 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
         image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(image_data_2d, time_data_2d, cam_axes[tel][0], cam_axes[tel][1], guided=guided, arrival_x=arrival_x, arrival_y=arrival_y)
         image_foci_x = image_foci_x1
         image_foci_y = image_foci_y1
+
+        list_img_center += [[image_center_x,image_center_y]]
 
         image_recenter = np.zeros_like(image_data_2d)
         time_recenter = np.zeros_like(time_data_2d)
@@ -780,45 +783,41 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
 
 
     fit_shower_energy = avg_energy
+
     fit_shower_cam_x = fit_line_cam_x
     fit_shower_cam_y = fit_line_cam_y
     fit_shower_core_x = fit_line_core_x
     fit_shower_core_y = fit_line_core_y
-    if open_angle<open_angle_cut:
-        fit_shower_cam_x = avg_cam_x
-        fit_shower_cam_y = avg_cam_y
-        fit_shower_core_x = avg_core_x
-        fit_shower_core_y = avg_core_y
+    #fit_shower_cam_x = avg_cam_x
+    #fit_shower_cam_y = avg_cam_y
+    #fit_shower_core_x = avg_core_x
+    #fit_shower_core_y = avg_core_y
 
-    #core_error = 0.1
-    #stepsize = [0.01,0.01,0.1]
-    #try_params = [fit_shower_core_x,fit_shower_core_y,math.log10(fit_shower_energy)]
-    #bounds = [(fit_shower_core_x-core_error,fit_shower_core_x+core_error),(fit_shower_core_y-core_error,fit_shower_core_y+core_error),(math.log10(fit_shower_energy)-0.3,math.log10(fit_shower_energy)+0.3)]
-    #solution = minimize(
-    #    sum_square_difference_between_images_1d,
-    #    x0=try_params,
-    #    args=(image_repos_1d_matrix,time_repos_1d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_arrival,fit_line_core_x,fit_line_core_y),
-    #    #bounds=bounds,
-    #    method='L-BFGS-B',
-    #    jac=None,
-    #    options={'eps':stepsize,'ftol':0.01},
-    #)
-    #fit_shower_core_x = solution['x'][0]
-    #fit_shower_core_y = solution['x'][1]
-    #fit_shower_log_energy = solution['x'][2]
-    #fit_shower_energy = pow(10.,solution['x'][2])
-    #print (f'fit_line_core_x = {fit_line_core_x}')
-    #print (f'fit_line_core_y = {fit_line_core_y}')
-    #print (f'fit_shower_core_x = {fit_shower_core_x}')
-    #print (f'fit_shower_core_y = {fit_shower_core_y}')
-    ##exit()
+    core_error = 0.1
+    stepsize = [0.01,0.01,0.1]
+    try_params = [fit_shower_cam_x,fit_shower_cam_y,math.log10(fit_shower_energy)]
+    bounds = [(fit_shower_cam_x-0.05,fit_shower_cam_x+0.05),(fit_shower_cam_y-0.05,fit_shower_cam_y+0.05),(math.log10(fit_shower_energy)-0.3,math.log10(fit_shower_energy)+0.3)]
+    solution = minimize(
+        sum_square_difference_between_images_1d,
+        x0=try_params,
+        args=(image_repos_1d_matrix,time_repos_1d_matrix,list_img_center,cam_axes,geom,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_impact),
+        bounds=bounds,
+        method='L-BFGS-B',
+        jac=None,
+        options={'eps':stepsize,'ftol':0.01},
+    )
+    fit_shower_cam_x = solution['x'][0]
+    fit_shower_cam_y = solution['x'][1]
+    fit_shower_log_energy = solution['x'][2]
+    fit_shower_energy = pow(10.,solution['x'][2])
+    #exit()
 
     #stepsize = [0.005,0.005]
     #try_params = [fit_shower_cam_x,fit_shower_cam_y]
     #solution = minimize(
     #    sum_square_difference_between_images_2d,
     #    x0=try_params,
-    #    args=(image_2d_matrix,time_2d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_arrival,fit_shower_core_x,fit_shower_core_y,fit_shower_log_energy),
+    #    args=(image_2d_matrix,time_2d_matrix,tel_pos_matrix,cam_axes,geom,lookup_table,eigen_vectors,lookup_table_time,eigen_vectors_time,lookup_table_impact,fit_shower_core_x,fit_shower_core_y,fit_shower_log_energy),
     #    method='L-BFGS-B',
     #    jac=None,
     #    options={'eps':stepsize,'ftol':0.01},
@@ -847,7 +846,7 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
     #    image_foci_x = list_img_foci_x[tel]
     #    image_foci_y = list_img_foci_y[tel]
 
-    #    fit_arrival = lookup_table_arrival.get_bin_content(fit_impact,np.log10(fit_shower_energy))
+    #    fit_arrival = lookup_table_impact.get_bin_content(fit_impact,np.log10(fit_shower_energy))
 
     #    angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
     #    delta_x = fit_arrival*np.cos(-angle_rad)
@@ -862,61 +861,63 @@ def fit_templates_to_all_images(image_matrix,time_matrix,tel_pos_matrix,geom,cam
     #fit_shower_cam_x = fit_shower_cam_x/total_weight
     #fit_shower_cam_y = fit_shower_cam_y/total_weight
 
-    sky_xy_log_likelihood = np.zeros_like(image_2d_matrix[0])
-    num_rows, num_cols = sky_xy_log_likelihood.shape
-    for x_idx in range(0,num_cols):
-        for y_idx in range(0,num_rows):
-            sky_xy_log_likelihood[y_idx,x_idx] = 0.
-    sky_likelihood_xaxis = cam_axes[0][0]
-    sky_likelihood_yaxis = cam_axes[0][1]
+    #sky_xy_log_likelihood = np.zeros_like(image_2d_matrix[0])
+    #num_rows, num_cols = sky_xy_log_likelihood.shape
+    #for x_idx in range(0,num_cols):
+    #    for y_idx in range(0,num_rows):
+    #        sky_xy_log_likelihood[y_idx,x_idx] = 0.
+    #sky_likelihood_xaxis = cam_axes[0][0]
+    #sky_likelihood_yaxis = cam_axes[0][1]
 
-    for tel in range(0,len(list_tel_x)):
-        tel_x = list_tel_x[tel]
-        tel_y = list_tel_y[tel]
+    #for tel in range(0,len(list_tel_x)):
+    #    tel_x = list_tel_x[tel]
+    #    tel_y = list_tel_y[tel]
 
-        image_size = list_svd_weight[tel]
+    #    image_size = list_svd_weight[tel]
 
-        fit_impact = pow(pow(tel_x-fit_shower_core_x,2)+pow(tel_y-fit_shower_core_y,2),0.5)
+    #    fit_impact = pow(pow(tel_x-fit_shower_core_x,2)+pow(tel_y-fit_shower_core_y,2),0.5)
 
-        image_center_x = list_img_center_x[tel]
-        image_center_y = list_img_center_y[tel]
-        image_foci_x = list_img_foci_x[tel]
-        image_foci_y = list_img_foci_y[tel]
+    #    image_center_x = list_img_center_x[tel]
+    #    image_center_y = list_img_center_y[tel]
+    #    image_foci_x = list_img_foci_x[tel]
+    #    image_foci_y = list_img_foci_y[tel]
 
-        fit_arrival = lookup_table_arrival.get_bin_content(fit_impact,np.log10(fit_shower_energy))
+    #    fit_arrival = lookup_table_impact.get_bin_content(fit_impact,np.log10(fit_shower_energy))
 
-        angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
-        delta_x = fit_arrival*np.cos(-angle_rad)
-        delta_y = fit_arrival*np.sin(-angle_rad)
-        cam_x = image_center_x + delta_x
-        cam_y = image_center_y - delta_y
+    #    angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+    #    delta_x = fit_arrival*np.cos(-angle_rad)
+    #    delta_y = fit_arrival*np.sin(-angle_rad)
+    #    cam_x = image_center_x + delta_x
+    #    cam_y = image_center_y - delta_y
 
-        longi_error = 0.02
-        trans_error = 0.002
+    #    longi_error = 0.02
+    #    trans_error = 0.002
 
-        a, b, w = fit_image_to_line(list_image_2d[tel],cam_axes[tel][0],cam_axes[tel][1])
-        aT, bT, wT = fit_image_to_line(np.array(list_image_2d[tel]).transpose(),cam_axes[tel][1],cam_axes[tel][0])
-        if w<wT:
-            a = 1./aT
-            b = -bT/aT
-            w = wT
-        for x_idx in range(0,num_cols):
-            for y_idx in range(0,num_rows):
-                pix_x = sky_likelihood_xaxis[x_idx]
-                pix_y = sky_likelihood_yaxis[y_idx]
-                dist2center_sq = pow(pix_x-cam_x,2) + pow(pix_y-cam_y,2)
-                dist2line_sq = pow((a*pix_x-pix_y+b),2)/(1.+a*a)
-                new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
-                sky_xy_log_likelihood[y_idx,x_idx] += new_likelihood
+    #    a, b, w = fit_image_to_line(list_image_2d[tel],cam_axes[tel][0],cam_axes[tel][1])
+    #    aT, bT, wT = fit_image_to_line(np.array(list_image_2d[tel]).transpose(),cam_axes[tel][1],cam_axes[tel][0])
+    #    if w<wT:
+    #        a = 1./aT
+    #        b = -bT/aT
+    #        w = wT
+    #    for x_idx in range(0,num_cols):
+    #        for y_idx in range(0,num_rows):
+    #            pix_x = sky_likelihood_xaxis[x_idx]
+    #            pix_y = sky_likelihood_yaxis[y_idx]
+    #            dist2center_sq = pow(pix_x-cam_x,2) + pow(pix_y-cam_y,2)
+    #            dist2line_sq = pow((a*pix_x-pix_y+b),2)/(1.+a*a)
+    #            new_likelihood = ((-dist2center_sq/(2.*longi_error)) + (-dist2line_sq/(2.*trans_error)))
+    #            sky_xy_log_likelihood[y_idx,x_idx] += new_likelihood
 
-    max_index = np.argmax(sky_xy_log_likelihood)
-    max_row, max_col = np.unravel_index(max_index, sky_xy_log_likelihood.shape)
-    max_log_likelihood = sky_xy_log_likelihood[max_row,max_col]
-    fit_shower_cam_x = sky_likelihood_xaxis[max_col]
-    fit_shower_cam_y = sky_likelihood_yaxis[max_row]
+    #max_index = np.argmax(sky_xy_log_likelihood)
+    #max_row, max_col = np.unravel_index(max_index, sky_xy_log_likelihood.shape)
+    #max_log_likelihood = sky_xy_log_likelihood[max_row,max_col]
+    #fit_shower_cam_x = sky_likelihood_xaxis[max_col]
+    #fit_shower_cam_y = sky_likelihood_yaxis[max_row]
     
     print (f'fit_line_cam_x = {fit_line_cam_x}')
     print (f'fit_line_cam_y = {fit_line_cam_y}')
+    print (f'avg_cam_x = {avg_cam_x}')
+    print (f'avg_cam_y = {avg_cam_y}')
     print (f'fit_shower_cam_x = {fit_shower_cam_x}')
     print (f'fit_shower_cam_y = {fit_shower_cam_y}')
 
@@ -1091,7 +1092,9 @@ def fit_lines_to_all_images(image_matrix,tel_pos_matrix,geom,cam_axes):
     fit_cam_y = 0.
     fit_core_x = 0.
     fit_core_y = 0.
+    max_weight = max(list_weight)
     for entry in range(0,len(list_cam_x)):
+        if list_weight[entry]<0.5*max_weight: continue
         total_weight += list_weight[entry]
         fit_cam_x += list_cam_x[entry]*list_weight[entry]
         fit_cam_y += list_cam_y[entry]*list_weight[entry]
@@ -1107,7 +1110,7 @@ def fit_lines_to_all_images(image_matrix,tel_pos_matrix,geom,cam_axes):
         for t2 in range(t1+1,len(list_img_a)):
             a1 = list_img_a[t1]
             a2 = list_img_a[t2]
-            open_angle += min(list_img_w[t1],list_img_w[t2])*abs(np.arctan(abs((a1-a2)/(1.+a1*a2))))
+            open_angle += min(list_img_w[t1],list_img_w[t2])*abs(np.arctan(abs((a1-a2)/(1.+a1*a2))))/open_angle_threshold
             #open_angle += abs(np.arctan(abs((a1-a2)/(1.+a1*a2))))
 
     return fit_cam_x, fit_cam_y, fit_core_x, fit_core_y, open_angle
@@ -1152,11 +1155,11 @@ eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors_time.pkl'
 eigen_vectors_time_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival.pkl'
-lookup_table_arrival_pkl = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact.pkl'
+lookup_table_impact_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_arrival_rms.pkl'
-lookup_table_arrival_rms_pkl = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact_rms.pkl'
+lookup_table_impact_rms_pkl = pickle.load(open(output_filename, "rb"))
 
 
 
@@ -1275,6 +1278,9 @@ for img in range(0,len(testing_id_list)):
         if max_image_size<image_size_cut: 
             skip_the_event = True
             print ('event rejected because of size cut.')
+        if sum_image_size<2.*image_size_cut: 
+            skip_the_event = True
+            print ('event rejected because of size cut.')
 
         deg2rad = np.pi/180.
         rad2deg = 180./np.pi
@@ -1385,7 +1391,7 @@ for img in range(0,len(testing_id_list)):
         fit_temp_cam_y = truth_cam_y
         fit_temp_core_x = truth_shower_core_x/1000.
         fit_temp_core_y = truth_shower_core_y/1000.
-        fit_temp_energy, fit_temp_cam_x, fit_temp_cam_y, fit_temp_core_x, fit_temp_core_y = fit_templates_to_all_images(testing_image_matrix,testing_time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_arrival_pkl,lookup_table_arrival_rms_pkl)
+        fit_temp_energy, fit_temp_cam_x, fit_temp_cam_y, fit_temp_core_x, fit_temp_core_y = fit_templates_to_all_images(testing_image_matrix,testing_time_matrix,telesc_position_matrix,geom,all_cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_impact_pkl,lookup_table_impact_rms_pkl)
         print ('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         print ('all template fit result:')
         print (f'current_event = {current_event}')
@@ -1472,7 +1478,7 @@ for img in range(0,len(testing_id_list)):
             fit_shower_core_y = truth_shower_core_y/1000.
             evt_param = [fit_shower_cam_x,fit_shower_cam_y,fit_shower_core_x,fit_shower_core_y,math.log10(fit_shower_energy)]
             evt_param = np.array(evt_param)
-            svd_image_2d_truth_temp = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_arrival_pkl,eigen_vectors_pkl)
+            svd_image_2d_truth_temp = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_impact_pkl,eigen_vectors_pkl)
 
             fit_shower_energy = fit_temp_energy
             fit_shower_cam_x = fit_line_cam_x
@@ -1481,7 +1487,7 @@ for img in range(0,len(testing_id_list)):
             fit_shower_core_y = fit_line_core_y
             evt_param = [fit_shower_cam_x,fit_shower_cam_y,fit_shower_core_x,fit_shower_core_y,math.log10(fit_shower_energy)]
             evt_param = np.array(evt_param)
-            svd_image_2d_line = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_arrival_pkl,eigen_vectors_pkl)
+            svd_image_2d_line = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_impact_pkl,eigen_vectors_pkl)
 
             fit_shower_energy = fit_temp_energy
             fit_shower_cam_x = fit_temp_cam_x
@@ -1490,7 +1496,7 @@ for img in range(0,len(testing_id_list)):
             fit_shower_core_y = fit_temp_core_y
             evt_param = [fit_shower_cam_x,fit_shower_cam_y,fit_shower_core_x,fit_shower_core_y,math.log10(fit_shower_energy)]
             evt_param = np.array(evt_param)
-            svd_image_2d_temp = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_arrival_pkl,eigen_vectors_pkl)
+            svd_image_2d_temp = create_svd_image(evt_param,tel_pos,all_cam_axes[i],geom,lookup_table_pkl,lookup_table_impact_pkl,eigen_vectors_pkl)
 
             for row in range(0,num_rows):
                 for col in range(0,num_cols):
