@@ -29,7 +29,7 @@ from load_cta_data import sqaure_difference_between_1d_images
 from load_cta_data import find_image_moments_guided
 from load_cta_data import get_average
 from load_cta_data import MyArray2D
-from load_cta_data import signle_image_reconstruction
+from load_cta_data import single_image_reconstruction
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 #subprocess.call(['sh', './clean_plots.sh'])
@@ -42,10 +42,10 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
+font = {'family': 'serif', 'color':  'white', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
-image_size_cut = 100.
-make_plots = False
+image_size_cut = 200.
+make_plots = True
 
 
 print ('loading svd pickle data... ')
@@ -61,59 +61,25 @@ eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors_time.pkl'
 eigen_vectors_time_pkl = pickle.load(open(output_filename, "rb"))
 
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact.pkl'
-lookup_table_impact_pkl = pickle.load(open(output_filename, "rb"))
-
-output_filename = f'{ctapipe_output}/output_machines/lookup_table_impact_rms.pkl'
-lookup_table_impact_rms_pkl = pickle.load(open(output_filename, "rb"))
 
 rank = len(lookup_table_pkl)
 
-for r in range(0,rank):
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Arrival'
-    label_y = 'log Energy [TeV]'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    xmin = lookup_table_pkl[r].xaxis.min()
-    xmax = lookup_table_pkl[r].xaxis.max()
-    ymin = lookup_table_pkl[r].yaxis.min()
-    ymax = lookup_table_pkl[r].yaxis.max()
-    im = axbig.imshow(lookup_table_pkl[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
-    cbar = fig.colorbar(im)
-    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t0.png',bbox_inches='tight')
-    axbig.remove()
+#for r in range(0,rank):
+#    fig.clf()
+#    axbig = fig.add_subplot()
+#    label_x = 'Arrival'
+#    label_y = 'log Energy [TeV]'
+#    axbig.set_xlabel(label_x)
+#    axbig.set_ylabel(label_y)
+#    xmin = lookup_table_pkl[r].xaxis.min()
+#    xmax = lookup_table_pkl[r].xaxis.max()
+#    ymin = lookup_table_pkl[r].yaxis.min()
+#    ymax = lookup_table_pkl[r].yaxis.max()
+#    im = axbig.imshow(lookup_table_pkl[r].zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax))
+#    cbar = fig.colorbar(im)
+#    fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_rank{r}_t0.png',bbox_inches='tight')
+#    axbig.remove()
 
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Arrival'
-label_y = 'log Energy [TeV]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-xmin = lookup_table_impact_pkl.xaxis.min()
-xmax = lookup_table_impact_pkl.xaxis.max()
-ymin = lookup_table_impact_pkl.yaxis.min()
-ymax = lookup_table_impact_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_impact_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
-cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_impact_t0.png',bbox_inches='tight')
-axbig.remove()
-
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Arrival'
-label_y = 'log Energy [TeV]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-xmin = lookup_table_impact_rms_pkl.xaxis.min()
-xmax = lookup_table_impact_rms_pkl.xaxis.max()
-ymin = lookup_table_impact_rms_pkl.yaxis.min()
-ymax = lookup_table_impact_rms_pkl.yaxis.max()
-im = axbig.imshow(lookup_table_impact_rms_pkl.zaxis[:,:].T,origin='lower',extent=(xmin,xmax,ymin,ymax),aspect='auto')
-cbar = fig.colorbar(im)
-fig.savefig(f'{ctapipe_output}/output_plots/lookup_table_impact_rms_t0.png',bbox_inches='tight')
-axbig.remove()
 
 ## neural network for lookup table
 #
@@ -154,8 +120,6 @@ axbig.remove()
 #axbig.remove()
 
 
-log_energy_truth_filt = []
-arrival_hist_error_filt = []
 log_energy_truth = []
 impact_truth = []
 arrival_truth = []
@@ -166,6 +130,8 @@ arrival_hist_error = []
 delta_time = []
 image_size = []
 semi_major = []
+semi_minor = []
+image_center_r = []
 delta_time_good = []
 image_size_good = []
 delta_time_bad = []
@@ -242,8 +208,10 @@ for img in range(0,len(training_id_list)):
     print (f'image_size = {size}')
 
     #if img!=2: continue
-    if sim_log_energy<0.: continue
+    #if sim_log_energy<0.: continue
     if size<image_size_cut: continue
+    #if size<100.: continue
+    #if size>300.: continue
 
     truth_image_2d = geom.image_to_cartesian_representation(truth_image)
     truth_time_2d = geom.image_to_cartesian_representation(truth_time)
@@ -254,13 +222,18 @@ for img in range(0,len(training_id_list)):
                 truth_image_2d[row,col] = 0.
                 truth_time_2d[row,col] = 0.
 
-    image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(truth_image_2d, truth_time_2d, cam_axes[0], cam_axes[1])
+    guided = True
+    evt_cam_x = 0.
+    evt_cam_y = 0.
+    image_center_x, image_center_y, image_foci_x1, image_foci_y1, image_foci_x2, image_foci_y2, center_time, delta_foci_time, semi_major_sq, semi_minor_sq = find_image_moments_guided(truth_image_2d, truth_time_2d, cam_axes[0], cam_axes[1], guided=guided, arrival_x=evt_cam_x, arrival_y=evt_cam_y)
     image_foci_x = image_foci_x1
     image_foci_y = image_foci_y1
+    print (f'image axis ratio = {pow(semi_major_sq/semi_minor_sq,0.5)}')
+    #if pow(semi_major_sq/semi_minor_sq,0.5)<2.: continue
 
     latent_space = []
     for r in range(0,rank):
-        latent_space += [lookup_table_pkl[r].get_bin_content(sim_arrival,sim_log_energy)]
+        latent_space += [lookup_table_pkl[r].get_bin_content(sim_arrival,sim_impact,sim_log_energy)]
     latent_space = np.array(latent_space)
 
     sim_image = eigen_vectors_pkl.T @ latent_space
@@ -268,7 +241,7 @@ for img in range(0,len(training_id_list)):
 
     latent_space_time = []
     for r in range(0,rank):
-        latent_space_time += [lookup_table_time_pkl[r].get_bin_content(sim_arrival,sim_log_energy)]
+        latent_space_time += [lookup_table_time_pkl[r].get_bin_content(sim_arrival,sim_impact,sim_log_energy)]
     latent_space_time = np.array(latent_space_time)
 
     sim_time = eigen_vectors_time_pkl.T @ latent_space_time
@@ -280,7 +253,7 @@ for img in range(0,len(training_id_list)):
                 sim_image_2d[row,col] = 0.
                 sim_time_2d[row,col] = 0.
 
-    fit_arrival, fit_impact, fit_log_energy = signle_image_reconstruction(truth_image,truth_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_impact_pkl,lookup_table_impact_rms_pkl)
+    fit_arrival, fit_impact, fit_log_energy = single_image_reconstruction(truth_image,truth_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl)
 
     print (f'sim_log_energy = {sim_log_energy}')
     print (f'fit_log_energy = {fit_log_energy}')
@@ -288,12 +261,16 @@ for img in range(0,len(training_id_list)):
     print (f'fit_impact = {fit_impact}')
     print (f'sim_arrival = {sim_arrival}')
     print (f'fit_arrival = {fit_arrival}')
+    print (f'image_center = {pow(image_center_x*image_center_x+image_center_y*image_center_y,0.5)}')
 
+    true_angle_rad = np.arctan2(-image_center_y,-image_center_x)
     angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
-    delta_x = fit_arrival*np.cos(-angle_rad)
-    delta_y = fit_arrival*np.sin(-angle_rad)
+    print (f'true_angle_rad = {true_angle_rad}')
+    print (f'angle_rad = {angle_rad}')
+    delta_x = fit_arrival*np.cos(angle_rad)
+    delta_y = fit_arrival*np.sin(angle_rad)
     guess_cam_x = image_center_x + delta_x
-    guess_cam_y = image_center_y - delta_y
+    guess_cam_y = image_center_y + delta_y
     print (f'guess_cam_x = {guess_cam_x}')
     print (f'guess_cam_y = {guess_cam_y}')
 
@@ -307,6 +284,8 @@ for img in range(0,len(training_id_list)):
     arrival_hist_error += [(fit_arrival-sim_arrival)/focal_length*180./np.pi]
     delta_time += [delta_foci_time]
     semi_major += [pow(semi_major_sq,0.5)]
+    semi_minor += [pow(semi_minor_sq,0.5)]
+    image_center_r += [pow(image_center_x*image_center_x+image_center_y*image_center_y,0.5)]
 
     if abs(fit_arrival-sim_arrival)<0.05:
         delta_time_good += [delta_foci_time]
@@ -315,32 +294,28 @@ for img in range(0,len(training_id_list)):
         delta_time_bad += [delta_foci_time]
         image_size_bad += [size]
 
-    if size>image_size_cut:
-        log_energy_truth_filt += [sim_log_energy]
-        arrival_hist_error_filt += [(fit_arrival-sim_arrival)/focal_length*180./np.pi]
+    #log_energy_axis = []
+    #for x in range(0,6):
+    #    log_energy_axis += [(-1+x*0.5)]
+    #hist_sky_err_vs_energy = get_average(log_energy_truth,pow(np.array(arrival_hist_error),2),log_energy_axis)
+    #hist_sky_err_vs_energy.yaxis = pow(np.array(hist_sky_err_vs_energy.yaxis),0.5)
+    #print (f'hist_sky_err_vs_energy.yaxis = {hist_sky_err_vs_energy.yaxis}')
 
-    log_energy_axis = []
-    for x in range(0,6):
-        log_energy_axis += [(-1+x*0.5)]
-    hist_sky_err_vs_energy = get_average(log_energy_truth_filt,pow(np.array(arrival_hist_error_filt),2),log_energy_axis)
-    hist_sky_err_vs_energy.yaxis = pow(np.array(hist_sky_err_vs_energy.yaxis),0.5)
-    print (f'hist_sky_err_vs_energy.yaxis = {hist_sky_err_vs_energy.yaxis}')
-
-    log_size_axis = []
-    for x in range(0,8):
-        log_size_axis += [(1.5+x*0.5)]
-    hist_sky_err_vs_size = get_average(image_size,pow(np.array(arrival_hist_error),2),log_size_axis)
-    hist_sky_err_vs_size.yaxis = pow(np.array(hist_sky_err_vs_size.yaxis),0.5)
-    print (f'hist_sky_err_vs_size.yaxis = {hist_sky_err_vs_size.yaxis}')
+    #log_size_axis = []
+    #for x in range(0,8):
+    #    log_size_axis += [(1.5+x*0.5)]
+    #hist_sky_err_vs_size = get_average(image_size,pow(np.array(arrival_hist_error),2),log_size_axis)
+    #hist_sky_err_vs_size.yaxis = pow(np.array(hist_sky_err_vs_size.yaxis),0.5)
+    #print (f'hist_sky_err_vs_size.yaxis = {hist_sky_err_vs_size.yaxis}')
 
     fit_latent_space = []
     for r in range(0,rank):
-        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_arrival,fit_log_energy)]
+        fit_latent_space += [lookup_table_pkl[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
     fit_latent_space_time = []
     for r in range(0,rank):
-        fit_latent_space_time += [lookup_table_time_pkl[r].get_bin_content(fit_arrival,fit_log_energy)]
+        fit_latent_space_time += [lookup_table_time_pkl[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
     fit_latent_space_time = np.array(fit_latent_space_time)
 
     fit_image = eigen_vectors_pkl.T @ fit_latent_space
@@ -358,6 +333,7 @@ for img in range(0,len(training_id_list)):
     fit_image_derotate = np.zeros_like(fit_image_2d)
     fit_time_derotate = np.zeros_like(fit_time_2d)
     angle_rad = np.arctan2(image_foci_y-image_center_y,image_foci_x-image_center_x)
+    #angle_rad = np.arctan2(-image_center_y,-image_center_x)
     fit_image_derotate = image_rotation(fit_image_2d, cam_axes[0], cam_axes[1], angle_rad)
     fit_time_derotate = image_rotation(fit_time_2d, cam_axes[0], cam_axes[1], angle_rad)
     
@@ -370,8 +346,9 @@ for img in range(0,len(training_id_list)):
 
 
     if make_plots:
+        #if (img % 10 == 0):
         #if abs(fit_arrival-sim_arrival)>0.04:
-        if (img % 10 == 0):
+        if pow(guess_cam_x*guess_cam_x+guess_cam_y*guess_cam_y,0.5)>0.02:
 
             fig.clf()
             axbig = fig.add_subplot()
@@ -382,12 +359,10 @@ for img in range(0,len(training_id_list)):
             im = axbig.imshow(fit_image_decenter,origin='lower')
             #im = axbig.imshow(fit_image_2d,origin='lower')
             cbar = fig.colorbar(im)
+            txt = axbig.text(10., 110., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
             txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 100., 'fit impact = %0.2f'%(fit_impact), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+            txt = axbig.text(10., 100., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
             txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
             fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_fit.png',bbox_inches='tight')
             axbig.remove()
 
@@ -400,12 +375,10 @@ for img in range(0,len(training_id_list)):
             im = axbig.imshow(fit_time_decenter,origin='lower')
             #im = axbig.imshow(fit_time_2d,origin='lower')
             cbar = fig.colorbar(im)
+            txt = axbig.text(10., 110., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
             txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 100., 'fit impact = %0.2f'%(fit_impact), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+            txt = axbig.text(10., 100., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
             txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
             fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_fit.png',bbox_inches='tight')
             axbig.remove()
 
@@ -452,12 +425,10 @@ for img in range(0,len(training_id_list)):
             im = axbig.imshow(truth_image_2d,origin='lower')
             #im = axbig.imshow(image_data_rotate,origin='lower')
             cbar = fig.colorbar(im)
-            txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+            txt = axbig.text(10., 110., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+            txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
+            txt = axbig.text(10., 100., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+            txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
             fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_image_truth.png',bbox_inches='tight')
             axbig.remove()
 
@@ -470,12 +441,10 @@ for img in range(0,len(training_id_list)):
             im = axbig.imshow(truth_time_2d,origin='lower')
             #im = axbig.imshow(time_data_rotate,origin='lower')
             cbar = fig.colorbar(im)
-            txt = axbig.text(10., 105., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 100., 'truth impact = %0.2f'%(sim_impact), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
-            txt = axbig.text(10., 95., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
-            txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='w')])
+            txt = axbig.text(10., 110., 'truth log energy = %0.2f'%(sim_log_energy), fontdict=font)
+            txt = axbig.text(10., 105., 'fit log energy = %0.2f'%(fit_log_energy), fontdict=font)
+            txt = axbig.text(10., 100., 'truth arrival = %0.2f'%(sim_arrival), fontdict=font)
+            txt = axbig.text(10., 95., 'fit arrival = %0.2f'%(fit_arrival), fontdict=font)
             fig.savefig(f'{ctapipe_output}/output_plots/evt_{img}_time_truth.png',bbox_inches='tight')
             axbig.remove()
 
@@ -483,16 +452,18 @@ for img in range(0,len(training_id_list)):
 
 
 single_tel_ana_output = []
-single_tel_ana_output += [log_energy_truth_filt]
-single_tel_ana_output += [arrival_hist_error_filt]
+single_tel_ana_output += [arrival_hist_error]
 single_tel_ana_output += [log_energy_truth]
 single_tel_ana_output += [impact_truth]
 single_tel_ana_output += [arrival_truth]
 single_tel_ana_output += [log_energy_hist_guess]
 single_tel_ana_output += [impact_hist_guess]
 single_tel_ana_output += [arrival_hist_guess]
-single_tel_ana_output += [arrival_hist_error]
 single_tel_ana_output += [image_size]
+single_tel_ana_output += [delta_time]
+single_tel_ana_output += [image_center_r]
+single_tel_ana_output += [semi_major]
+single_tel_ana_output += [semi_minor]
 
 output_filename = f'{ctapipe_output}/output_analysis/single_tel_ana_output_run{run_id}.pkl'
 with open(output_filename,"wb") as file:

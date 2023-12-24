@@ -83,6 +83,7 @@ def smooth_image(image_data,xaxis,yaxis,mode):
     #result_fft = fft_mtx_kernel * fft_mtx_data
     #image_smooth = np.fft.ifft2(result_fft).real
 
+    kernel_norm = np.sum(image_kernel)
     for idx_x1 in range(0,len(xaxis)):
         for idx_y1 in range(0,len(yaxis)):
             image_smooth[idx_y1,idx_x1] = 0.
@@ -94,7 +95,7 @@ def smooth_image(image_data,xaxis,yaxis,mode):
                     if idx_y2>=len(yaxis): continue
                     old_content = image_data[idx_y2,idx_x2]
                     scale = image_kernel[central_bin_y+idx_y2-idx_y1,central_bin_x+idx_x2-idx_x1]
-                    image_smooth[idx_y1,idx_x1] += old_content*scale
+                    image_smooth[idx_y1,idx_x1] += old_content*scale/kernel_norm
 
     return image_smooth
 
@@ -159,14 +160,16 @@ def my_clean_image(image_data,image_mask):
                 image_clean[y_idx,x_idx] = 0.
             else:
                 image_clean[y_idx,x_idx] = image_data[y_idx,x_idx]
+            if image_data[y_idx,x_idx]<0.:
+                image_clean[y_idx,x_idx] = 0.
 
     return image_clean
 
 def find_mask(image_data):
 
     image_mask = np.zeros_like(image_data)
-    #mask_threshold = 5.
-    mask_threshold = 4.
+    mask_threshold = 5.
+    #mask_threshold = 4.5
 
     num_rows, num_cols = image_data.shape
 
@@ -214,7 +217,7 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     w = np.array(w)
 
     if np.sum(w)==0.:
-        return 0., 0., 0.
+        return 0., 0., np.inf
 
     avg_x = np.sum(w * x)/np.sum(w)
     avg_y = np.sum(w * y)/np.sum(w)
@@ -247,7 +250,10 @@ def fit_image_to_line(image_input,x_axis,y_axis):
     b = avg_y - a*avg_x
 
     #return a, b, 1./chi2
-    return a, b, np.trace(w)/chi2
+    if chi2==0.:
+        return 0., 0., np.inf
+    else:
+        return a, b, np.trace(w)/chi2
 
 def find_image_moments_guided(input_image_2d, input_time_2d, x_axis, y_axis, guided=False, arrival_x=0., arrival_y=0.):
 
@@ -629,28 +635,38 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
 
             # image cleaning
             if do_cleaning:
-                analysis_image_2d = geom.image_to_cartesian_representation(dl1tel.image)
-                x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
-                num_rows, num_cols = analysis_image_2d.shape
-                for x_idx in range(0,num_cols):
-                    for y_idx in range(0,num_rows):
-                        if math.isnan(analysis_image_2d[y_idx,x_idx]): 
-                            analysis_image_2d[y_idx,x_idx] = 0.
-                analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,50.)
-                image_mask = np.zeros_like(analysis_image_smooth)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_smooth,image_mask)
-                image_mask = find_mask(analysis_image_smooth)
-                renormalize_background(analysis_image_2d,image_mask)
-                analysis_image_2d = my_clean_image(analysis_image_2d,image_mask)
-                clean_image = geom.image_from_cartesian_representation(analysis_image_2d)
-                #clean_image = tailcuts_clean(geom,dl1tel.image,boundary_thresh=4,picture_thresh=8,min_number_picture_neighbors=2)
 
-            for pix in range(0,len(clean_image)):
-                if clean_image[pix]==0.:
-                    dl1tel.image[pix] = 0.
-                    dl1tel.peak_time[pix] = 0.
+                #analysis_image_2d = geom.image_to_cartesian_representation(dl1tel.image)
+                #x_axis, y_axis = get_cam_coord_axes(geom,analysis_image_2d)
+                #num_rows, num_cols = analysis_image_2d.shape
+                #for x_idx in range(0,num_cols):
+                #    for y_idx in range(0,num_rows):
+                #        if math.isnan(analysis_image_2d[y_idx,x_idx]): 
+                #            analysis_image_2d[y_idx,x_idx] = 0.
+                #analysis_image_smooth = smooth_image(analysis_image_2d,x_axis,y_axis,100.)
+                #analysis_image_smooth_1d = geom.image_from_cartesian_representation(analysis_image_smooth)
+                #image_mask = np.zeros_like(analysis_image_smooth)
+                #image_mask = find_mask(analysis_image_smooth)
+                #analysis_image_2d = my_clean_image(analysis_image_smooth,image_mask)
+                #clean_image = geom.image_from_cartesian_representation(analysis_image_2d)
+                #for pix in range(0,len(clean_image)):
+                #    if clean_image[pix]==0.:
+                #        event.dl1.tel[tel_key].image[pix] = 0.
+                #        event.dl1.tel[tel_key].peak_time[pix] = 0.
+                #    else:
+                #        event.dl1.tel[tel_key].image[pix] = clean_image[pix]
     
+                image_mask = tailcuts_clean(geom,dl1tel.image,boundary_thresh=2,picture_thresh=4,min_number_picture_neighbors=2)
+                for pix in range(0,len(image_mask)):
+                    if not image_mask[pix]:
+                        event.dl1.tel[tel_key].image[pix] = 0.
+                        event.dl1.tel[tel_key].peak_time[pix] = 0.
+                if np.sum(image_mask)<5:
+                    for pix in range(0,len(image_mask)):
+                        event.dl1.tel[tel_key].image[pix] = 0.
+                        event.dl1.tel[tel_key].peak_time[pix] = 0.
+                print (f'np.sum(image_mask) = {np.sum(image_mask)}')
+
 
         stereo = event.dl2.stereo.geometry["HillasReconstructor"]
         hillas_shower_alt = 0.
@@ -780,18 +796,12 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
             #hillas_r = hillas_params['r']/u.m
             #hillas_length = hillas_params['length']/u.m
             #hillas_width = hillas_params['width']/u.m
+            #hillas_npix = 0
+            #for x_idx in range(0,num_cols):
+            #    for y_idx in range(0,num_rows):
+            #        if analysis_image_2d[y_idx,x_idx]>0.: 
+            #            hillas_npix += 1
 
-            #fig.clf()
-            #axbig = fig.add_subplot()
-            #label_x = 'X'
-            #label_y = 'Y'
-            #axbig.set_xlabel(label_x)
-            #axbig.set_ylabel(label_y)
-            #im = axbig.imshow(analysis_image_2d,origin='lower')
-            #cbar = fig.colorbar(im)
-            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_original.png',bbox_inches='tight')
-            #axbig.remove()
-    
             #fig.clf()
             #axbig = fig.add_subplot()
             #label_x = 'X'
@@ -809,6 +819,17 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
             #label_y = 'Y'
             #axbig.set_xlabel(label_x)
             #axbig.set_ylabel(label_y)
+            #im = axbig.imshow(analysis_time_rotate,origin='lower')
+            #cbar = fig.colorbar(im)
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_time_rotate.png',bbox_inches='tight')
+            #axbig.remove()
+
+            #fig.clf()
+            #axbig = fig.add_subplot()
+            #label_x = 'X'
+            #label_y = 'Y'
+            #axbig.set_xlabel(label_x)
+            #axbig.set_ylabel(label_y)
             #im = axbig.imshow(analysis_image_rotate,origin='lower')
             #cbar = fig.colorbar(im)
             #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_rotate.png',bbox_inches='tight')
@@ -820,11 +841,12 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
             #label_y = 'Y'
             #axbig.set_xlabel(label_x)
             #axbig.set_ylabel(label_y)
-            #im = axbig.imshow(analysis_time_rotate,origin='lower')
+            #im = axbig.imshow(analysis_image_2d,origin='lower')
             #cbar = fig.colorbar(im)
-            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_time_rotate.png',bbox_inches='tight')
+            #fig.savefig(f'{ctapipe_output}/output_plots/training_evt{event_id}_tel{tel_idx}_image_original.png',bbox_inches='tight')
             #axbig.remove()
-            #if evt_idx==5: exit()
+    
+            #if evt_idx==10: exit()
     
             evt_truth_energy = math.log10(shower_energy)
             evt_truth_impact = pow(pow(evt_impact_x,2)+pow(evt_impact_y,2),0.5)/1000.
@@ -1120,10 +1142,13 @@ def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_d
 
     fit_log_energy = init_params[0]
     fit_arrival = init_params[1]
+    fit_impact = init_params[2]
+    if lookup_table[0].get_bin_content(fit_arrival,fit_impact,fit_log_energy)==0.:
+        return 1e10
 
     fit_latent_space = []
     for r in range(0,len(lookup_table)):
-        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_log_energy)]
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
     #image_1d_fit = eigen_vectors.T @ fit_latent_space
@@ -1131,7 +1156,8 @@ def sqaure_difference_between_1d_images(init_params,all_cam_axes,geom,image_1d_d
     #n_rows = len(image_1d_fit)
     #for row in range(0,n_rows):
     #    diff = image_1d_data[row] - image_1d_fit[row]
-    #    sum_chi2 += diff*diff
+    #    error_sq = max(1.,image_1d_data[row])
+    #    sum_chi2 += diff*diff/error_sq
 
     data_latent_space = eigen_vectors @ image_1d_data
     sum_chi2 = 0.
@@ -1157,7 +1183,7 @@ def get_average(xdata_list,ydata_list,x_axis):
 
     return avg
 
-def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl,lookup_table_impact_pkl,lookup_table_impact_rms_pkl, guided=False, arrival_x=0., arrival_y=0.):
+def single_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_table_pkl,eigen_vectors_pkl,lookup_table_time_pkl,eigen_vectors_time_pkl, guided=False, arrival_x=0., arrival_y=0.):
 
     input_image_2d = geom.image_to_cartesian_representation(input_image)
     input_time_2d = geom.image_to_cartesian_representation(input_time)
@@ -1190,28 +1216,30 @@ def signle_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_tabl
     time_rotate_1d = geom.image_from_cartesian_representation(time_rotate)
 
     fit_log_energy = 0.
-    fit_arrival = 0.1
-    init_params = [fit_log_energy,fit_arrival]
+    fit_arrival = 0.2
+    fit_impact = 0.2
+    init_params = [fit_log_energy,fit_arrival,fit_impact]
     image_weight = 1./np.sum(np.array(input_image)*np.array(input_image))
     time_weight = 1./np.sum(np.array(input_time)*np.array(input_time))
     fit_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
     fit_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
-    n_bins_energy = len(lookup_table_pkl[0].yaxis)
     n_bins_arrival = len(lookup_table_pkl[0].xaxis)
+    n_bins_impact = len(lookup_table_pkl[0].yaxis)
+    n_bins_energy = len(lookup_table_pkl[0].zaxis)
     for idx_x  in range(0,n_bins_arrival):
-        for idx_y  in range(0,n_bins_energy):
-            try_log_energy = lookup_table_pkl[0].yaxis[idx_y]
-            try_arrival = lookup_table_pkl[0].xaxis[idx_x]
-            init_params = [try_log_energy,try_arrival]
-            try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
-            try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
-            if try_chi2<fit_chi2:
-                fit_chi2 = try_chi2
-                fit_log_energy = try_log_energy
-                fit_arrival = try_arrival
-
-    fit_impact = lookup_table_impact_pkl.get_bin_content(fit_arrival,fit_log_energy)
-    fit_impact_rms = lookup_table_impact_rms_pkl.get_bin_content(fit_arrival,fit_log_energy)
+        for idx_y  in range(0,n_bins_impact):
+            for idx_z  in range(0,n_bins_energy):
+                try_log_energy = lookup_table_pkl[0].zaxis[idx_z]
+                try_arrival = lookup_table_pkl[0].xaxis[idx_x]
+                try_impact = lookup_table_pkl[0].xaxis[idx_y]
+                init_params = [try_log_energy,try_arrival,try_impact]
+                try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
+                try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
+                if try_chi2<fit_chi2:
+                    fit_chi2 = try_chi2
+                    fit_log_energy = try_log_energy
+                    fit_arrival = try_arrival
+                    fit_impact = try_impact
 
     return fit_arrival, fit_impact, fit_log_energy
 
