@@ -20,6 +20,7 @@ from traitlets.config import Config
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
+image_size_cut = 100.
 
 def find_brightest_pixels(tel_array):
     brightest_tel_array = []
@@ -597,6 +598,8 @@ def load_training_samples(training_sample_path, is_gamma=True, is_training=False
         if max_evt==evt_idx: continue
         if not is_training:
             if (evt_idx % 5)==0: continue
+        else:
+            if (evt_idx % 5)!=0: continue
 
         event_id = event.index['event_id']
     
@@ -966,15 +969,16 @@ class NeuralNetwork:
 
 class MyArray3D:
 
-    def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.,z_bins=10,start_z=0.,end_z=10.):
+    def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.,z_bins=10,start_z=0.,end_z=10.,overflow=True):
         delta_x = (end_x-start_x)/float(x_bins)
         delta_y = (end_y-start_y)/float(y_bins)
         delta_z = (end_z-start_z)/float(z_bins)
-        array_shape = (x_bins,y_bins,z_bins)
+        array_shape = (x_bins+1,y_bins+1,z_bins+1)
         self.xaxis = np.zeros(array_shape[0])
         self.yaxis = np.zeros(array_shape[1])
         self.zaxis = np.zeros(array_shape[2])
         self.waxis = np.zeros(array_shape)
+        self.overflow = overflow
         for idx in range(0,len(self.xaxis)):
             self.xaxis[idx] = start_x + idx*delta_x
         for idx in range(0,len(self.yaxis)):
@@ -995,9 +999,9 @@ class MyArray3D:
                     self.waxis[idx_x,idx_y,idx_z] = self.waxis[idx_x,idx_y,idx_z]+add_array.waxis[idx_x,idx_y,idx_z]*factor
 
     def get_bin(self, value_x, value_y, value_z):
-        key_idx_x = 0
-        key_idx_y = 0
-        key_idx_z = 0
+        key_idx_x = -1
+        key_idx_y = -1
+        key_idx_z = -1
         for idx_x in range(0,len(self.xaxis)-1):
             if self.xaxis[idx_x]<=value_x and self.xaxis[idx_x+1]>value_x:
                 key_idx_x = idx_x
@@ -1008,11 +1012,11 @@ class MyArray3D:
             if self.zaxis[idx_z]<=value_z and self.zaxis[idx_z+1]>value_z:
                 key_idx_z = idx_z
         if value_x>self.xaxis.max():
-            key_idx_x = len(self.xaxis)-1
+            key_idx_x = len(self.xaxis)
         if value_y>self.yaxis.max():
-            key_idx_y = len(self.yaxis)-1
+            key_idx_y = len(self.yaxis)
         if value_z>self.zaxis.max():
-            key_idx_z = len(self.zaxis)-1
+            key_idx_z = len(self.zaxis)
         return [key_idx_x,key_idx_y,key_idx_z]
 
     def fill(self, value_x, value_y, value_z, weight=1.):
@@ -1020,6 +1024,24 @@ class MyArray3D:
         key_idx_x = key_idx[0]
         key_idx_y = key_idx[1]
         key_idx_z = key_idx[2]
+        if key_idx_x==-1: 
+            key_idx_x = 0
+            if not self.overflow: weight = 0.
+        if key_idx_y==-1: 
+            key_idx_y = 0
+            if not self.overflow: weight = 0.
+        if key_idx_z==-1: 
+            key_idx_z = 0
+            if not self.overflow: weight = 0.
+        if key_idx_x==len(self.xaxis): 
+            key_idx_x = len(self.xaxis)-1
+            if not self.overflow: weight = 0.
+        if key_idx_y==len(self.yaxis): 
+            key_idx_y = len(self.yaxis)-1
+            if not self.overflow: weight = 0.
+        if key_idx_z==len(self.zaxis): 
+            key_idx_z = len(self.zaxis)-1
+            if not self.overflow: weight = 0.
         self.waxis[key_idx_x,key_idx_y,key_idx_z] += 1.*weight
     
     def divide(self, add_array):
@@ -1039,6 +1061,18 @@ class MyArray3D:
         key_idx_x = key_idx[0]
         key_idx_y = key_idx[1]
         key_idx_z = key_idx[2]
+        if key_idx_x==-1: 
+            key_idx_x = 0
+        if key_idx_y==-1: 
+            key_idx_y = 0
+        if key_idx_z==-1: 
+            key_idx_z = 0
+        if key_idx_x==len(self.xaxis): 
+            key_idx_x = len(self.xaxis)-1
+        if key_idx_y==len(self.yaxis): 
+            key_idx_y = len(self.yaxis)-1
+        if key_idx_z==len(self.zaxis): 
+            key_idx_z = len(self.zaxis)-1
         return self.waxis[key_idx_x,key_idx_y,key_idx_z]
 
 class MyArray2D:
@@ -1125,6 +1159,10 @@ class MyArray1D:
         if value_x>self.xaxis.max():
             key_idx_x = len(self.xaxis)-1
         return key_idx_x
+
+    def get_bin_content(self, value_x):
+        key_idx = self.get_bin(value_x)
+        return self.yaxis[key_idx]
 
     def fill(self, value_x, weight=1.):
         key_idx_x = self.get_bin(value_x)
@@ -1231,7 +1269,7 @@ def single_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_tabl
             for idx_z  in range(0,n_bins_energy):
                 try_log_energy = lookup_table_pkl[0].zaxis[idx_z]
                 try_arrival = lookup_table_pkl[0].xaxis[idx_x]
-                try_impact = lookup_table_pkl[0].xaxis[idx_y]
+                try_impact = lookup_table_pkl[0].yaxis[idx_y]
                 init_params = [try_log_energy,try_arrival,try_impact]
                 try_chi2 = image_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,image_rotate_1d,lookup_table_pkl,eigen_vectors_pkl)
                 try_chi2 += time_weight*sqaure_difference_between_1d_images(init_params,cam_axes,geom,time_rotate_1d,lookup_table_time_pkl,eigen_vectors_time_pkl)
@@ -1241,5 +1279,5 @@ def single_image_reconstruction(input_image,input_time,geom,cam_axes,lookup_tabl
                     fit_arrival = try_arrival
                     fit_impact = try_impact
 
-    return fit_arrival, fit_impact, fit_log_energy
+    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05
 
