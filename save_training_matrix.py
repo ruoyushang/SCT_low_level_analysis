@@ -97,7 +97,6 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
         truth_x_max = event.simulation.shower.x_max
         print (f'truth_energy = {truth_energy}')
 
-        truth_info_array = [truth_energy, truth_core_x, truth_core_y, truth_alt, truth_az, truth_height, truth_x_max]
         
         calib(event)  # fills in r1, dl0, and dl1
         #image_processor(event) # Takes DL1/Image data and cleans and parametrizes the images into DL1/parameters. Should be run after CameraCalibrator.
@@ -131,6 +130,11 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             )
            
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length
+            tel_x = subarray.positions[tel_id][0]
+            tel_y = subarray.positions[tel_id][1]
+            impact_x = float((truth_core_x-tel_x)/u.m)
+            impact_y = float((truth_core_y-tel_y)/u.m)
+
             camera_frame = CameraFrame(
                 telescope_pointing=tel_pointing,
                 focal_length=focal_length,
@@ -140,6 +144,9 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             star_cam_x = star_cam.x.to_value(u.m)
             star_cam_y = star_cam.y.to_value(u.m)
             print (f'star_cam_x = {star_cam_x}, star_cam_y = {star_cam_y}')
+            print (f'impact = {pow(impact_x*impact_x+impact_y*impact_y,0.5)}')
+
+            truth_info_array = [truth_energy, truth_core_x, truth_core_y, truth_alt, truth_az, truth_height, truth_x_max, star_cam_x, star_cam_y, impact_x, impact_y]
 
             dirty_image_1d = event.dl1.tel[tel_id].image
             dirty_image_2d = geometry.image_to_cartesian_representation(dirty_image_1d)
@@ -289,10 +296,16 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
                     fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_win{win}_clean_movie.png',bbox_inches='tight')
                     axbig.remove()
 
-            big_movie_matrix += [whole_movie_1d]
-            big_moment_matrix += [image_moment_array]
-            big_truth_matrix += [truth_info_array]
+            if not image_qual<1.:
+                big_movie_matrix += [whole_movie_1d]
+                big_moment_matrix += [image_moment_array]
+                big_truth_matrix += [truth_info_array]
 
+    ana_tag = 'training_sample'
+    output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
+    print (f'writing file to {output_filename}')
+    with open(output_filename,"wb") as file:
+        pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix], file)
 
 training_sample_path = sys.argv[1]
 
