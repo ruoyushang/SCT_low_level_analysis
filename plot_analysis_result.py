@@ -34,6 +34,7 @@ from load_cta_data import MyArray3D
 from load_cta_data import single_image_reconstruction
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
+ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 subprocess.call(['sh', './clean_plots.sh'])
 
 fig, ax = plt.subplots()
@@ -46,7 +47,7 @@ font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'r
 
 training_sample_path = []
 particle_type = []
-with open('sim_files.txt', 'r') as file:
+with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         particle_type += [0]
@@ -100,8 +101,9 @@ def plot_single_tel_analysis():
             img_semi_minor = float(analysis_result[11][img])
             img_semi_ratio = img_semi_major/img_semi_minor
             if img_delta_time<=0.: continue
-            #if img_impact_guess<=0.07: continue
             if img_image_center_r>0.3: continue
+            #if img_impact_guess<=0.07: continue
+            #if img_impact_guess>=0.20: continue
 
             arrival_error += [img_arrival_error]
             impact_error += [img_impact_guess-img_impact_truth]
@@ -874,6 +876,6 @@ def plot_cta_array_analysis():
         axbig.remove()
     
 
-plot_single_tel_analysis()    
-#plot_cta_array_analysis()
+#plot_single_tel_analysis()    
+plot_cta_array_analysis()
 

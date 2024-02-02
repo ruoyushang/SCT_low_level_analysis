@@ -3,6 +3,7 @@ import os, sys
 import subprocess
 import glob
 
+import time
 import numpy as np
 from astropy import units as u
 from matplotlib import pyplot as plt
@@ -24,13 +25,13 @@ image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
 
-def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
+fig, ax = plt.subplots()
+figsize_x = 8.6
+figsize_y = 6.4
+fig.set_figheight(figsize_y)
+fig.set_figwidth(figsize_x)
 
-    #fig, ax = plt.subplots()
-    #figsize_x = 8.6
-    #figsize_y = 6.4
-    #fig.set_figheight(figsize_y)
-    #fig.set_figwidth(figsize_x)
+def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     big_movie_matrix = []
     big_moment_matrix = []
@@ -95,14 +96,21 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             print ('====================================================================================')
             print (f'event_id = {event_id}, tel_id = {tel_id}')
 
+            tic_img = time.perf_counter()
+
             truth_info_array = find_image_truth(source, subarray, run_id, tel_id, event)
 
-            image_qual, image_moment_array, whole_movie_1d = make_a_movie(subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            image_size = image_moment_array[0]
 
-            if not image_qual<1.:
+            if image_qual>1. and image_size>100.:
                 big_movie_matrix += [whole_movie_1d]
                 big_moment_matrix += [image_moment_array]
                 big_truth_matrix += [truth_info_array]
+
+            toc_img = time.perf_counter()
+            print (f'Image analysis completed in {toc_img - tic_img:0.4f} sec.')
+
 
     ana_tag = 'training_sample'
     output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
@@ -112,12 +120,17 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
     return
 
+tic = time.perf_counter()
+
 training_sample_path = sys.argv[1]
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
-#subprocess.call(['sh', './clean_plots.sh'])
+subprocess.call(['sh', './clean_plots.sh'])
 
 run_save_training_matrix(training_sample_path,min_energy=0.1,max_energy=100.0,max_evt=1e10)
-print ('Job completed.')
+
+toc = time.perf_counter()
+
+print (f'Job completed in {toc - tic:0.4f} sec.')
 exit()
 

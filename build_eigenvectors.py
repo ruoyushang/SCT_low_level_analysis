@@ -20,10 +20,10 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 print (f'ctapipe_output = {ctapipe_output}')
 
 training_sample_path = []
-training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
-#    for line in file:
-#        training_sample_path += [get_dataset_path(line.strip('\n'))]
+#training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
+    for line in file:
+        training_sample_path += [get_dataset_path(line.strip('\n'))]
 
 big_truth_matrix = []
 big_moment_matrix = []

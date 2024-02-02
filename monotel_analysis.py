@@ -23,6 +23,14 @@ image_translation = common_functions.image_translation
 image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
+plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
+
+fig, ax = plt.subplots()
+figsize_x = 8.6
+figsize_y = 6.4
+fig.set_figheight(figsize_y)
+fig.set_figwidth(figsize_x)
+
 
 def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors):
 
@@ -87,12 +95,6 @@ def single_image_reconstruction(input_image_1d,lookup_table,eigen_vectors):
 
 
 def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
-
-    #fig, ax = plt.subplots()
-    #figsize_x = 8.6
-    #figsize_y = 6.4
-    #fig.set_figheight(figsize_y)
-    #fig.set_figwidth(figsize_x)
 
     print ('loading svd pickle data... ')
     output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
@@ -175,7 +177,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             impact_x = truth_info_array[9]
             impact_y = truth_info_array[10]
 
-            image_qual, image_moment_array, whole_movie_1d = make_a_movie(subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
             image_center_y = image_moment_array[2]
@@ -186,6 +188,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             image_direction = image_moment_array[7]
             line_a = image_moment_array[8]
             line_b = image_moment_array[9]
+
+            if image_qual<1.: continue
+            if image_size<100.: continue
 
             fit_arrival, fit_xmax, fit_log_energy, fit_chi2 = single_image_reconstruction(whole_movie_1d,lookup_table_pkl,eigen_vectors_pkl)
             fit_cam_x = image_center_x + fit_arrival*np.cos(angle*u.rad)
@@ -198,6 +203,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'star_cam_y = {star_cam_y}')
             print (f'fit_cam_x = {fit_cam_x}')
             print (f'fit_cam_y = {fit_cam_y}')
+
+            plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
 
 
     #ana_tag = 'training_sample'

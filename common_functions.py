@@ -174,6 +174,16 @@ def image_rotation(input_image_2d, angle_rad):
 
     return image_rotate
 
+def image_cutout(geometry, image_input_1d):
+
+    eco_image_1d = []
+    for pix in range(0,len(image_input_1d)):
+        x = float(geometry.pix_x[pix]/u.m)
+        y = float(geometry.pix_y[pix]/u.m)
+        if abs(y)<0.05:
+            eco_image_1d += [image_input_1d[pix]]
+    return eco_image_1d
+
 def fit_image_to_line(geometry,image_input_1d,transpose=False):
 
     x = []
@@ -407,13 +417,79 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
-def make_a_movie(subarray, run_id, tel_id, event):
+def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y):
 
-    #fig, ax = plt.subplots()
-    #figsize_x = 8.6
-    #figsize_y = 6.4
-    #fig.set_figheight(figsize_y)
-    #fig.set_figwidth(figsize_x)
+    event_id = event.index['event_id']
+    geometry = subarray.tel[tel_id].camera.geometry
+
+    dirty_image_1d = event.dl1.tel[tel_id].image
+    dirty_image_2d = geometry.image_to_cartesian_representation(dirty_image_1d)
+    remove_nan_pixels(dirty_image_2d)
+
+    clean_image_1d = event.dl1.tel[tel_id].image
+    clean_time_1d = event.dl1.tel[tel_id].peak_time
+    image_mask = tailcuts_clean(geometry,clean_image_1d,boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
+    for pix in range(0,len(image_mask)):
+        if not image_mask[pix]:
+            clean_image_1d[pix] = 0.
+            clean_time_1d[pix] = 0.
+
+    reset_time(clean_image_1d, clean_time_1d)
+
+    clean_image_2d = geometry.image_to_cartesian_representation(clean_image_1d)
+    remove_nan_pixels(clean_image_2d)
+    clean_time_2d = geometry.image_to_cartesian_representation(clean_time_1d)
+    remove_nan_pixels(clean_time_2d)
+
+    image_size = image_moment_array[0]
+    image_center_x = image_moment_array[1]
+    image_center_y = image_moment_array[2]
+    angle = image_moment_array[3]
+    semi_major = image_moment_array[4]
+    semi_minor = image_moment_array[5]
+    time_direction = image_moment_array[6]
+    image_direction = image_moment_array[7]
+    line_a = image_moment_array[8]
+    line_b = image_moment_array[9]
+
+    image_qual = abs(image_direction+time_direction)
+
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(clean_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+    axbig.scatter(fit_cam_x, -fit_cam_y, s=90, facecolors='none', c='r', marker='+')
+    if np.cos(angle*u.rad)>0.:
+        line_x = np.linspace(image_center_x, xmax, 100)
+        line_y = -(line_a*line_x + line_b)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+    else:
+        line_x = np.linspace(xmin, image_center_x, 100)
+        line_y = -(line_a*line_x + line_b)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+    axbig.set_xlim(xmin,xmax)
+    axbig.set_ylim(ymin,ymax)
+    txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
+    txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
+    txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
+    txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
+    if image_qual<1.:
+        txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
+    axbig.remove()
+
+
+def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -452,6 +528,7 @@ def make_a_movie(subarray, run_id, tel_id, event):
     line_b = image_moment_array[9]
 
     image_qual = abs(image_direction+time_direction)
+    print (f'image_qual = {image_qual:0.2f}')
 
     shift_pix_x = image_center_x/pixel_width
     shift_pix_y = image_center_y/pixel_width
@@ -488,60 +565,69 @@ def make_a_movie(subarray, run_id, tel_id, event):
         shift_movie_2d = image_translation(clean_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
         rotate_movie_2d = image_rotation(shift_movie_2d, angle*u.rad)
         rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d)
-        whole_movie_1d.extend(rotate_movie_1d)
+        eco_movie_1d = image_cutout(geometry, rotate_movie_1d)
+
+        whole_movie_1d.extend(eco_movie_1d)
         print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
 
-        #if image_qual>100.:
-        #    fig.clf()
-        #    axbig = fig.add_subplot()
-        #    label_x = 'X'
-        #    label_y = 'Y'
-        #    axbig.set_xlabel(label_x)
-        #    axbig.set_ylabel(label_y)
-        #    im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
-        #    cbar = fig.colorbar(im)
-        #    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_win{win}_clean_movie.png',bbox_inches='tight')
-        #    axbig.remove()
+        if image_qual>100. and make_plots:
+            fig.clf()
+            axbig = fig.add_subplot()
+            label_x = 'X'
+            label_y = 'Y'
+            axbig.set_xlabel(label_x)
+            axbig.set_ylabel(label_y)
+            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+            cbar = fig.colorbar(im)
+            line_x = np.linspace(xmin, xmax, 100)
+            line_y = -(0.*line_x + 0.05)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            line_x = np.linspace(xmin, xmax, 100)
+            line_y = -(0.*line_x - 0.05)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_win{win}_clean_movie.png',bbox_inches='tight')
+            axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(clean_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
-    #cbar = fig.colorbar(im)
-    #axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
-    #if np.cos(angle*u.rad)>0.:
-    #    line_x = np.linspace(image_center_x, xmax, 100)
-    #    line_y = -(line_a*line_x + line_b)
-    #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-    #else:
-    #    line_x = np.linspace(xmin, image_center_x, 100)
-    #    line_y = -(line_a*line_x + line_b)
-    #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-    #axbig.set_xlim(xmin,xmax)
-    #axbig.set_ylim(ymin,ymax)
-    #txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
-    #txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
-    #txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
-    #txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
-    #if image_qual<1.:
-    #    txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
-    #axbig.remove()
+    if image_qual>1. and make_plots:
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(clean_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+        if np.cos(angle*u.rad)>0.:
+            line_x = np.linspace(image_center_x, xmax, 100)
+            line_y = -(line_a*line_x + line_b)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        else:
+            line_x = np.linspace(xmin, image_center_x, 100)
+            line_y = -(line_a*line_x + line_b)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        axbig.set_xlim(xmin,xmax)
+        axbig.set_ylim(ymin,ymax)
+        txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
+        txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
+        txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
+        txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
+        if image_qual<1.:
+            txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
+        axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'X'
-    #label_y = 'Y'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #im = axbig.imshow(clean_time_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
-    #cbar = fig.colorbar(im)
-    #axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
-    #fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
-    #axbig.remove()
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(clean_time_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
+        axbig.remove()
 
     return image_qual, image_moment_array, whole_movie_1d
 
