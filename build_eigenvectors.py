@@ -17,12 +17,13 @@ MyArray3D = common_functions.MyArray3D
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
+print (f'ctapipe_output = {ctapipe_output}')
 
 training_sample_path = []
-#training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2023___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
-    for line in file:
-        training_sample_path += [get_dataset_path(line.strip('\n'))]
+training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+#with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
+#    for line in file:
+#        training_sample_path += [get_dataset_path(line.strip('\n'))]
 
 big_truth_matrix = []
 big_moment_matrix = []
@@ -72,6 +73,7 @@ U_full, S_full, VT_full = np.linalg.svd(big_movie_matrix,full_matrices=False)
 U_eco = U_full[:, :image_rank]
 VT_eco = VT_full[:image_rank, :]
 
+print (f'saving eigenvector to {ctapipe_output}/output_machines...')
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(VT_eco, file)
@@ -137,11 +139,13 @@ for img in range(0,len(big_movie_matrix)):
 for r in range(0,image_rank):
     lookup_table[r].divide(lookup_table_norm)
 
+print (f'saving table to {ctapipe_output}/output_machines...')
 output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(lookup_table, file)
 
 
+print (f'saving plots to {ctapipe_output}/output_plots...')
 fig.clf()
 axbig = fig.add_subplot()
 label_x = 'log10 Energy [TeV]'
