@@ -2,6 +2,7 @@
 import os
 import subprocess
 import glob
+import tracemalloc
 
 import pickle
 from matplotlib import pyplot as plt
@@ -25,6 +26,9 @@ with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
 
+# start memory profiling
+tracemalloc.start()
+
 big_truth_matrix = []
 big_moment_matrix = []
 big_movie_matrix = []
@@ -43,6 +47,8 @@ for path in range(0,len(training_sample_path)):
     big_truth_matrix += training_sample[0]
     big_moment_matrix += training_sample[1]
     big_movie_matrix += training_sample[2]
+
+    print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
 big_movie_matrix = np.array(big_movie_matrix)
 
@@ -72,6 +78,8 @@ image_rank = 30
 U_full, S_full, VT_full = np.linalg.svd(big_movie_matrix,full_matrices=False)
 U_eco = U_full[:, :image_rank]
 VT_eco = VT_full[:image_rank, :]
+
+print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
 print (f'saving eigenvector to {ctapipe_output}/output_machines...')
 output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
@@ -186,3 +194,4 @@ axbig.scatter(list_arrival, list_xmax, s=90, c='b', marker='+', alpha=0.1)
 fig.savefig(f'{ctapipe_output}/output_plots/scatter_arrival_vs_xmax.png',bbox_inches='tight')
 axbig.remove()
 
+tracemalloc.stop()

@@ -366,6 +366,42 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
 
     return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b]
 
+def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
+
+    geometry = subarray.tel[tel_id].camera.geometry
+
+    obstime = Time("2013-11-01T03:00")
+    location = EarthLocation.of_site("Roque de los Muchachos")
+    altaz = AltAz(location=location, obstime=obstime)
+
+    tel_pointing_alt = source.observation_blocks[run_id].subarray_pointing_lat
+    tel_pointing_az = source.observation_blocks[run_id].subarray_pointing_lon
+
+    focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length
+
+    tel_pointing = SkyCoord(
+        alt=tel_pointing_alt,
+        az=tel_pointing_az,
+        frame=altaz,
+    )
+
+    camera_frame = CameraFrame(
+        telescope_pointing=tel_pointing,
+        focal_length=focal_length,
+    )
+
+    star_cam = SkyCoord(
+        x=star_cam_x*u.m,
+        y=star_cam_y*u.m,
+        frame=camera_frame,
+    )
+    
+    star_altaz = star_cam.transform_to(altaz)
+    star_alt = star_altaz.alt.to_value(u.rad)
+    star_az = star_altaz.az.to_value(u.rad)
+
+    return star_alt, star_az
+
 def find_image_truth(source, subarray, run_id, tel_id, event):
 
     truth_energy = event.simulation.shower.energy

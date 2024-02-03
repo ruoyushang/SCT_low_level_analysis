@@ -24,6 +24,7 @@ image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
 plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
+camxy_to_altaz = common_functions.camxy_to_altaz
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -96,6 +97,8 @@ def single_image_reconstruction(input_image_1d,lookup_table,eigen_vectors):
 
 def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
+    analysis_result = []
+
     print ('loading svd pickle data... ')
     output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
     lookup_table_pkl = pickle.load(open(output_filename, "rb"))
@@ -147,11 +150,15 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
     image_processor = ImageProcessor(subarray=subarray,config=image_processor_config)
     shower_processor = ShowerProcessor(subarray=subarray)
 
+    evt_count = 0
     for event in source:
     
         event_id = event.index['event_id']
         #if event_id!=89803: continue
     
+        evt_count += 1
+        if (evt_count % 2)!=0: continue
+
         ntel = len(event.r0.tel)
         
         calib(event)  # fills in r1, dl0, and dl1
@@ -165,11 +172,11 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'event_id = {event_id}, tel_id = {tel_id}')
 
             truth_info_array = find_image_truth(source, subarray, run_id, tel_id, event)
-            truth_energy = truth_info_array[0]
+            truth_energy = float(truth_info_array[0]/u.TeV)
             truth_core_x = truth_info_array[1]
             truth_core_y = truth_info_array[2]
-            truth_alt = truth_info_array[3]
-            truth_az = truth_info_array[4]
+            truth_alt = float(truth_info_array[3]/u.rad)
+            truth_az = float(truth_info_array[4]/u.rad)
             truth_height = truth_info_array[5]
             truth_xmax = truth_info_array[6]
             star_cam_x = truth_info_array[7]
@@ -196,6 +203,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             fit_cam_x = image_center_x + fit_arrival*np.cos(angle*u.rad)
             fit_cam_y = image_center_y + fit_arrival*np.sin(angle*u.rad)
 
+            fit_alt, fit_az = camxy_to_altaz(source, subarray, run_id, tel_id, fit_cam_x, fit_cam_y)
+
+            print (f'image_size = {image_size}')
             print (f'image_qual = {image_qual}')
             print (f'truth_energy = {truth_energy}')
             print (f'fit_energy = {pow(10.,fit_log_energy)}')
@@ -203,15 +213,22 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'star_cam_y = {star_cam_y}')
             print (f'fit_cam_x = {fit_cam_x}')
             print (f'fit_cam_y = {fit_cam_y}')
+            print (f'truth_alt = {truth_alt}')
+            print (f'truth_az = {truth_az}')
+            print (f'fit_alt = {fit_alt}')
+            print (f'fit_az = {fit_az}')
 
             plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
 
+            single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az]
+            analysis_result += [single_analysis_result]
 
-    #ana_tag = 'training_sample'
-    #output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
-    #print (f'writing file to {output_filename}')
-    #with open(output_filename,"wb") as file:
-    #    pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix], file)
+
+    ana_tag = 'monotel_ana'
+    output_filename = f'{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}.pkl'
+    print (f'writing file to {output_filename}')
+    with open(output_filename,"wb") as file:
+        pickle.dump(analysis_result, file)
 
     return
 
