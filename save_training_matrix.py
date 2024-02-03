@@ -17,6 +17,7 @@ from ctapipe.image import ImageProcessor
 from traitlets.config import Config
 
 import common_functions
+image_size_cut = common_functions.image_size_cut
 remove_nan_pixels = common_functions.remove_nan_pixels
 reset_time = common_functions.reset_time
 find_image_moments = common_functions.find_image_moments
@@ -24,6 +25,7 @@ image_translation = common_functions.image_translation
 image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
+make_standard_image = common_functions.make_standard_image
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -33,7 +35,9 @@ fig.set_figwidth(figsize_x)
 
 def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
-    big_movie_matrix = []
+    #big_movie_matrix = []
+    big_image_matrix = []
+    big_time_matrix = []
     big_moment_matrix = []
     big_truth_matrix = []
 
@@ -79,10 +83,14 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     image_processor = ImageProcessor(subarray=subarray,config=image_processor_config)
     shower_processor = ShowerProcessor(subarray=subarray)
 
+    evt_count = 0
     for event in source:
     
         event_id = event.index['event_id']
         #if event_id!=89803: continue
+
+        evt_count += 1
+        if (evt_count % 2)==0: continue
     
         ntel = len(event.r0.tel)
         
@@ -100,11 +108,14 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
             truth_info_array = find_image_truth(source, subarray, run_id, tel_id, event)
 
-            image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            #image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
 
-            if image_qual>1. and image_size>100.:
-                big_movie_matrix += [whole_movie_1d]
+            if image_qual>1. and image_size>image_size_cut:
+                #big_movie_matrix += [whole_movie_1d]
+                big_image_matrix += [eco_image_1d]
+                big_time_matrix += [eco_time_1d]
                 big_moment_matrix += [image_moment_array]
                 big_truth_matrix += [truth_info_array]
 
@@ -116,7 +127,8 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
-        pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix], file)
+        #pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix], file)
+        pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix], file)
 
     return
 
@@ -125,7 +137,7 @@ tic = time.perf_counter()
 training_sample_path = sys.argv[1]
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
-subprocess.call(['sh', './clean_plots.sh'])
+#subprocess.call(['sh', './clean_plots.sh'])
 
 run_save_training_matrix(training_sample_path,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 

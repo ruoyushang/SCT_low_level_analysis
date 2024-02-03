@@ -22,6 +22,7 @@ print (f'ctapipe_output = {ctapipe_output}')
 
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run744___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
@@ -31,7 +32,9 @@ tracemalloc.start()
 
 big_truth_matrix = []
 big_moment_matrix = []
-big_movie_matrix = []
+#big_movie_matrix = []
+big_image_matrix = []
+big_time_matrix = []
 for path in range(0,len(training_sample_path)):
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
@@ -46,11 +49,15 @@ for path in range(0,len(training_sample_path)):
 
     big_truth_matrix += training_sample[0]
     big_moment_matrix += training_sample[1]
-    big_movie_matrix += training_sample[2]
+    #big_movie_matrix += training_sample[2]
+    big_image_matrix += training_sample[2]
+    big_time_matrix += training_sample[3]
 
     print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
-big_movie_matrix = np.array(big_movie_matrix)
+#big_movie_matrix = np.array(big_movie_matrix)
+big_image_matrix = np.array(big_image_matrix)
+big_time_matrix = np.array(big_time_matrix)
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -67,24 +74,40 @@ impact_upper = 0.4
 n_bins_xmax = 10
 xmax_lower = 150.
 xmax_upper = 375.
-n_bins_energy = 10
+n_bins_height = 30
+height_lower = 10000.
+height_upper = 70000.
+n_bins_energy = 15
 log_energy_lower = -1.
 log_energy_upper = 2.
 
 print ('Compute big matrix SVD...')
-n_images, n_pixels = big_movie_matrix.shape
+
+n_images, n_pixels = big_image_matrix.shape
 print (f'n_images = {n_images}, n_pixels = {n_pixels}')
 image_rank = 30
-U_full, S_full, VT_full = np.linalg.svd(big_movie_matrix,full_matrices=False)
+U_full, S_full, VT_full = np.linalg.svd(big_image_matrix,full_matrices=False)
 U_eco = U_full[:, :image_rank]
 VT_eco = VT_full[:image_rank, :]
 
-print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
-
-print (f'saving eigenvector to {ctapipe_output}/output_machines...')
-output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
+print (f'saving image eigenvector to {ctapipe_output}/output_machines...')
+output_filename = f'{ctapipe_output}/output_machines/image_eigen_vectors.pkl'
 with open(output_filename,"wb") as file:
     pickle.dump(VT_eco, file)
+
+n_images, n_pixels = big_time_matrix.shape
+print (f'n_images = {n_images}, n_pixels = {n_pixels}')
+image_rank = 30
+u_full, s_full, vT_full = np.linalg.svd(big_time_matrix,full_matrices=False)
+u_eco = u_full[:, :image_rank]
+vT_eco = vT_full[:image_rank, :]
+
+print (f'saving eigenvector to {ctapipe_output}/output_machines...')
+output_filename = f'{ctapipe_output}/output_machines/time_eigen_vectors.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(vT_eco, file)
+
+print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
 fig.clf()
 axbig = fig.add_subplot()
@@ -97,8 +120,9 @@ axbig.plot(S_full)
 fig.savefig(f'{ctapipe_output}/output_plots/training_movie_signularvalue.png',bbox_inches='tight')
 axbig.remove()
 
-lookup_table = []
-lookup_table_norm = MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_xmax,start_y=xmax_lower,end_y=xmax_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)
+image_lookup_table = []
+time_lookup_table = []
+lookup_table_norm = MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)
 
 list_impact = []
 list_arrival = []
@@ -108,10 +132,11 @@ list_xmax = []
 list_image_qual = []
 
 for r in range(0,image_rank):
-    lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_xmax,start_y=xmax_lower,end_y=xmax_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
+    image_lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
+    time_lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
 
 
-for img in range(0,len(big_movie_matrix)):
+for img in range(0,len(big_image_matrix)):
 
     image_center_x = big_moment_matrix[img][1]
     image_center_y = big_moment_matrix[img][2]
@@ -137,20 +162,29 @@ for img in range(0,len(big_movie_matrix)):
     list_arrival += [arrival]
     list_impact += [impact]
 
-    movie = np.array(big_movie_matrix[img])
-    latent_space = VT_eco @ movie
+    image_1d = np.array(big_image_matrix[img])
+    image_latent_space = VT_eco @ image_1d
     for r in range(0,image_rank):
-        lookup_table[r].fill(arrival,truth_x_max,log_energy,weight=latent_space[r])
+        image_lookup_table[r].fill(arrival,impact,log_energy,weight=image_latent_space[r])
 
-    lookup_table_norm.fill(arrival,truth_x_max,log_energy,weight=1.)
+    time_1d = np.array(big_time_matrix[img])
+    time_latent_space = vT_eco @ time_1d
+    for r in range(0,image_rank):
+        time_lookup_table[r].fill(arrival,impact,log_energy,weight=time_latent_space[r])
+
+    lookup_table_norm.fill(arrival,impact,log_energy,weight=1.)
 
 for r in range(0,image_rank):
-    lookup_table[r].divide(lookup_table_norm)
+    image_lookup_table[r].divide(lookup_table_norm)
+    time_lookup_table[r].divide(lookup_table_norm)
 
 print (f'saving table to {ctapipe_output}/output_machines...')
-output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
+output_filename = f'{ctapipe_output}/output_machines/image_lookup_table.pkl'
 with open(output_filename,"wb") as file:
-    pickle.dump(lookup_table, file)
+    pickle.dump(image_lookup_table, file)
+output_filename = f'{ctapipe_output}/output_machines/time_lookup_table.pkl'
+with open(output_filename,"wb") as file:
+    pickle.dump(time_lookup_table, file)
 
 
 print (f'saving plots to {ctapipe_output}/output_plots...')

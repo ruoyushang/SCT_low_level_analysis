@@ -16,6 +16,7 @@ from ctapipe.image import ImageProcessor
 from traitlets.config import Config
 
 import common_functions
+image_size_cut = common_functions.image_size_cut
 remove_nan_pixels = common_functions.remove_nan_pixels
 reset_time = common_functions.reset_time
 find_image_moments = common_functions.find_image_moments
@@ -23,6 +24,7 @@ image_translation = common_functions.image_translation
 image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
+make_standard_image = common_functions.make_standard_image
 plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
 camxy_to_altaz = common_functions.camxy_to_altaz
 
@@ -63,28 +65,35 @@ def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,e
 
     return sum_chi2
 
-def single_image_reconstruction(input_image_1d,lookup_table,eigen_vectors):
+def single_image_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors):
+
+    image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
+    time_weight = 1./np.sum(np.array(input_time_1d)*np.array(input_time_1d))
 
     fit_arrival = 0.1
-    fit_xmax = 250.
+    fit_xmax = 0.1
     fit_log_energy = 0.
     init_params = [fit_arrival,fit_xmax,fit_log_energy]
-    fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,lookup_table,eigen_vectors)
+    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+    fit_chi2 = fit_chi2_image + fit_chi2_time
 
-    n_bins_arrival = len(lookup_table[0].xaxis)
-    n_bins_xmax = len(lookup_table[0].yaxis)
-    n_bins_energy = len(lookup_table[0].zaxis)
+    n_bins_arrival = len(image_lookup_table[0].xaxis)
+    n_bins_xmax = len(image_lookup_table[0].yaxis)
+    n_bins_energy = len(image_lookup_table[0].zaxis)
 
     for idx_x  in range(0,n_bins_arrival):
         for idx_y  in range(0,n_bins_xmax):
             for idx_z  in range(0,n_bins_energy):
 
-                try_arrival = lookup_table[0].xaxis[idx_x]
-                try_xmax = lookup_table[0].yaxis[idx_y]
-                try_log_energy = lookup_table[0].zaxis[idx_z]
+                try_arrival = image_lookup_table[0].xaxis[idx_x]
+                try_xmax = image_lookup_table[0].yaxis[idx_y]
+                try_log_energy = image_lookup_table[0].zaxis[idx_z]
                 init_params = [try_arrival,try_xmax,try_log_energy]
 
-                try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,lookup_table,eigen_vectors)
+                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+                try_chi2 = try_chi2_image + try_chi2_time
 
                 if try_chi2<fit_chi2:
                     fit_chi2 = try_chi2
@@ -92,7 +101,7 @@ def single_image_reconstruction(input_image_1d,lookup_table,eigen_vectors):
                     fit_xmax = try_xmax
                     fit_log_energy = try_log_energy
 
-    return fit_arrival+0.005, fit_xmax+11.25, fit_log_energy+0.05, fit_chi2
+    return fit_arrival+0.005, fit_xmax+0.005, fit_log_energy+0.05, fit_chi2
 
 
 def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
@@ -100,13 +109,20 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
     analysis_result = []
 
     print ('loading svd pickle data... ')
-    output_filename = f'{ctapipe_output}/output_machines/lookup_table.pkl'
-    lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+
+    output_filename = f'{ctapipe_output}/output_machines/image_lookup_table.pkl'
+    image_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
     
-    output_filename = f'{ctapipe_output}/output_machines/eigen_vectors.pkl'
-    eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+    output_filename = f'{ctapipe_output}/output_machines/image_eigen_vectors.pkl'
+    image_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
     
-    movie_rank = len(lookup_table_pkl)
+    output_filename = f'{ctapipe_output}/output_machines/time_lookup_table.pkl'
+    time_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+    
+    output_filename = f'{ctapipe_output}/output_machines/time_eigen_vectors.pkl'
+    time_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+    
+    movie_rank = len(image_lookup_table_pkl)
 
     print (f'loading file: {training_sample_path}')
     source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
@@ -183,8 +199,10 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             star_cam_y = truth_info_array[8]
             impact_x = truth_info_array[9]
             impact_y = truth_info_array[10]
+            focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
-            image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            #image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
             image_center_y = image_moment_array[2]
@@ -197,14 +215,15 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             line_b = image_moment_array[9]
 
             if image_qual<1.: continue
-            if image_size<100.: continue
+            if image_size<image_size_cut: continue
 
-            fit_arrival, fit_xmax, fit_log_energy, fit_chi2 = single_image_reconstruction(whole_movie_1d,lookup_table_pkl,eigen_vectors_pkl)
+            fit_arrival, fit_xmax, fit_log_energy, fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
             fit_cam_x = image_center_x + fit_arrival*np.cos(angle*u.rad)
             fit_cam_y = image_center_y + fit_arrival*np.sin(angle*u.rad)
 
             fit_alt, fit_az = camxy_to_altaz(source, subarray, run_id, tel_id, fit_cam_x, fit_cam_y)
 
+            print (f'focal_length = {focal_length}')
             print (f'image_size = {image_size}')
             print (f'image_qual = {image_qual}')
             print (f'truth_energy = {truth_energy}')
@@ -218,9 +237,11 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'fit_alt = {fit_alt}')
             print (f'fit_az = {fit_az}')
 
-            plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
+            if image_size>10000.:
+                plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
 
-            single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az]
+
+            single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]
             analysis_result += [single_analysis_result]
 
 
