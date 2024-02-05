@@ -27,6 +27,7 @@ make_a_movie = common_functions.make_a_movie
 make_standard_image = common_functions.make_standard_image
 plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
 camxy_to_altaz = common_functions.camxy_to_altaz
+image_simulation = common_functions.image_simulation
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -38,14 +39,14 @@ fig.set_figwidth(figsize_x)
 def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors):
 
     fit_arrival = init_params[0]
-    fit_xmax = init_params[1]
+    fit_impact = init_params[1]
     fit_log_energy = init_params[2]
-    if lookup_table[0].get_bin_content(fit_arrival,fit_xmax,fit_log_energy)==0.:
+    if lookup_table[0].get_bin_content(fit_arrival,fit_impact,fit_log_energy)==0.:
         return 1e10
 
     fit_latent_space = []
     for r in range(0,len(lookup_table)):
-        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_xmax,fit_log_energy)]
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
     #image_1d_fit = eigen_vectors.T @ fit_latent_space
@@ -71,25 +72,25 @@ def single_image_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     time_weight = 1./np.sum(np.array(input_time_1d)*np.array(input_time_1d))
 
     fit_arrival = 0.1
-    fit_xmax = 0.1
+    fit_impact = 0.1
     fit_log_energy = 0.
-    init_params = [fit_arrival,fit_xmax,fit_log_energy]
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
     fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
     fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
     fit_chi2 = fit_chi2_image + fit_chi2_time
 
     n_bins_arrival = len(image_lookup_table[0].xaxis)
-    n_bins_xmax = len(image_lookup_table[0].yaxis)
+    n_bins_impact = len(image_lookup_table[0].yaxis)
     n_bins_energy = len(image_lookup_table[0].zaxis)
 
     for idx_x  in range(0,n_bins_arrival):
-        for idx_y  in range(0,n_bins_xmax):
+        for idx_y  in range(0,n_bins_impact):
             for idx_z  in range(0,n_bins_energy):
 
                 try_arrival = image_lookup_table[0].xaxis[idx_x]
-                try_xmax = image_lookup_table[0].yaxis[idx_y]
+                try_impact = image_lookup_table[0].yaxis[idx_y]
                 try_log_energy = image_lookup_table[0].zaxis[idx_z]
-                init_params = [try_arrival,try_xmax,try_log_energy]
+                init_params = [try_arrival,try_impact,try_log_energy]
 
                 try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
                 try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
@@ -98,10 +99,10 @@ def single_image_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
                 if try_chi2<fit_chi2:
                     fit_chi2 = try_chi2
                     fit_arrival = try_arrival
-                    fit_xmax = try_xmax
+                    fit_impact = try_impact
                     fit_log_energy = try_log_energy
 
-    return fit_arrival+0.005, fit_xmax+0.005, fit_log_energy+0.05, fit_chi2
+    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, fit_chi2
 
 
 def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
@@ -217,7 +218,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             if image_qual<1.: continue
             if image_size<image_size_cut: continue
 
-            fit_arrival, fit_xmax, fit_log_energy, fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
+            fit_arrival, fit_impact, fit_log_energy, fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
+
             fit_cam_x = image_center_x + fit_arrival*np.cos(angle*u.rad)
             fit_cam_y = image_center_y + fit_arrival*np.sin(angle*u.rad)
 
@@ -237,8 +239,10 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'fit_alt = {fit_alt}')
             print (f'fit_az = {fit_az}')
 
-            if image_size>10000.:
+            if image_size>500.:
+                fit_params = [fit_arrival,fit_impact,fit_log_energy]
                 plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
+                image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
 
 
             single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]

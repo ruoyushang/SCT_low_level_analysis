@@ -4,6 +4,7 @@ import subprocess
 import glob
 
 import numpy as np
+from scipy.optimize import curve_fit
 from astropy import units as u
 from matplotlib import pyplot as plt
 from matplotlib import colors
@@ -26,7 +27,7 @@ font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'r
 
 training_sample_path = []
 particle_type = []
-max_nfiles = 1
+max_nfiles = 5
 nfiles = 0
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
@@ -34,6 +35,9 @@ with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
         particle_type += [0]
         nfiles += 1
         #if nfiles >= max_nfiles: break
+
+def gauss_func(x,A,sigma):
+    return A * np.exp(-((x-0.)**2)/(2*sigma*sigma))
 
 def plot_monotel_analysis():
 
@@ -122,6 +126,14 @@ def plot_monotel_analysis():
             profile = weighted_count/count
         hist_delta_energy.hist[e] = profile
 
+    init_A = 1000.
+    init_sigma = 0.1
+    start = (init_A,init_sigma)
+    popt, pcov = curve_fit(gauss_func,hist_delta_camr.bin_centers(0),hist_delta_camr.hist,p0=start,bounds=((0, 0.),(np.inf, np.inf)))
+    profile_fit = gauss_func(hist_delta_camr.bin_centers(0), *popt)
+    residual = hist_delta_camr.hist - profile_fit
+    print ('gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
+
     fig.clf()
     axbig = fig.add_subplot()
     label_x = 'log10 truth energy [TeV]'
@@ -155,7 +167,7 @@ def plot_monotel_analysis():
     fig.clf()
     axbig = fig.add_subplot()
     label_x = 'Cam R error [deg]'
-    label_y = 'density'
+    label_y = 'Surface brightness'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_camr.bin_centers(0), hist_delta_camr.hist)

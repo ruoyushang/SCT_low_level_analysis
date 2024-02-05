@@ -187,6 +187,18 @@ def image_cutout(geometry, image_input_1d):
             image_input_1d[pix] = 0.
     return eco_image_1d
 
+def image_cutout_restore(geometry, eco_image_1d, origin_image_1d):
+
+    eco_pix = 0
+    for pix in range(0,len(origin_image_1d)):
+        x = float(geometry.pix_x[pix]/u.m)
+        y = float(geometry.pix_y[pix]/u.m)
+        if abs(y)<0.05:
+            origin_image_1d[pix] = eco_image_1d[eco_pix]
+            eco_pix += 1
+        else:
+            origin_image_1d[pix] = 0.
+
 def fit_image_to_line(geometry,image_input_1d,transpose=False):
 
     x = []
@@ -456,6 +468,104 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
+def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors):
+
+    event_id = event.index['event_id']
+    geometry = subarray.tel[tel_id].camera.geometry
+
+    image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+
+    fit_arrival = init_params[0]
+    fit_impact = init_params[1]
+    fit_log_energy = init_params[2]
+
+    fit_image_latent_space = []
+    for r in range(0,len(image_lookup_table)):
+        fit_image_latent_space += [image_lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
+    fit_image_latent_space = np.array(fit_image_latent_space)
+
+    sim_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
+    eco_image_1d_fit = image_eigen_vectors.T @ fit_image_latent_space
+    image_cutout_restore(geometry, eco_image_1d_fit, sim_image_1d)
+    sim_image_2d = geometry.image_to_cartesian_representation(sim_image_1d)
+
+    data_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
+    image_cutout_restore(geometry, eco_image_1d, data_image_1d)
+    data_image_2d = geometry.image_to_cartesian_representation(data_image_1d)
+
+    fit_time_latent_space = []
+    for r in range(0,len(time_lookup_table)):
+        fit_time_latent_space += [time_lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
+    fit_time_latent_space = np.array(fit_time_latent_space)
+
+    sim_time_1d = np.zeros_like(event.dl1.tel[tel_id].image)
+    eco_time_1d_fit = time_eigen_vectors.T @ fit_time_latent_space
+    image_cutout_restore(geometry, eco_time_1d_fit, sim_time_1d)
+    sim_time_2d = geometry.image_to_cartesian_representation(sim_time_1d)
+
+    data_time_1d = np.zeros_like(event.dl1.tel[tel_id].image)
+    image_cutout_restore(geometry, eco_time_1d, data_time_1d)
+    data_time_2d = geometry.image_to_cartesian_representation(data_time_1d)
+
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(data_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    axbig.set_xlim(xmin,xmax)
+    axbig.set_ylim(ymin,ymax)
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_data_image.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(sim_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    axbig.set_xlim(xmin,xmax)
+    axbig.set_ylim(ymin,ymax)
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_sim_image.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(data_time_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    axbig.set_xlim(xmin,xmax)
+    axbig.set_ylim(ymin,ymax)
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_data_time.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(sim_time_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+    cbar = fig.colorbar(im)
+    axbig.set_xlim(xmin,xmax)
+    axbig.set_ylim(ymin,ymax)
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_sim_time.png',bbox_inches='tight')
+    axbig.remove()
+
+    return
+
 def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y):
 
     event_id = event.index['event_id']
@@ -526,6 +636,7 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
         txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
     fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
     axbig.remove()
+
 
 def make_standard_image(fig, subarray, run_id, tel_id, event, make_plots=False):
 
