@@ -85,7 +85,7 @@ print ('Compute big matrix SVD...')
 
 n_images, n_pixels = big_image_matrix.shape
 print (f'n_images = {n_images}, n_pixels = {n_pixels}')
-image_rank = 30
+image_rank = 40
 U_full, S_full, VT_full = np.linalg.svd(big_image_matrix,full_matrices=False)
 U_eco = U_full[:, :image_rank]
 VT_eco = VT_full[:image_rank, :]
@@ -97,7 +97,7 @@ with open(output_filename,"wb") as file:
 
 n_images, n_pixels = big_time_matrix.shape
 print (f'n_images = {n_images}, n_pixels = {n_pixels}')
-image_rank = 30
+image_rank = 40
 u_full, s_full, vT_full = np.linalg.svd(big_time_matrix,full_matrices=False)
 u_eco = u_full[:, :image_rank]
 vT_eco = vT_full[:image_rank, :]

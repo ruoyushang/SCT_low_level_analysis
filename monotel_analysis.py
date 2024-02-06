@@ -239,7 +239,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'fit_alt = {fit_alt}')
             print (f'fit_az = {fit_az}')
 
-            if image_size>500.:
+            if image_size>5000.:
                 fit_params = [fit_arrival,fit_impact,fit_log_energy]
                 plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
                 image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
