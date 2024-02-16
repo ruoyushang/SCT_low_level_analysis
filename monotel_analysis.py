@@ -70,6 +70,7 @@ def single_image_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
 
     image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
     time_weight = 1./np.sum(np.array(input_time_1d)*np.array(input_time_1d))
+    #time_weight = 0./np.sum(np.array(input_time_1d)*np.array(input_time_1d))
 
     fit_arrival = 0.1
     fit_impact = 0.1
