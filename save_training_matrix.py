@@ -35,7 +35,7 @@ fig.set_figwidth(figsize_x)
 
 def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
-    #big_movie_matrix = []
+    big_movie_matrix = []
     big_image_matrix = []
     big_time_matrix = []
     big_moment_matrix = []
@@ -108,16 +108,17 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
             truth_info_array = find_image_truth(source, subarray, run_id, tel_id, event)
 
-            #image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
             image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
 
             if image_qual>1. and image_size>image_size_cut:
-                #big_movie_matrix += [whole_movie_1d]
+                big_movie_matrix += [eco_movie_1d]
                 big_image_matrix += [eco_image_1d]
                 big_time_matrix += [eco_time_1d]
                 big_moment_matrix += [image_moment_array]
                 big_truth_matrix += [truth_info_array]
+                #exit()
 
             toc_img = time.perf_counter()
             print (f'Image analysis completed in {toc_img - tic_img:0.4f} sec.')
@@ -127,8 +128,8 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
-        #pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix], file)
-        pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix], file)
+        pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix,big_image_matrix,big_time_matrix], file)
+        #pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix], file)
 
     return
 

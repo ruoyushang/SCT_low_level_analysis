@@ -23,16 +23,19 @@ print (f'ctapipe_output = {ctapipe_output}')
 training_sample_path = []
 #training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 #training_sample_path += [get_dataset_path("gamma_20deg_0deg_run744___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
+n_samples = 0
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
+        if n_samples==10: continue
         training_sample_path += [get_dataset_path(line.strip('\n'))]
+        n_samples += 1
 
 # start memory profiling
 tracemalloc.start()
 
 big_truth_matrix = []
 big_moment_matrix = []
-#big_movie_matrix = []
+big_movie_matrix = []
 big_image_matrix = []
 big_time_matrix = []
 for path in range(0,len(training_sample_path)):
@@ -49,13 +52,13 @@ for path in range(0,len(training_sample_path)):
 
     big_truth_matrix += training_sample[0]
     big_moment_matrix += training_sample[1]
-    #big_movie_matrix += training_sample[2]
-    big_image_matrix += training_sample[2]
-    big_time_matrix += training_sample[3]
+    big_movie_matrix += training_sample[2]
+    big_image_matrix += training_sample[3]
+    big_time_matrix += training_sample[4]
 
     print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
-#big_movie_matrix = np.array(big_movie_matrix)
+big_movie_matrix = np.array(big_movie_matrix)
 big_image_matrix = np.array(big_image_matrix)
 big_time_matrix = np.array(big_time_matrix)
 
@@ -81,151 +84,138 @@ n_bins_energy = 15
 log_energy_lower = -1.
 log_energy_upper = 2.
 
-print ('Compute big matrix SVD...')
 
-n_images, n_pixels = big_image_matrix.shape
-print (f'n_images = {n_images}, n_pixels = {n_pixels}')
-image_rank = 40
-U_full, S_full, VT_full = np.linalg.svd(big_image_matrix,full_matrices=False)
-U_eco = U_full[:, :image_rank]
-VT_eco = VT_full[:image_rank, :]
+def BigMatrixSVD(big_matrix,moment_matrix,truth_matrix,pkl_name):
 
-print (f'saving image eigenvector to {ctapipe_output}/output_machines...')
-output_filename = f'{ctapipe_output}/output_machines/image_eigen_vectors.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(VT_eco, file)
+    image_rank = 50
 
-n_images, n_pixels = big_time_matrix.shape
-print (f'n_images = {n_images}, n_pixels = {n_pixels}')
-image_rank = 40
-u_full, s_full, vT_full = np.linalg.svd(big_time_matrix,full_matrices=False)
-u_eco = u_full[:, :image_rank]
-vT_eco = vT_full[:image_rank, :]
+    n_images, n_pixels = big_matrix.shape
+    print (f'n_images = {n_images}, n_pixels = {n_pixels}')
 
-print (f'saving eigenvector to {ctapipe_output}/output_machines...')
-output_filename = f'{ctapipe_output}/output_machines/time_eigen_vectors.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(vT_eco, file)
+    U_full, S_full, VT_full = np.linalg.svd(big_matrix,full_matrices=False)
+    U_eco = U_full[:, :image_rank]
+    VT_eco = VT_full[:image_rank, :]
+    print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
-print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
+    print (f'saving image eigenvector to {ctapipe_output}/output_machines...')
+    output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_eigen_vectors.pkl'
+    with open(output_filename,"wb") as file:
+        pickle.dump(VT_eco, file)
 
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Rank'
-label_y = 'Signular value'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.set_xlim(0,100)
-axbig.plot(S_full)
-fig.savefig(f'{ctapipe_output}/output_plots/training_movie_signularvalue.png',bbox_inches='tight')
-axbig.remove()
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Rank'
+    label_y = 'Signular value'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    #axbig.set_xlim(0,100)
+    axbig.set_xscale('log')
+    axbig.plot(S_full)
+    fig.savefig(f'{ctapipe_output}/output_plots/training_{pkl_name}_signularvalue.png',bbox_inches='tight')
+    axbig.remove()
 
-image_lookup_table = []
-time_lookup_table = []
-lookup_table_norm = MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)
+    lookup_table = []
+    lookup_table_norm = MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)
 
-list_impact = []
-list_arrival = []
-list_log_energy = []
-list_height = []
-list_xmax = []
-list_image_qual = []
+    list_impact = []
+    list_arrival = []
+    list_log_energy = []
+    list_height = []
+    list_xmax = []
+    list_image_qual = []
 
-for r in range(0,image_rank):
-    image_lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
-    time_lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
-
-
-for img in range(0,len(big_image_matrix)):
-
-    image_center_x = big_moment_matrix[img][1]
-    image_center_y = big_moment_matrix[img][2]
-    time_direction = big_moment_matrix[img][6]
-    image_direction = big_moment_matrix[img][7]
-    image_qual = abs(image_direction+time_direction)
-
-    truth_energy = float(big_truth_matrix[img][0]/u.TeV)
-    truth_height = float(big_truth_matrix[img][5]/u.m)
-    truth_x_max = float(big_truth_matrix[img][6]/(u.g/(u.cm*u.cm)))
-    star_cam_x = big_truth_matrix[img][7]
-    star_cam_y = big_truth_matrix[img][8]
-    impact_x = big_truth_matrix[img][9]
-    impact_y = big_truth_matrix[img][10]
-
-    arrival = pow(pow(star_cam_x-image_center_x,2)+pow(star_cam_y-image_center_y,2),0.5)
-    impact = pow(impact_x*impact_x+impact_y*impact_y,0.5)
-    log_energy = np.log10(truth_energy)
-
-    list_log_energy += [log_energy]
-    list_height += [truth_height]
-    list_xmax += [truth_x_max]
-    list_arrival += [arrival]
-    list_impact += [impact]
-
-    image_1d = np.array(big_image_matrix[img])
-    image_latent_space = VT_eco @ image_1d
     for r in range(0,image_rank):
-        image_lookup_table[r].fill(arrival,impact,log_energy,weight=image_latent_space[r])
+        lookup_table += [MyArray3D(x_bins=n_bins_arrival,start_x=arrival_lower,end_x=arrival_upper,y_bins=n_bins_impact,start_y=impact_lower,end_y=impact_upper,z_bins=n_bins_energy,start_z=log_energy_lower,end_z=log_energy_upper)]
 
-    time_1d = np.array(big_time_matrix[img])
-    time_latent_space = vT_eco @ time_1d
+    for img in range(0,len(big_matrix)):
+    
+        image_center_x = moment_matrix[img][1]
+        image_center_y = moment_matrix[img][2]
+        time_direction = moment_matrix[img][6]
+        image_direction = moment_matrix[img][7]
+        image_qual = abs(image_direction+time_direction)
+
+        truth_energy = float(truth_matrix[img][0]/u.TeV)
+        truth_height = float(truth_matrix[img][5]/u.m)
+        truth_x_max = float(truth_matrix[img][6]/(u.g/(u.cm*u.cm)))
+        star_cam_x = truth_matrix[img][7]
+        star_cam_y = truth_matrix[img][8]
+        impact_x = truth_matrix[img][9]
+        impact_y = truth_matrix[img][10]
+
+        arrival = pow(pow(star_cam_x-image_center_x,2)+pow(star_cam_y-image_center_y,2),0.5)
+        impact = pow(impact_x*impact_x+impact_y*impact_y,0.5)
+        log_energy = np.log10(truth_energy)
+
+        list_log_energy += [log_energy]
+        list_height += [truth_height]
+        list_xmax += [truth_x_max]
+        list_arrival += [arrival]
+        list_impact += [impact]
+
+        image_1d = np.array(big_matrix[img])
+        image_latent_space = VT_eco @ image_1d
+        for r in range(0,image_rank):
+            lookup_table[r].fill(arrival,impact,log_energy,weight=image_latent_space[r])
+
+        lookup_table_norm.fill(arrival,impact,log_energy,weight=1.)
+
     for r in range(0,image_rank):
-        time_lookup_table[r].fill(arrival,impact,log_energy,weight=time_latent_space[r])
+        lookup_table[r].divide(lookup_table_norm)
 
-    lookup_table_norm.fill(arrival,impact,log_energy,weight=1.)
+    output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table.pkl'
+    with open(output_filename,"wb") as file:
+        pickle.dump(lookup_table, file)
 
-for r in range(0,image_rank):
-    image_lookup_table[r].divide(lookup_table_norm)
-    time_lookup_table[r].divide(lookup_table_norm)
+    print (f'saving plots to {ctapipe_output}/output_plots...')
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'log10 Energy [TeV]'
+    label_y = 'Height [m]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_log_energy, list_height, s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/scatter_log_energy_vs_height.png',bbox_inches='tight')
+    axbig.remove()
+    
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'log10 Energy [TeV]'
+    label_y = 'X max [g/cm2]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_log_energy, list_xmax, s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/scatter_log_energy_vs_xmax.png',bbox_inches='tight')
+    axbig.remove()
+    
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Arrival [m]'
+    label_y = 'Impact [m]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_arrival, list_impact, s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/scatter_arrival_vs_impact.png',bbox_inches='tight')
+    axbig.remove()
+    
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Arrival [m]'
+    label_y = 'X max [g/cm2]'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_arrival, list_xmax, s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/scatter_arrival_vs_xmax.png',bbox_inches='tight')
+    axbig.remove()
 
-print (f'saving table to {ctapipe_output}/output_machines...')
-output_filename = f'{ctapipe_output}/output_machines/image_lookup_table.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(image_lookup_table, file)
-output_filename = f'{ctapipe_output}/output_machines/time_lookup_table.pkl'
-with open(output_filename,"wb") as file:
-    pickle.dump(time_lookup_table, file)
+
+print ('Compute movie matrix SVD...')
+BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,'movie')
+print ('Compute image matrix SVD...')
+BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,'image')
+print ('Compute time matrix SVD...')
+BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,'time')
 
 
-print (f'saving plots to {ctapipe_output}/output_plots...')
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'log10 Energy [TeV]'
-label_y = 'Height [m]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.scatter(list_log_energy, list_height, s=90, c='b', marker='+', alpha=0.1)
-fig.savefig(f'{ctapipe_output}/output_plots/scatter_log_energy_vs_height.png',bbox_inches='tight')
-axbig.remove()
-
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'log10 Energy [TeV]'
-label_y = 'X max [g/cm2]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.scatter(list_log_energy, list_xmax, s=90, c='b', marker='+', alpha=0.1)
-fig.savefig(f'{ctapipe_output}/output_plots/scatter_log_energy_vs_xmax.png',bbox_inches='tight')
-axbig.remove()
-
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Arrival [m]'
-label_y = 'Impact [m]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.scatter(list_arrival, list_impact, s=90, c='b', marker='+', alpha=0.1)
-fig.savefig(f'{ctapipe_output}/output_plots/scatter_arrival_vs_impact.png',bbox_inches='tight')
-axbig.remove()
-
-fig.clf()
-axbig = fig.add_subplot()
-label_x = 'Arrival [m]'
-label_y = 'X max [g/cm2]'
-axbig.set_xlabel(label_x)
-axbig.set_ylabel(label_y)
-axbig.scatter(list_arrival, list_xmax, s=90, c='b', marker='+', alpha=0.1)
-fig.savefig(f'{ctapipe_output}/output_plots/scatter_arrival_vs_xmax.png',bbox_inches='tight')
-axbig.remove()
 
 tracemalloc.stop()

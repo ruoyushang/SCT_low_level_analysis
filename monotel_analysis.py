@@ -28,6 +28,7 @@ make_standard_image = common_functions.make_standard_image
 plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
 camxy_to_altaz = common_functions.camxy_to_altaz
 image_simulation = common_functions.image_simulation
+movie_simulation = common_functions.movie_simulation
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -65,6 +66,45 @@ def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,e
         sum_chi2 += diff*diff
 
     return sum_chi2
+
+def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors):
+
+    image_weight = 1.
+    time_weight = 1.
+
+    fit_arrival = 0.1
+    fit_impact = 0.1
+    fit_log_energy = 0.
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
+    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+    fit_chi2 = fit_chi2_image + fit_chi2_time
+
+    n_bins_arrival = len(image_lookup_table[0].xaxis)
+    n_bins_impact = len(image_lookup_table[0].yaxis)
+    n_bins_energy = len(image_lookup_table[0].zaxis)
+
+    for idx_x  in range(0,n_bins_arrival):
+        for idx_y  in range(0,n_bins_impact):
+            for idx_z  in range(0,n_bins_energy):
+
+                try_arrival = image_lookup_table[0].xaxis[idx_x]
+                try_impact = image_lookup_table[0].yaxis[idx_y]
+                try_log_energy = image_lookup_table[0].zaxis[idx_z]
+                init_params = [try_arrival,try_impact,try_log_energy]
+
+                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+                try_chi2 = try_chi2_image + try_chi2_time
+
+                if try_chi2<fit_chi2:
+                    fit_chi2 = try_chi2
+                    fit_arrival = try_arrival
+                    fit_impact = try_impact
+                    fit_log_energy = try_log_energy
+
+    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, fit_chi2
+
 
 def single_image_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors):
 
@@ -112,19 +152,20 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
 
     print ('loading svd pickle data... ')
 
+    output_filename = f'{ctapipe_output}/output_machines/movie_lookup_table.pkl'
+    movie_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+    output_filename = f'{ctapipe_output}/output_machines/movie_eigen_vectors.pkl'
+    movie_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+    
     output_filename = f'{ctapipe_output}/output_machines/image_lookup_table.pkl'
     image_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-    
     output_filename = f'{ctapipe_output}/output_machines/image_eigen_vectors.pkl'
     image_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
     
     output_filename = f'{ctapipe_output}/output_machines/time_lookup_table.pkl'
     time_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-    
     output_filename = f'{ctapipe_output}/output_machines/time_eigen_vectors.pkl'
     time_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
-    
-    movie_rank = len(image_lookup_table_pkl)
 
     print (f'loading file: {training_sample_path}')
     source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
@@ -169,6 +210,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
     shower_processor = ShowerProcessor(subarray=subarray)
 
     evt_count = 0
+    good_movie = 0
+    bad_movie = 0
     for event in source:
     
         event_id = event.index['event_id']
@@ -203,7 +246,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             impact_y = truth_info_array[10]
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
-            #image_qual, image_moment_array, whole_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event)
+            image_qual, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=True)
             image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
@@ -216,35 +259,88 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             line_a = image_moment_array[8]
             line_b = image_moment_array[9]
 
-            if image_qual<1.: continue
-            if image_size<image_size_cut: continue
+            if image_qual<1.: 
+                print ('failed image_qual')
+                continue
+            if image_size<image_size_cut: 
+                print ('failed image_size_cut')
+                continue
 
-            fit_arrival, fit_impact, fit_log_energy, fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
+            image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
+            movie_fit_arrival, movie_fit_impact, movie_fit_log_energy, movie_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl)
 
-            fit_cam_x = image_center_x + fit_arrival*np.cos(angle*u.rad)
-            fit_cam_y = image_center_y + fit_arrival*np.sin(angle*u.rad)
+            image_fit_cam_x = image_center_x + image_fit_arrival*np.cos(angle*u.rad)
+            image_fit_cam_y = image_center_y + image_fit_arrival*np.sin(angle*u.rad)
+            image_fit_alt, image_fit_az = camxy_to_altaz(source, subarray, run_id, tel_id, image_fit_cam_x, image_fit_cam_y)
 
-            fit_alt, fit_az = camxy_to_altaz(source, subarray, run_id, tel_id, fit_cam_x, fit_cam_y)
+            movie_fit_cam_x = image_center_x + movie_fit_arrival*np.cos(angle*u.rad)
+            movie_fit_cam_y = image_center_y + movie_fit_arrival*np.sin(angle*u.rad)
+            movie_fit_alt, movie_fit_az = camxy_to_altaz(source, subarray, run_id, tel_id, movie_fit_cam_x, movie_fit_cam_y)
 
             print (f'focal_length = {focal_length}')
             print (f'image_size = {image_size}')
             print (f'image_qual = {image_qual}')
             print (f'truth_energy = {truth_energy}')
-            print (f'fit_energy = {pow(10.,fit_log_energy)}')
+            print (f'image_fit_energy = {pow(10.,image_fit_log_energy)}')
+            print (f'movie_fit_energy = {pow(10.,movie_fit_log_energy)}')
             print (f'star_cam_x = {star_cam_x}')
             print (f'star_cam_y = {star_cam_y}')
-            print (f'fit_cam_x = {fit_cam_x}')
-            print (f'fit_cam_y = {fit_cam_y}')
+            print (f'image_fit_cam_x = {image_fit_cam_x}')
+            print (f'image_fit_cam_y = {image_fit_cam_y}')
+            print (f'movie_fit_cam_x = {movie_fit_cam_x}')
+            print (f'movie_fit_cam_y = {movie_fit_cam_y}')
             print (f'truth_alt = {truth_alt}')
             print (f'truth_az = {truth_az}')
-            print (f'fit_alt = {fit_alt}')
-            print (f'fit_az = {fit_az}')
+            print (f'image_fit_alt = {image_fit_alt}')
+            print (f'image_fit_az = {image_fit_az}')
+            print (f'movie_fit_alt = {movie_fit_alt}')
+            print (f'movie_fit_az = {movie_fit_az}')
 
-            if image_size>5000.:
+            image_method_error = pow(pow(image_fit_cam_x-star_cam_x,2)+pow(image_fit_cam_y-star_cam_y,2),0.5)
+            movie_method_error = pow(pow(movie_fit_cam_x-star_cam_x,2)+pow(movie_fit_cam_y-star_cam_y,2),0.5)
+
+            #if image_size>500.:
+            if movie_method_error>image_method_error:
+                print (f'plotting a bad example.')
+
+                fit_arrival = movie_fit_arrival
+                fit_impact = movie_fit_impact
+                fit_log_energy = movie_fit_log_energy
+                fit_cam_x = movie_fit_cam_x
+                fit_cam_y = movie_fit_cam_y
+                fit_alt = movie_fit_alt
+                fit_az = movie_fit_az
+
                 fit_params = [fit_arrival,fit_impact,fit_log_energy]
-                plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y)
-                image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
+                plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, 'movie')
+                movie_simulation(fig, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl, 'movie')
 
+                fit_arrival = image_fit_arrival
+                fit_impact = image_fit_impact
+                fit_log_energy = image_fit_log_energy
+                fit_cam_x = image_fit_cam_x
+                fit_cam_y = image_fit_cam_y
+                fit_alt = image_fit_alt
+                fit_az = image_fit_az
+
+                fit_params = [fit_arrival,fit_impact,fit_log_energy]
+                plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, 'image')
+                #image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl, 'image')
+                #exit()
+
+            if movie_method_error>image_method_error:
+                bad_movie += 1
+            elif movie_method_error<image_method_error:
+                good_movie += 1
+            print (f'good_movie = {good_movie}, bad_movie = {bad_movie}')
+
+            fit_arrival = image_fit_arrival
+            fit_impact = image_fit_impact
+            fit_log_energy = image_fit_log_energy
+            fit_cam_x = image_fit_cam_x
+            fit_cam_y = image_fit_cam_y
+            fit_alt = image_fit_alt
+            fit_az = image_fit_az
 
             single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]
             analysis_result += [single_analysis_result]

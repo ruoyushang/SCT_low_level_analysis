@@ -16,6 +16,9 @@ time_direction_cut = 40.
 image_direction_cut = 0.2
 image_size_cut = 200.
 
+n_samples_per_window = 1
+total_samples = 20
+
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
 font = {'family': 'serif', 'color':  'white', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
@@ -175,6 +178,45 @@ def image_rotation(input_image_2d, angle_rad):
 
     return image_rotate
 
+def image_smooth(input_image_2d,mask_2d):
+
+    num_rows, num_cols = input_image_2d.shape
+    center_col = float(num_cols)/2.
+    center_row = float(num_rows)/2.
+
+    #mode = 50.
+    #kernel_radius = float(num_cols)/mode
+    kernel_radius = 2.
+    kernel_pix_size = int(kernel_radius)
+    gaus_norm = 2.*np.pi*kernel_radius*kernel_radius
+    image_kernel = np.zeros_like(input_image_2d)
+    for idx_x in range(0,num_cols):
+        for idx_y in range(0,num_rows):
+            delta_row = float(idx_y - center_row)
+            delta_col = float(idx_x - center_col)
+            distance = pow(delta_row*delta_row+delta_col*delta_col,0.5)
+            pix_content = np.exp(-(distance*distance)/(2.*kernel_radius*kernel_radius))
+            image_kernel[idx_y,idx_x] = pix_content/gaus_norm
+
+    image_smooth = np.zeros_like(input_image_2d)
+    kernel_norm = np.sum(image_kernel)
+    for idx_x1 in range(0,num_cols):
+        for idx_y1 in range(0,num_rows):
+            image_smooth[idx_y1,idx_x1] = 0.
+            if not mask_2d[idx_y1,idx_x1]: continue # select signal
+            for idx_x2 in range(idx_x1-2*kernel_pix_size,idx_x1+2*kernel_pix_size):
+                for idx_y2 in range(idx_y1-2*kernel_pix_size,idx_y1+2*kernel_pix_size):
+                    if idx_x2<0: continue
+                    if idx_y2<0: continue
+                    if idx_x2>=num_cols: continue
+                    if idx_y2>=num_rows: continue
+                    if not mask_2d[idx_y2,idx_x2]: continue # select signal
+                    old_content = input_image_2d[idx_y2,idx_x2]
+                    scale = image_kernel[int(center_row)+idx_y2-idx_y1,int(center_col)+idx_x2-idx_x1]
+                    image_smooth[idx_y1,idx_x1] += old_content*scale/kernel_norm
+
+    return image_smooth
+
 def image_cutout(geometry, image_input_1d):
 
     eco_image_1d = []
@@ -274,7 +316,7 @@ def reset_time(input_image_1d, input_time_1d):
     if image_size==0.:
         return 0.
 
-    center_time = center_time/image_size
+    center_time = 0.5*center_time/image_size
     for pix in range(0,len(input_image_1d)):
         if input_image_1d[pix]==0.: continue
         input_time_1d[pix] += -1.*center_time
@@ -350,8 +392,8 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
     angle = np.arctan(a)
 
     truth_angle = np.arctan2(-image_center_y,-image_center_x)
-    print (f'angle = {angle}')
-    print (f'truth_angle = {truth_angle}')
+    #print (f'angle = {angle}')
+    #print (f'truth_angle = {truth_angle}')
 
     rotation_matrix = np.array([[np.cos(-angle), -np.sin(-angle)],[np.sin(-angle), np.cos(-angle)]])
     diff_x = mask_center_x-image_center_x
@@ -375,9 +417,9 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
     direction_of_image = direction_of_image/image_direction_cut
     if (direction_of_time+direction_of_image)>0.:
         angle = angle+np.pi
-        print (f'change direction.')
+        #print (f'change direction.')
 
-    print (f'new angle = {angle}')
+    #print (f'new angle = {angle}')
 
     return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b]
 
@@ -468,7 +510,61 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
-def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors):
+def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lookup_table, movie_eigen_vectors, tag):
+
+    event_id = event.index['event_id']
+    geometry = subarray.tel[tel_id].camera.geometry
+
+    image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    n_eco_pix = len(eco_image_1d)
+
+    fit_arrival = init_params[0]
+    fit_impact = init_params[1]
+    fit_log_energy = init_params[2]
+
+    fit_movie_latent_space = []
+    for r in range(0,len(movie_lookup_table)):
+        fit_movie_latent_space += [movie_lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
+    fit_movie_latent_space = np.array(fit_movie_latent_space)
+
+    eco_movie_1d_fit = movie_eigen_vectors.T @ fit_movie_latent_space
+    n_windows = int(total_samples/n_samples_per_window)
+    sim_eco_image_1d = []
+    sim_image_1d = []
+    for win in range(0,n_windows):
+        sim_eco_image_1d += [np.zeros_like(eco_image_1d)]
+        sim_image_1d += [np.zeros_like(event.dl1.tel[tel_id].image)]
+
+    sim_image_2d = []
+    for win in range(0,n_windows):
+        for pix in range(0,n_eco_pix):
+            movie_pix_idx = pix + win*n_eco_pix
+            sim_eco_image_1d[win][pix] = eco_movie_1d_fit[movie_pix_idx]
+        image_cutout_restore(geometry, sim_eco_image_1d[win], sim_image_1d[win])
+        sim_image_2d += [geometry.image_to_cartesian_representation(sim_image_1d[win])]
+
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
+
+    for win in range(0,n_windows):
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(sim_image_2d[win],origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.set_xlim(xmin,xmax)
+        axbig.set_ylim(ymin,ymax)
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_sim.png',bbox_inches='tight')
+        axbig.remove()
+
+
+def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors, tag):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -522,7 +618,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     cbar = fig.colorbar(im)
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
-    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_data_image.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_image_data.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -535,7 +631,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     cbar = fig.colorbar(im)
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
-    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_sim_image.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_image_sim_{tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -548,7 +644,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     cbar = fig.colorbar(im)
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
-    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_data_time.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_time_data.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -561,12 +657,12 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     cbar = fig.colorbar(im)
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
-    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_sim_time.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_time_sim_{tag}.png',bbox_inches='tight')
     axbig.remove()
 
     return
 
-def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y):
+def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, tag):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -634,7 +730,7 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
     if image_qual<1.:
         txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
-    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image_{tag}.png',bbox_inches='tight')
     axbig.remove()
 
 
@@ -713,12 +809,14 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
             clean_time_1d[pix] = 0.
 
     center_time = reset_time(clean_image_1d, clean_time_1d)
-    print (f'center_time = {center_time}')
+    #print (f'center_time = {center_time}')
 
     clean_image_2d = geometry.image_to_cartesian_representation(clean_image_1d)
     remove_nan_pixels(clean_image_2d)
     clean_time_2d = geometry.image_to_cartesian_representation(clean_time_1d)
     remove_nan_pixels(clean_time_2d)
+
+    image_max = np.max(clean_image_2d[:,:])
 
     pixel_width = float(geometry.pixel_width[0]/u.m)
 
@@ -743,25 +841,42 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
 
     shift_pix_x = image_center_x/pixel_width
     shift_pix_y = image_center_y/pixel_width
-    shift_image_2d = image_translation(clean_image_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-    rotate_image_2d = image_rotation(shift_image_2d, angle*u.rad)
-    rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
-    eco_image_1d = image_cutout(geometry, rotate_image_1d)
+    #shift_image_2d = image_translation(clean_image_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
+    #rotate_image_2d = image_rotation(shift_image_2d, angle*u.rad)
+    #rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
+    #eco_image_1d = image_cutout(geometry, rotate_image_1d)
 
     waveform = event.dl0.tel[tel_id].waveform
     n_pix, n_samp = waveform.shape
+    print (f'n_pix = {n_pix}, n_samp = {n_samp}')
 
     center_time_sample = round(center_time)
-    window_size = 60
-    n_windows = 1
+    print (f'center_time_sample = {center_time_sample}')
+
+    #n_windows = 64
+    ##n_windows = 16
+    #window_size = int(n_samp/n_windows)
+    #clean_movie_1d = []
+    #for win in range(0,n_windows):
+    #    clean_movie_1d += [np.zeros_like(clean_image_1d)]
+    #for pix in range(0,n_pix):
+    #    if not image_mask[pix]: continue # select signal
+    #    for win in range(0,n_windows):
+    #        for sample in range(0,window_size):
+    #            sample_idx = sample + win*window_size
+    #            clean_movie_1d[win][pix] +=  waveform[pix,sample_idx]
+
+    n_windows = int(total_samples/n_samples_per_window)
     clean_movie_1d = []
     for win in range(0,n_windows):
         clean_movie_1d += [np.zeros_like(clean_image_1d)]
     for pix in range(0,n_pix):
         if not image_mask[pix]: continue # select signal
         for win in range(0,n_windows):
-            for sample in range(0,window_size):
-                sample_idx = sample + win*window_size
+            for sample in range(0,n_samples_per_window):
+                sample_idx = int(sample + win*n_samples_per_window + center_time_sample - total_samples/2)
+                if sample_idx<0: continue
+                if sample_idx>=n_samp: continue
                 clean_movie_1d[win][pix] +=  waveform[pix,sample_idx]
 
     xmax = max(geometry.pix_x)/u.m
@@ -772,9 +887,18 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
     whole_movie_1d = []
     for win in range(0,n_windows):
 
+        #image_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
+        image_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=0)
+        #for pix in range(0,len(image_mask)):
+        #    if not image_mask[pix]:
+        #        clean_movie_1d[win][pix] = 0.
+
         clean_movie_2d = geometry.image_to_cartesian_representation(clean_movie_1d[win])
         remove_nan_pixels(clean_movie_2d)
 
+        #image_mask_2d = geometry.image_to_cartesian_representation(image_mask)
+        #smooth_movie_2d = image_smooth(clean_movie_2d,image_mask_2d)
+        #shift_movie_2d = image_translation(smooth_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
         shift_movie_2d = image_translation(clean_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
         rotate_movie_2d = image_rotation(shift_movie_2d, angle*u.rad)
         rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d)
@@ -783,7 +907,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
         remove_nan_pixels(eco_movie_2d)
 
         whole_movie_1d.extend(eco_movie_1d)
-        print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
+        #print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
 
         if image_qual>1. and make_plots:
             fig.clf()
@@ -792,7 +916,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
             label_y = 'Y'
             axbig.set_xlabel(label_x)
             axbig.set_ylabel(label_y)
-            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=image_max/float(n_windows))
             cbar = fig.colorbar(im)
             line_x = np.linspace(xmin, xmax, 100)
             line_y = -(0.*line_x + 0.05)
@@ -800,7 +924,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
             line_x = np.linspace(xmin, xmax, 100)
             line_y = -(0.*line_x - 0.05)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_win{win}_clean_movie.png',bbox_inches='tight')
+            fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
             axbig.remove()
 
             #fig.clf()
