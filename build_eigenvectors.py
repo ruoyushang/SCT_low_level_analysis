@@ -26,7 +26,7 @@ training_sample_path = []
 n_samples = 0
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
-        if n_samples==10: continue
+        #if n_samples==10: continue
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         n_samples += 1
 

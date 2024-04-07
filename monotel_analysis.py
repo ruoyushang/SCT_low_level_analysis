@@ -29,6 +29,7 @@ plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
 camxy_to_altaz = common_functions.camxy_to_altaz
 image_simulation = common_functions.image_simulation
 movie_simulation = common_functions.movie_simulation
+display_a_movie = common_functions.display_a_movie
 pass_lightcone = common_functions.pass_lightcone
 
 fig, ax = plt.subplots()
@@ -38,7 +39,7 @@ fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
 
-def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors):
+def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors,is_poisson=False):
 
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
@@ -63,22 +64,28 @@ def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,e
     sum_chi2 = 0.
     n_rows = len(data_latent_space)
     for row in range(0,n_rows):
+        if data_latent_space[row]==0. and fit_latent_space[row]==0.: continue
         diff = data_latent_space[row] - fit_latent_space[row]
-        sum_chi2 += diff*diff
+        norm = pow(pow(data_latent_space[row],2) + pow(fit_latent_space[row],2),0.5)
+        if is_poisson:
+            sum_chi2 += diff*diff/norm
+        else:
+            sum_chi2 += diff*diff
 
     return sum_chi2
 
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors):
 
     image_weight = 1.
-    time_weight = 0.1
+    time_weight = 1.
+    is_poisson = False
 
     fit_arrival = 0.1
     fit_impact = 0.1
     fit_log_energy = 0.
     init_params = [fit_arrival,fit_impact,fit_log_energy]
-    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors,is_poisson=is_poisson)
+    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors,is_poisson=is_poisson)
     fit_chi2 = fit_chi2_image + fit_chi2_time
 
     n_bins_arrival = len(image_lookup_table[0].xaxis)
@@ -94,8 +101,8 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
                 try_log_energy = image_lookup_table[0].zaxis[idx_z]
                 init_params = [try_arrival,try_impact,try_log_energy]
 
-                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors,is_poisson=is_poisson)
+                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors,is_poisson=is_poisson)
                 try_chi2 = try_chi2_image + try_chi2_time
 
                 if try_chi2<fit_chi2:
@@ -269,7 +276,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
                 print ('failed image_direction_cut')
                 continue
 
-            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=True)
+            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
             truth_projection = image_moment_array[10]
             print (f'truth_projection = {truth_projection:0.3f}')
 
@@ -307,8 +314,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             movie_method_error = pow(pow(movie_fit_cam_x-star_cam_x,2)+pow(movie_fit_cam_y-star_cam_y,2),0.5)
 
             #if image_size>500.:
-            if truth_projection>0.8 and movie_method_error>image_method_error:
-                print (f'plotting a bad example.')
+            if truth_projection>0.8 and movie_method_error<image_method_error:
 
                 fit_arrival = movie_fit_arrival
                 fit_impact = movie_fit_impact
@@ -321,6 +327,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
                 fit_params = [fit_arrival,fit_impact,fit_log_energy]
                 plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, 'movie')
                 movie_simulation(fig, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl, 'movie')
+                display_a_movie(fig, subarray, run_id, tel_id, event, len(eco_image_1d), eco_movie_1d)
 
                 fit_arrival = image_fit_arrival
                 fit_impact = image_fit_impact

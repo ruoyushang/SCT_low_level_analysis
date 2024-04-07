@@ -672,9 +672,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
 
 def calculate_lightcone(image_direction,time_direction):
 
-    lightcone = 0.
-    if abs(image_direction)+abs(time_direction)>0.:
-        lightcone = abs(image_direction+time_direction)/(abs(image_direction)+abs(time_direction))
+    lightcone = image_direction*time_direction
 
     print (f'image_direction = {image_direction:0.2f}, time_direction = {time_direction:0.2f}, lightcone = {lightcone:0.2f}')
 
@@ -682,7 +680,7 @@ def calculate_lightcone(image_direction,time_direction):
 
 def pass_lightcone(lightcone):
 
-    if lightcone<0.5:
+    if lightcone>0.:
         return True
     else:
         return False
@@ -813,6 +811,51 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     return lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
+def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_movie_1d):
+
+    n_windows = int(total_samples/n_samples_per_window)
+    eco_image_1d = []
+    for win in range(0,n_windows):
+        eco_image_1d += [np.zeros(eco_image_size)]
+
+    for win in range(0,n_windows):
+        for pix in range(0,eco_image_size):
+            entry = pix + win*eco_image_size
+            eco_image_1d[win][pix] = eco_movie_1d[entry]
+
+    event_id = event.index['event_id']
+    geometry = subarray.tel[tel_id].camera.geometry
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
+
+    dirty_image_1d = event.dl1.tel[tel_id].image
+    image_max = np.max(dirty_image_1d[:])
+    image_1d = []
+    for win in range(0,n_windows):
+        image_1d += [np.zeros_like(dirty_image_1d)]
+    
+    for win in range(0,n_windows):
+        image_cutout_restore(geometry, eco_image_1d[win], image_1d[win])
+        image_2d = geometry.image_to_cartesian_representation(image_1d[win])
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=2.*image_max/float(n_windows))
+        cbar = fig.colorbar(im)
+        line_x = np.linspace(xmin, xmax, 100)
+        line_y = -(0.*line_x + 0.05)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        line_x = np.linspace(xmin, xmax, 100)
+        line_y = -(0.*line_x - 0.05)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
+        axbig.remove()
 
 def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
@@ -909,7 +952,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
     whole_movie_1d = []
     for win in range(0,n_windows):
 
-        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=0.2,picture_thresh=0.5,min_number_picture_neighbors=1)
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=0.2,picture_thresh=0.5,min_number_picture_neighbors=2)
         for pix in range(0,len(movie_mask)):
             if not movie_mask[pix]:
                 clean_movie_1d[win][pix] = 0.
