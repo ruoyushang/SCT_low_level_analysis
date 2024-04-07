@@ -42,7 +42,7 @@ def gauss_func(x,A,sigma):
 def plot_monotel_analysis():
 
     list_log10_image_size = []
-    list_log10_image_qual = []
+    list_log10_lightcone = []
     list_delta_energy = []
     list_truth_energy = []
     list_delta_arrival = []
@@ -69,7 +69,7 @@ def plot_monotel_analysis():
         for img in range(0,len(analysis_result)):
 
             image_size = analysis_result[img][0]
-            image_qual = analysis_result[img][1]
+            lightcone = analysis_result[img][1]
             truth_energy = analysis_result[img][2]
             fit_energy = analysis_result[img][3]
             truth_alt = analysis_result[img][4]
@@ -83,7 +83,7 @@ def plot_monotel_analysis():
             focal_length = float(analysis_result[img][12])
 
             #if image_size<200.: continue
-            #if image_qual<2.: continue
+            #if lightcone<2.: continue
 
             delta_energy = abs(fit_energy - truth_energy) / truth_energy
             delta_alt = (fit_alt - truth_alt)*180./np.pi
@@ -97,7 +97,7 @@ def plot_monotel_analysis():
             delta_camy = float((fit_camy-truth_camy)/focal_length*180./np.pi)
 
             list_log10_image_size += [np.log10(image_size)]
-            list_log10_image_qual += [np.log10(image_qual)]
+            list_log10_lightcone += [np.log10(lightcone)]
             list_delta_arrival += [pow(delta_alt*delta_alt+delta_az*delta_az,0.5)]
             list_delta_camx += [delta_camx]
             list_delta_camy += [delta_camy]

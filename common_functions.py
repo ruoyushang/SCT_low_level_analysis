@@ -14,10 +14,10 @@ from ctapipe.image import hillas_parameters, tailcuts_clean
 
 time_direction_cut = 40.
 image_direction_cut = 0.2
-image_size_cut = 200.
+image_size_cut = 50.
 
-n_samples_per_window = 1
-total_samples = 20
+n_samples_per_window = 2
+total_samples = 40
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -323,7 +323,7 @@ def reset_time(input_image_1d, input_time_1d):
 
     return center_time
 
-def find_image_moments(geometry, input_image_1d, input_time_1d):
+def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None):
 
     image_center_x = 0.
     image_center_y = 0.
@@ -343,7 +343,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
         center_time += input_time_1d[pix]*input_image_1d[pix]
 
     if image_size==0.:
-        return 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
 
     mask_center_x = mask_center_x/mask_size
     mask_center_y = mask_center_y/mask_size
@@ -388,12 +388,8 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
         b = -bT/aT
         w = wT
     if w==np.inf:
-        return 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
     angle = np.arctan(a)
-
-    truth_angle = np.arctan2(-image_center_y,-image_center_x)
-    #print (f'angle = {angle}')
-    #print (f'truth_angle = {truth_angle}')
 
     rotation_matrix = np.array([[np.cos(-angle), -np.sin(-angle)],[np.sin(-angle), np.cos(-angle)]])
     diff_x = mask_center_x-image_center_x
@@ -415,13 +411,23 @@ def find_image_moments(geometry, input_image_1d, input_time_1d):
 
     direction_of_time = direction_of_time/time_direction_cut
     direction_of_image = direction_of_image/image_direction_cut
-    if (direction_of_time+direction_of_image)>0.:
+    #if (direction_of_time+direction_of_image)>0.:
+    if (direction_of_image)>0.:
         angle = angle+np.pi
-        #print (f'change direction.')
+        print (f'change direction.')
 
-    #print (f'new angle = {angle}')
+    truth_angle = np.arctan2(-image_center_y,-image_center_x)
+    if not star_cam_xy==None:
+        truth_angle = np.arctan2(star_cam_xy[1]-image_center_y,star_cam_xy[0]-image_center_x)
+    print (f'angle = {angle}')
+    print (f'truth_angle = {truth_angle}')
 
-    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b]
+    truth_projection = np.cos(truth_angle-angle)
+
+    if not star_cam_xy==None:
+        angle = truth_angle
+
+    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection]
 
 def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
 
@@ -515,7 +521,7 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
     n_eco_pix = len(eco_image_1d)
 
     fit_arrival = init_params[0]
@@ -548,6 +554,8 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
     ymax = max(geometry.pix_y)/u.m
     ymin = min(geometry.pix_y)/u.m
 
+    image_max = np.max(eco_image_1d[:])
+
     for win in range(0,n_windows):
 
         fig.clf()
@@ -556,7 +564,7 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
         label_y = 'Y'
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
-        im = axbig.imshow(sim_image_2d[win],origin='lower',extent=(xmin,xmax,ymin,ymax))
+        im = axbig.imshow(sim_image_2d[win],origin='lower',extent=(xmin,xmax,ymin,ymax), vmin=0.,vmax=2.*image_max/float(n_windows))
         cbar = fig.colorbar(im)
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
@@ -569,7 +577,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
 
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
@@ -662,6 +670,23 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
 
     return
 
+def calculate_lightcone(image_direction,time_direction):
+
+    lightcone = 0.
+    if abs(image_direction)+abs(time_direction)>0.:
+        lightcone = abs(image_direction+time_direction)/(abs(image_direction)+abs(time_direction))
+
+    print (f'image_direction = {image_direction:0.2f}, time_direction = {time_direction:0.2f}, lightcone = {lightcone:0.2f}')
+
+    return lightcone
+
+def pass_lightcone(lightcone):
+
+    if lightcone<0.5:
+        return True
+    else:
+        return False
+
 def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, tag):
 
     event_id = event.index['event_id']
@@ -697,7 +722,7 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
 
-    image_qual = abs(image_direction+time_direction)
+    lightcone = calculate_lightcone(image_direction,time_direction)
 
     xmax = max(geometry.pix_x)/u.m
     xmin = min(geometry.pix_x)/u.m
@@ -727,14 +752,12 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
     txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
     txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
-    txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
-    if image_qual<1.:
-        txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
+    txt = axbig.text(-0.35, 0.26, 'light cone = %0.2e'%(lightcone), fontdict=font)
     fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image_{tag}.png',bbox_inches='tight')
     axbig.remove()
 
 
-def make_standard_image(fig, subarray, run_id, tel_id, event, make_plots=False):
+def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -761,7 +784,7 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, make_plots=False):
 
     pixel_width = float(geometry.pixel_width[0]/u.m)
 
-    image_moment_array = find_image_moments(geometry, clean_image_1d, clean_time_1d)
+    image_moment_array = find_image_moments(geometry, clean_image_1d, clean_time_1d, star_cam_xy=star_cam_xy)
     image_size = image_moment_array[0]
     image_center_x = image_moment_array[1]
     image_center_y = image_moment_array[2]
@@ -772,9 +795,9 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, make_plots=False):
     image_direction = image_moment_array[7]
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
+    truth_projection = image_moment_array[10]
 
-    image_qual = abs(image_direction+time_direction)
-    print (f'image_qual = {image_qual:0.2f}')
+    lightcone = calculate_lightcone(image_direction,time_direction)
 
     shift_pix_x = image_center_x/pixel_width
     shift_pix_y = image_center_y/pixel_width
@@ -787,11 +810,11 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, make_plots=False):
     eco_image_1d = image_cutout(geometry, rotate_image_1d)
     eco_time_1d = image_cutout(geometry, rotate_time_1d)
 
-    return image_qual, image_moment_array, eco_image_1d, eco_time_1d
+    return lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
 
-def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
+def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -820,7 +843,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
 
     pixel_width = float(geometry.pixel_width[0]/u.m)
 
-    image_moment_array = find_image_moments(geometry, clean_image_1d, clean_time_1d)
+    image_moment_array = find_image_moments(geometry, clean_image_1d, clean_time_1d, star_cam_xy=star_cam_xy)
     image_size = image_moment_array[0]
     image_center_x = image_moment_array[1]
     image_center_y = image_moment_array[2]
@@ -831,13 +854,12 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
     image_direction = image_moment_array[7]
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
+    truth_projection = image_moment_array[10]
+    print (f'image_size = {image_size:0.1f}')
 
-    image_qual = abs(image_direction+time_direction)
-    print (f'image_qual = {image_qual:0.2f}')
+    lightcone = calculate_lightcone(image_direction,time_direction)
 
     whole_movie_1d = []
-    if image_qual<1.:
-        return image_qual, image_moment_array, whole_movie_1d
 
     shift_pix_x = image_center_x/pixel_width
     shift_pix_y = image_center_y/pixel_width
@@ -874,7 +896,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
         if not image_mask[pix]: continue # select signal
         for win in range(0,n_windows):
             for sample in range(0,n_samples_per_window):
-                sample_idx = int(sample + win*n_samples_per_window + center_time_sample - total_samples/2)
+                sample_idx = int(sample + win*n_samples_per_window + center_time_sample - total_samples/5)
                 if sample_idx<0: continue
                 if sample_idx>=n_samp: continue
                 clean_movie_1d[win][pix] +=  waveform[pix,sample_idx]
@@ -887,11 +909,10 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
     whole_movie_1d = []
     for win in range(0,n_windows):
 
-        #image_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
-        image_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=0)
-        #for pix in range(0,len(image_mask)):
-        #    if not image_mask[pix]:
-        #        clean_movie_1d[win][pix] = 0.
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=0.2,picture_thresh=0.5,min_number_picture_neighbors=1)
+        for pix in range(0,len(movie_mask)):
+            if not movie_mask[pix]:
+                clean_movie_1d[win][pix] = 0.
 
         clean_movie_2d = geometry.image_to_cartesian_representation(clean_movie_1d[win])
         remove_nan_pixels(clean_movie_2d)
@@ -909,14 +930,16 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
         whole_movie_1d.extend(eco_movie_1d)
         #print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
 
-        if image_qual>1. and make_plots:
+        if image_size>image_size_cut and make_plots:
+
+            print ('make data movie...')
             fig.clf()
             axbig = fig.add_subplot()
             label_x = 'X'
             label_y = 'Y'
             axbig.set_xlabel(label_x)
             axbig.set_ylabel(label_y)
-            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=image_max/float(n_windows))
+            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=2.*image_max/float(n_windows))
             cbar = fig.colorbar(im)
             line_x = np.linspace(xmin, xmax, 100)
             line_y = -(0.*line_x + 0.05)
@@ -939,7 +962,8 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
             #axbig.remove()
 
 
-    if image_qual>1. and make_plots:
+    if image_size>image_size_cut and make_plots:
+
         fig.clf()
         axbig = fig.add_subplot()
         label_x = 'X'
@@ -962,9 +986,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
         txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
         txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
         txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
-        txt = axbig.text(-0.35, 0.26, 'image quality = %0.2e'%(image_qual), fontdict=font)
-        if image_qual<1.:
-            txt = axbig.text(-0.35, 0.23, 'bad image!!!', fontdict=font)
+        txt = axbig.text(-0.35, 0.26, 'light cone = %0.2e'%(lightcone), fontdict=font)
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
         axbig.remove()
 
@@ -980,5 +1002,5 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False):
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
         axbig.remove()
 
-    return image_qual, image_moment_array, whole_movie_1d
+    return lightcone, image_moment_array, whole_movie_1d
 

@@ -29,6 +29,7 @@ plot_monotel_reconstruction = common_functions.plot_monotel_reconstruction
 camxy_to_altaz = common_functions.camxy_to_altaz
 image_simulation = common_functions.image_simulation
 movie_simulation = common_functions.movie_simulation
+pass_lightcone = common_functions.pass_lightcone
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -70,7 +71,7 @@ def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,e
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors):
 
     image_weight = 1.
-    time_weight = 1.
+    time_weight = 0.1
 
     fit_arrival = 0.1
     fit_impact = 0.1
@@ -246,8 +247,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             impact_y = truth_info_array[10]
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
-            image_qual, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=True)
-            image_qual, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+            lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
             image_center_y = image_moment_array[2]
@@ -259,12 +259,19 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             line_a = image_moment_array[8]
             line_b = image_moment_array[9]
 
-            if image_qual<1.: 
-                print ('failed image_qual')
-                continue
+            #if not pass_lightcone(lightcone): 
+            #    print ('failed lightcone')
+            #    continue
             if image_size<image_size_cut: 
                 print ('failed image_size_cut')
                 continue
+            if abs(image_direction)<0.5: 
+                print ('failed image_direction_cut')
+                continue
+
+            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=True)
+            truth_projection = image_moment_array[10]
+            print (f'truth_projection = {truth_projection:0.3f}')
 
             image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_chi2 = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl)
             movie_fit_arrival, movie_fit_impact, movie_fit_log_energy, movie_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl)
@@ -279,7 +286,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
 
             print (f'focal_length = {focal_length}')
             print (f'image_size = {image_size}')
-            print (f'image_qual = {image_qual}')
+            print (f'lightcone = {lightcone}')
             print (f'truth_energy = {truth_energy}')
             print (f'image_fit_energy = {pow(10.,image_fit_log_energy)}')
             print (f'movie_fit_energy = {pow(10.,movie_fit_log_energy)}')
@@ -300,7 +307,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             movie_method_error = pow(pow(movie_fit_cam_x-star_cam_x,2)+pow(movie_fit_cam_y-star_cam_y,2),0.5)
 
             #if image_size>500.:
-            if movie_method_error>image_method_error:
+            if truth_projection>0.8 and movie_method_error>image_method_error:
                 print (f'plotting a bad example.')
 
                 fit_arrival = movie_fit_arrival
@@ -328,10 +335,11 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
                 #image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl, 'image')
                 #exit()
 
-            if movie_method_error>image_method_error:
-                bad_movie += 1
-            elif movie_method_error<image_method_error:
-                good_movie += 1
+            if truth_projection>0.8:
+                if movie_method_error>image_method_error:
+                    bad_movie += 1
+                elif movie_method_error<image_method_error:
+                    good_movie += 1
             print (f'good_movie = {good_movie}, bad_movie = {bad_movie}')
 
             fit_arrival = image_fit_arrival
@@ -342,7 +350,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            single_analysis_result = [image_size,image_qual,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]
+            single_analysis_result = [image_size,lightcone,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]
             analysis_result += [single_analysis_result]
 
 
