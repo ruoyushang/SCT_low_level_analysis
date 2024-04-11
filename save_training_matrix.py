@@ -17,6 +17,7 @@ from ctapipe.image import ImageProcessor
 from traitlets.config import Config
 
 import common_functions
+training_event_select = common_functions.training_event_select
 image_size_cut = common_functions.image_size_cut
 remove_nan_pixels = common_functions.remove_nan_pixels
 reset_time = common_functions.reset_time
@@ -88,10 +89,9 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     for event in source:
     
         event_id = event.index['event_id']
-        #if event_id!=89803: continue
 
         evt_count += 1
-        if (evt_count % 2)==0: continue
+        if (evt_count % training_event_select)!=0: continue
     
         ntel = len(event.r0.tel)
         
@@ -102,6 +102,8 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
         for tel_idx in range(0,len(list(event.dl0.tel.keys()))):
 
             tel_id = list(event.dl0.tel.keys())[tel_idx]
+            #if event_id!=23003: continue
+            #if tel_id!=20: continue
             print ('====================================================================================')
             print (f'event_id = {event_id}, tel_id = {tel_id}')
 
@@ -114,11 +116,15 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
             lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy)
             image_size = image_moment_array[0]
+            print (f'image_size = {image_size:0.3f}')
+            #if image_size<5000.:
             if image_size<image_size_cut:
                 print ('failed image_size_cut.')
                 continue
 
             lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=False)
+            #lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=True)
+            #exit()
 
             #if pass_lightcone(lightcone) and image_size>image_size_cut:
             if image_size>image_size_cut:
@@ -137,7 +143,7 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
-        pickle.dump([big_truth_matrix,big_moment_matrix,big_movie_matrix,big_image_matrix,big_time_matrix], file)
+        pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix,big_movie_matrix], file)
         #pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix], file)
 
     return
