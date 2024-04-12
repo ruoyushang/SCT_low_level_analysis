@@ -14,14 +14,15 @@ from ctapipe.image import hillas_parameters, tailcuts_clean
 
 training_event_select = 2
 
-time_direction_cut = 40.
-image_direction_cut = 0.2
+time_direction_cut = 1.
+image_direction_cut = 1.
 image_size_cut = 100.
+#image_size_cut = 5000.
 
 n_samples_per_window = 1
 total_samples = 64
-#select_samples = 64
-select_samples = 10
+#select_samples = 10
+select_samples = 16
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -404,6 +405,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     direction_of_image = rot_coord[0]*image_size
 
     direction_of_time = 0.
+    diff_t_norm = 0.
     for pix in range(0,len(input_image_1d)):
         if input_image_1d[pix]==0.: continue
         diff_x = float(geometry.pix_x[pix]/u.m)-image_center_x
@@ -412,7 +414,10 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         delta_coord = np.array([diff_x,diff_y])
         rot_coord = rotation_matrix @ delta_coord
         if rot_coord[0]==0.: continue
-        direction_of_time += rot_coord[0]/abs(rot_coord[0])*diff_t*input_image_1d[pix]
+        direction_of_time += rot_coord[0]*diff_t*input_image_1d[pix]
+        diff_t_norm += diff_t*diff_t
+    if diff_t_norm>0.:
+        direction_of_time = direction_of_time/pow(diff_t_norm,0.5)
 
     direction_of_time = direction_of_time/time_direction_cut
     direction_of_image = direction_of_image/image_direction_cut
@@ -570,6 +575,7 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
         im = axbig.imshow(sim_image_2d[win],origin='lower',extent=(xmin,xmax,ymin,ymax), vmin=0.,vmax=2.*image_max/float(n_windows))
+        #im = axbig.imshow(sim_image_2d[win],origin='lower',extent=(xmin,xmax,ymin,ymax), norm=colors.LogNorm())
         cbar = fig.colorbar(im)
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
@@ -677,18 +683,22 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
 
 def calculate_lightcone(image_direction,time_direction):
 
-    lightcone = image_direction*time_direction
+    lightcone = 0.
+    if (image_direction*image_direction)>0.:
+        lightcone = image_direction*time_direction/(image_direction*image_direction)
 
     print (f'image_direction = {image_direction:0.2f}, time_direction = {time_direction:0.2f}, lightcone = {lightcone:0.2f}')
 
     return lightcone
 
-def pass_lightcone(lightcone):
+def pass_lightcone(lightcone,image_direction):
 
-    if lightcone>0.:
-        return True
-    else:
+    if abs(image_direction)<1.: 
         return False
+    if lightcone<-0.6:
+        return False
+
+    return True
 
 def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, tag):
 
@@ -857,6 +867,7 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
         im = axbig.imshow(image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=2.*image_max/float(n_windows))
+        #im = axbig.imshow(image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax), norm=colors.LogNorm())
         cbar = fig.colorbar(im)
         line_x = np.linspace(xmin, xmax, 100)
         line_y = -(0.*line_x + 0.05)
@@ -1019,36 +1030,26 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         whole_movie_1d.extend(eco_movie_1d)
         #print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
 
-        if image_size>image_size_cut and make_plots:
+        #if image_size>image_size_cut and make_plots:
 
-            print ('make data movie...')
-            fig.clf()
-            axbig = fig.add_subplot()
-            label_x = 'X'
-            label_y = 'Y'
-            axbig.set_xlabel(label_x)
-            axbig.set_ylabel(label_y)
-            im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=image_max)
-            cbar = fig.colorbar(im)
-            line_x = np.linspace(xmin, xmax, 100)
-            line_y = -(0.*line_x + 0.05)
-            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            line_x = np.linspace(xmin, xmax, 100)
-            line_y = -(0.*line_x - 0.05)
-            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
-            axbig.remove()
-
-            #fig.clf()
-            #axbig = fig.add_subplot()
-            #label_x = 'X'
-            #label_y = 'Y'
-            #axbig.set_xlabel(label_x)
-            #axbig.set_ylabel(label_y)
-            #im = axbig.imshow(eco_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
-            #cbar = fig.colorbar(im)
-            #fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_win{win}_eco_movie.png',bbox_inches='tight')
-            #axbig.remove()
+        #    print ('make data movie...')
+        #    fig.clf()
+        #    axbig = fig.add_subplot()
+        #    label_x = 'X'
+        #    label_y = 'Y'
+        #    axbig.set_xlabel(label_x)
+        #    axbig.set_ylabel(label_y)
+        #    im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=image_max)
+        #    #im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax), norm=colors.LogNorm())
+        #    cbar = fig.colorbar(im)
+        #    line_x = np.linspace(xmin, xmax, 100)
+        #    line_y = -(0.*line_x + 0.05)
+        #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        #    line_x = np.linspace(xmin, xmax, 100)
+        #    line_y = -(0.*line_x - 0.05)
+        #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        #    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
+        #    axbig.remove()
 
 
     if image_size>image_size_cut and make_plots:

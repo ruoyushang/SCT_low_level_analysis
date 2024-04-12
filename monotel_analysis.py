@@ -52,6 +52,8 @@ use_poly = False
 ana_tag = 'movie'
 #ana_tag = 'image'
 
+select_event_id = 0
+#select_event_id = 177102
 
 def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors,full_table=False,use_poisson=False):
 
@@ -145,19 +147,16 @@ def sortFirst(val):
 
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors):
 
-    #image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
-    #movie_weight = 1./np.sum(np.array(input_movie_1d)*np.array(input_movie_1d))
-    image_weight = 0.
+    image_weight = 1.
     movie_weight = 1.
 
     fit_arrival = 0.15
     fit_impact = 100.
     fit_log_energy = 0.
     init_params = [fit_arrival,fit_impact,fit_log_energy]
-    #image_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    image_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
     movie_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #fit_chi2 = image_weight*image_fit_chi2 + movie_weight*movie_fit_chi2
-    fit_chi2 = movie_fit_chi2
+    fit_chi2 = image_weight*image_fit_chi2 + movie_weight*movie_fit_chi2
 
     n_bins_arrival = len(movie_lookup_table[0].xaxis)
     n_bins_impact = len(movie_lookup_table[0].yaxis)
@@ -173,12 +172,12 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
                 try_log_energy = movie_lookup_table[0].zaxis[idx_z]
                 init_params = [try_arrival,try_impact,try_log_energy]
 
-                #image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+                image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
                 movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-                #try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
-                try_chi2 = movie_try_chi2
+                try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
 
-                fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
+                if try_chi2<1e10:
+                    fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
 
                 if try_chi2<fit_chi2:
                     fit_chi2 = try_chi2
@@ -190,12 +189,15 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
 
     fit_coord.sort(key=sortFirst)
     fit_chi2 = 1e10
+    #for entry in range(0,len(fit_coord)):
     for entry in range(0,min(20,len(fit_coord))):
         try_arrival = fit_coord[entry][1]
         try_impact = fit_coord[entry][2]
         try_log_energy = fit_coord[entry][3]
         init_params = [try_arrival,try_impact,try_log_energy]
-        try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors,use_poisson=True)
+        image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors,use_poisson=True)
+        movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors,use_poisson=True)
+        try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
         if try_chi2<fit_chi2:
             fit_chi2 = try_chi2
             fit_arrival = try_arrival
@@ -526,7 +528,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
 
             tel_id = list(event.dl0.tel.keys())[tel_idx]
 
-            #if event_id!=11309: continue
+            if select_event_id!=0:
+                if event_id!=select_event_id: continue
             #if tel_id!=24: continue
 
             print ('====================================================================================')
@@ -559,18 +562,13 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             line_b = image_moment_array[9]
             print (f'image_size = {image_size}')
 
-            #if not pass_lightcone(lightcone): 
-            #    print ('failed lightcone')
-            #    continue
             if image_size<image_size_cut: 
                 print ('failed image_size_cut')
                 continue
             #if image_size>300.: 
             #    print ('failed image_size_cut')
             #    continue
-            if abs(image_direction)<0.5: 
-                print ('failed image_direction_cut')
-                continue
+            #if not pass_lightcone(lightcone,image_direction): continue
 
 
             truth_projection = image_moment_array[10]
@@ -622,8 +620,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            #if image_size>image_size_cut:
-            if image_size>5000.:
+            #if pass_lightcone(lightcone,image_direction) and image_size>image_size_cut:
+            if (pass_lightcone(lightcone,image_direction) and image_size>5000.) or select_event_id!=0:
 
                 if 'image' in ana_tag:
 
@@ -638,10 +636,17 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
                     movie_simulation(fig, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl)
                     display_a_movie(fig, subarray, run_id, tel_id, event, len(eco_image_1d), eco_movie_1d)
 
+            evt_header = [training_sample_path,event_id,tel_id]
+            evt_geometry = [image_size,lightcone,focal_length,image_direction,time_direction]
+            evt_truth = [truth_energy,truth_alt,truth_az,star_cam_x,star_cam_y,truth_projection]
+            evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y]
 
-            single_analysis_result = [image_size,lightcone,truth_energy,pow(10.,fit_log_energy),truth_alt,truth_az,fit_alt,fit_az,star_cam_x,star_cam_y,fit_cam_x,fit_cam_y,focal_length]
+            single_analysis_result = [evt_header,evt_geometry,evt_truth,evt_model]
             analysis_result += [single_analysis_result]
 
+    if select_event_id!=0: 
+        print ('No file saved.')
+        return
 
     output_filename = f'{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}.pkl'
     print (f'writing file to {output_filename}')
