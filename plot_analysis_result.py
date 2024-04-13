@@ -14,8 +14,6 @@ from ctapipe.utils import Histogram
 from ctapipe.utils.datasets import get_dataset_path
 from ctapipe.io import EventSource, SimTelEventSource, HDF5TableWriter
 
-import common_functions
-pass_lightcone = common_functions.pass_lightcone
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
@@ -35,6 +33,22 @@ training_sample_path = []
 particle_type = []
 max_nfiles = 1e10
 nfiles = 0
+
+def pass_quality(lightcone,image_direction,fit_chi2,image_size):
+
+    if abs(image_direction)<0.5: 
+        return False
+    if fit_chi2/image_size>2.0:
+        return False
+
+    #lightcone_cut = 0.8
+    #if lightcone<-1.*lightcone_cut:
+    #    return False
+    #if lightcone>lightcone_cut:
+    #    return False
+
+    return True
+
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
@@ -47,10 +61,14 @@ def gauss_func(x,A,sigma):
 
 def plot_monotel_analysis():
 
-    list_log10_image_size = []
+    list_image_size = []
+    list_fit_chi2 = []
+    list_image_direction = []
+    list_time_direction = []
+    list_bad_fit_chi2 = []
+    list_bad_image_direction = []
     list_lightcone = []
     list_truth_projection = []
-    list_image_direction = []
     list_delta_energy = []
     list_truth_energy = []
     list_model_energy = []
@@ -59,6 +77,9 @@ def plot_monotel_analysis():
     list_delta_camy = []
     list_delta_camr = []
     list_delta_camr_weight = []
+
+    total_images = 0
+    pass_images = 0
 
     for path in range(0,len(training_sample_path)):
     
@@ -97,9 +118,15 @@ def plot_monotel_analysis():
             fit_az = img_model[2]
             fit_camx = img_model[3]/focal_length*180./np.pi
             fit_camy = img_model[4]/focal_length*180./np.pi
+            fit_chi2 = img_model[5]
+
+            total_images += 1
 
             #if image_size<200.: continue
-            if not pass_lightcone(lightcone,image_direction): continue
+            if not pass_quality(lightcone,image_direction,fit_chi2,image_size): continue
+            #if truth_projection<0.: continue
+
+            pass_images += 1
 
             delta_energy = abs(fit_energy - truth_energy) / truth_energy
             delta_alt = (fit_alt - truth_alt)*180./np.pi
@@ -113,21 +140,26 @@ def plot_monotel_analysis():
             delta_camy = float((fit_camy-truth_camy))
 
             delta_camr = pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)
-            if truth_energy>10. and truth_projection>0.5:
-                if delta_camr>0.3:
-                    print (f'file {img_header[0]}, evt_id {img_header[1]}, tel_id {img_header[2]}')
-                    print (f'delta_camr = {delta_camr:0.2f}, image_size = {image_size:0.1f}, lightcone = {lightcone:0.2f}, image_direction = {image_direction:0.2f}')
+            if delta_camr>4.0:
+                print (f'file {img_header[0]}, evt_id {img_header[1]}, tel_id {img_header[2]}')
+                print (f'delta_camr = {delta_camr:0.2f}, image_size = {image_size:0.1f}, lightcone = {lightcone:0.2f}, image_direction = {image_direction:0.2f}')
 
 
-            list_log10_image_size += [np.log10(image_size)]
+            list_image_size += [image_size]
+            list_fit_chi2 += [fit_chi2/image_size]
+            list_image_direction += [abs(image_direction)]
+            list_time_direction += [abs(time_direction)]
             list_lightcone += [lightcone]
             list_truth_projection += [truth_projection]
-            list_image_direction += [abs(image_direction)]
             list_delta_arrival += [pow(delta_alt*delta_alt+delta_az*delta_az,0.5)]
             list_delta_camx += [delta_camx]
             list_delta_camy += [delta_camy]
             list_delta_camr += [pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
             list_delta_camr_weight += [1./pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
+
+            if delta_camr>0.6:
+                list_bad_fit_chi2 += [fit_chi2/image_size]
+                list_bad_image_direction += [abs(image_direction)]
 
             list_truth_energy += [np.log10(truth_energy)]
             list_model_energy += [np.log10(fit_energy)]
@@ -167,8 +199,31 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.scatter(list_truth_energy, list_model_energy, s=90, c='b', marker='+', alpha=0.1)
-    fig.savefig(f'{ctapipe_output}/output_plots/truth_vs_model_log_energy.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/truth_vs_model_log_energy_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Fit chi square'
+    label_y = 'Cam delta r'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_fit_chi2, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    fig.savefig(f'{ctapipe_output}/output_plots/fit_chi2_vs_camr_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Image direction'
+    label_y = 'Fit chi square'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_image_direction, list_fit_chi2, s=90, c='b', marker='+', alpha=0.3)
+    axbig.scatter(list_bad_image_direction, list_bad_fit_chi2, s=90, c='r', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_chi2_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
 
     fig.clf()
     axbig = fig.add_subplot()
@@ -177,17 +232,18 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.scatter(list_lightcone, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    fig.savefig(f'{ctapipe_output}/output_plots/lightcone_vs_camr.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/lightcone_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
-    label_x = 'Lightcone'
+    label_x = 'Image direction'
     label_y = 'Truth projection'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(list_lightcone, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
-    fig.savefig(f'{ctapipe_output}/output_plots/lightcone_vs_projection.png',bbox_inches='tight')
+    axbig.scatter(list_image_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_projection_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -198,19 +254,19 @@ def plot_monotel_analysis():
     axbig.set_ylabel(label_y)
     axbig.scatter(list_image_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
     axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_camr.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
-    #fig.clf()
-    #axbig = fig.add_subplot()
-    #label_x = 'Image direction'
-    #label_y = 'Relative energy error'
-    #axbig.set_xlabel(label_x)
-    #axbig.set_ylabel(label_y)
-    #axbig.scatter(list_image_direction, list_delta_energy, s=90, c='b', marker='+', alpha=0.3)
-    #axbig.set_xscale('log')
-    #fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_delta_energy.png',bbox_inches='tight')
-    #axbig.remove()
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Time direction'
+    label_y = 'Cam delta r'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_time_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/time_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
@@ -219,7 +275,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_energy.bin_centers(0), hist_delta_energy.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_energy_error.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/monotel_energy_error_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -229,7 +285,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_camx.bin_centers(0), hist_delta_camx.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camx_error.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camx_error_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -239,7 +295,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_camy.bin_centers(0), hist_delta_camy.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camy_error.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camy_error_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -249,7 +305,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_camr.bin_centers(0), hist_delta_camr.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_error.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_error_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     delta_camr_per_energy = []
@@ -282,7 +338,9 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.plot(hist_delta_energy.bin_centers(0), delta_camr_per_energy)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_per_energy_error.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_per_energy_error_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
+
+    print (f'total_images = {total_images} / pass_images = {pass_images}')
 
 plot_monotel_analysis()

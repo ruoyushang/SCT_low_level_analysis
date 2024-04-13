@@ -691,15 +691,6 @@ def calculate_lightcone(image_direction,time_direction):
 
     return lightcone
 
-def pass_lightcone(lightcone,image_direction):
-
-    if abs(image_direction)<1.: 
-        return False
-    if lightcone<-0.6:
-        return False
-
-    return True
-
 def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, tag):
 
     event_id = event.index['event_id']

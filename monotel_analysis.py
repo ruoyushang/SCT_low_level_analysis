@@ -37,7 +37,6 @@ camxy_to_altaz = common_functions.camxy_to_altaz
 image_simulation = common_functions.image_simulation
 movie_simulation = common_functions.movie_simulation
 display_a_movie = common_functions.display_a_movie
-pass_lightcone = common_functions.pass_lightcone
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -49,11 +48,11 @@ time_weight_ratio = 1.
 use_poly = False
 #use_poly = True
 
-ana_tag = 'movie'
-#ana_tag = 'image'
+#ana_tag = 'movie'
+ana_tag = 'image'
 
 select_event_id = 0
-#select_event_id = 177102
+#select_event_id = 39705
 
 def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors,full_table=False,use_poisson=False):
 
@@ -145,52 +144,97 @@ def sqaure_difference_between_1d_images_spline(init_params,image_1d_data,lookup_
 def sortFirst(val):
     return val[0]
 
-def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors):
+def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors, use_movie=True):
 
-    image_weight = 1.
-    movie_weight = 1.
-
-    fit_arrival = 0.15
-    fit_impact = 100.
-    fit_log_energy = 0.
-    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    image_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    movie_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    fit_chi2 = image_weight*image_fit_chi2 + movie_weight*movie_fit_chi2
+    image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
+    time_weight = time_weight_ratio/np.sum(np.array(input_time_1d)*np.array(input_time_1d))
 
     n_bins_arrival = len(movie_lookup_table[0].xaxis)
     n_bins_impact = len(movie_lookup_table[0].yaxis)
     n_bins_energy = len(movie_lookup_table[0].zaxis)
 
+    fit_arrival = 0.15
+    fit_impact = 100.
+    fit_log_energy = 0.
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
+    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+    fit_chi2 = fit_chi2_image + fit_chi2_time
+
     fit_coord = []
+    fit_idx_x = 0
+    fit_idx_y = 0
+    fit_idx_z = 0
     for idx_x  in range(0,n_bins_arrival):
         for idx_y  in range(0,n_bins_impact):
             for idx_z  in range(0,n_bins_energy):
 
-                try_arrival = movie_lookup_table[0].xaxis[idx_x]
-                try_impact = movie_lookup_table[0].yaxis[idx_y]
-                try_log_energy = movie_lookup_table[0].zaxis[idx_z]
+                try_arrival = image_lookup_table[0].xaxis[idx_x]
+                try_impact = image_lookup_table[0].yaxis[idx_y]
+                try_log_energy = image_lookup_table[0].zaxis[idx_z]
                 init_params = [try_arrival,try_impact,try_log_energy]
 
-                image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-                movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-                try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
+                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+                try_chi2 = try_chi2_image + try_chi2_time
 
-                if try_chi2<1e10:
-                    fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
+                fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
 
                 if try_chi2<fit_chi2:
                     fit_chi2 = try_chi2
                     fit_arrival = try_arrival
                     fit_impact = try_impact
                     fit_log_energy = try_log_energy
+                    fit_idx_x = idx_x
+                    fit_idx_y = idx_y
+                    fit_idx_z = idx_z
+
+    cov_arrival = 0.
+    cov_impact = 0.
+    cov_log_energy = 0.
+
+    if not use_movie:
+        return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+
+    #fit_arrival = 0.15
+    #fit_impact = 100.
+    #fit_log_energy = 0.
+    #init_params = [fit_arrival,fit_impact,fit_log_energy]
+    #image_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    #movie_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+    #fit_chi2 = image_weight*image_fit_chi2 + movie_weight*movie_fit_chi2
+
+    #fit_coord = []
+    #for idx_x  in range(0,n_bins_arrival):
+    #    for idx_y  in range(0,n_bins_impact):
+    #        for idx_z  in range(0,n_bins_energy):
+
+    #            try_arrival = movie_lookup_table[0].xaxis[idx_x]
+    #            try_impact = movie_lookup_table[0].yaxis[idx_y]
+    #            try_log_energy = movie_lookup_table[0].zaxis[idx_z]
+    #            init_params = [try_arrival,try_impact,try_log_energy]
+
+    #            image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
+    #            movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+    #            try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
+
+    #            if try_chi2<1e10:
+    #                fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
+
+    #            if try_chi2<fit_chi2:
+    #                fit_chi2 = try_chi2
+    #                fit_arrival = try_arrival
+    #                fit_impact = try_impact
+    #                fit_log_energy = try_log_energy
+
+    image_weight = 1.
+    movie_weight = 1.
 
     print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
-
     fit_coord.sort(key=sortFirst)
     fit_chi2 = 1e10
     #for entry in range(0,len(fit_coord)):
-    for entry in range(0,min(20,len(fit_coord))):
+    for entry in range(0,min(10,len(fit_coord))):
         try_arrival = fit_coord[entry][1]
         try_impact = fit_coord[entry][2]
         try_log_energy = fit_coord[entry][3]
@@ -287,7 +331,7 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     #print (f'final fit_arrival = {fit_arrival:0.3f}, fit_impact = {fit_impact:0.1f}, fit_log_energy = {fit_log_energy:0.3f}')
     #exit()
 
-    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5)
+    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
 
 def single_image_reconstruction(input_image_1d,image_lookup_table,image_lookup_table_spline,image_eigen_vectors,input_time_1d,time_lookup_table,time_lookup_table_spline,time_eigen_vectors,use_spline=False):
@@ -580,12 +624,16 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             image_fit_arrival_err = 0.
             image_fit_impact_err = 0.
             image_fit_log_energy_err = 0.
-            if 'image' in ana_tag:
-                image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err = single_image_reconstruction(eco_image_1d,image_lookup_table_pkl,image_lookup_table_spline,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_lookup_table_spline,time_eigen_vectors_pkl,use_spline=use_poly)
+            image_fit_chi2 = 1e10
 
+            use_movie = True
             if 'movie' in ana_tag:
-                lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
-                image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl)
+                use_movie = True
+            else:
+                use_movie = False
+
+            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
+            image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,use_movie=use_movie)
 
             image_fit_cam_x = image_center_x + image_fit_arrival*np.cos(angle*u.rad)
             image_fit_cam_y = image_center_y + image_fit_arrival*np.sin(angle*u.rad)
@@ -620,8 +668,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            #if pass_lightcone(lightcone,image_direction) and image_size>image_size_cut:
-            if (pass_lightcone(lightcone,image_direction) and image_size>5000.) or select_event_id!=0:
+            #if image_size>image_size_cut:
+            if image_size>5000. or select_event_id!=0:
 
                 if 'image' in ana_tag:
 
@@ -639,7 +687,7 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             evt_header = [training_sample_path,event_id,tel_id]
             evt_geometry = [image_size,lightcone,focal_length,image_direction,time_direction]
             evt_truth = [truth_energy,truth_alt,truth_az,star_cam_x,star_cam_y,truth_projection]
-            evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y]
+            evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y,image_fit_chi2]
 
             single_analysis_result = [evt_header,evt_geometry,evt_truth,evt_model]
             analysis_result += [single_analysis_result]
