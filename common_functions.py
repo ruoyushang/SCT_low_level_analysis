@@ -1,6 +1,7 @@
 
 import os, sys
 
+import time
 import math
 import numpy as np
 from astropy import units as u
@@ -8,21 +9,23 @@ from astropy.time import Time
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from matplotlib import pyplot as plt
 from matplotlib import colors
+import matplotlib.animation as animation
 
 from ctapipe.coordinates import CameraFrame, NominalFrame, TelescopeFrame
-from ctapipe.image import hillas_parameters, tailcuts_clean
+from ctapipe.image import hillas_parameters, tailcuts_clean, leakage_parameters
 
 training_event_select = 2
 
-time_direction_cut = 1.
-image_direction_cut = 1.
+#time_direction_cut = 1.
+#image_direction_cut = 1.
 image_size_cut = 100.
-#image_size_cut = 5000.
+#image_size_cut = 500.
 
 n_samples_per_window = 1
 total_samples = 64
 #select_samples = 10
 select_samples = 16
+
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -144,7 +147,67 @@ def remove_nan_pixels(image_2d):
             if math.isnan(image_2d[y_idx,x_idx]): 
                 image_2d[y_idx,x_idx] = 0.
 
+def linear_regression(input_data, target_data, weight):
+
+    # solve x*A = y using SVD
+    # y_{0} = ( x_{0,0} x_{0,1} ... 1 )  a_{0}
+    # y_{1} = ( x_{1,0} x_{1,1} ... 1 )  a_{1}
+    # y_{2} = ( x_{2,0} x_{2,1} ... 1 )  .
+    #                                    b  
+
+    x = []
+    y = []
+    w = []
+    for evt in range(0,len(input_data)):
+        single_x = []
+        for entry in range(0,len(input_data[evt])):
+            single_x += [input_data[evt][entry]]
+            single_x += [input_data[evt][entry]**2]
+            single_x += [input_data[evt][entry]**3]
+            single_x += [input_data[evt][entry]**4]
+            #single_x += [input_data[evt][entry]**5]
+            #single_x += [input_data[evt][entry]**6]
+        single_x += [1.]
+        x += [single_x]
+        y += [target_data[evt]]
+        w += [weight[evt]]
+    x = np.array(x)
+    y = np.array(y)
+    w = np.diag(w)
+
+    # Compute the weighted SVD
+    U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
+    # Calculate the weighted pseudo-inverse
+    S_pseudo_w = np.diag(1 / S)
+    x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
+    # Compute the weighted least-squares solution
+    A_svd = x_pseudo_w @ (w @ y)
+    # Compute chi2
+    chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
+
+    return A_svd, chi2
+
+def linear_model(input_data,A):
+
+    x = []
+    for entry in range(0,len(input_data)):
+        x += [input_data[entry]]
+        x += [input_data[entry]**2]
+        x += [input_data[entry]**3]
+        x += [input_data[entry]**4]
+        #x += [input_data[entry]**5]
+        #x += [input_data[entry]**6]
+    x += [1.]
+    x = np.array(x)
+
+    y = x @ A
+
+    return y
+
+
 def image_translation(input_image_2d, shift_row, shift_col):
+
+    tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -157,9 +220,38 @@ def image_translation(input_image_2d, shift_row, shift_col):
             if x_idx-shift_col>=num_cols: continue
             image_shift[y_idx+shift_row,x_idx-shift_col] = input_image_2d[y_idx,x_idx]
 
+    toc_task = time.perf_counter()
+    #print (f'image_translation completed in {toc_task - tic_task:0.4f} sec.')
+
+    return image_shift
+
+def movie_translation(input_image_2d, shift_row, shift_col):
+
+    tic_task = time.perf_counter()
+
+    num_rows, num_cols = input_image_2d[0].shape
+
+    image_shift = []
+    for img in range(0,len(input_image_2d)):
+        image_shift += [np.zeros_like(input_image_2d[img])]
+
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            if y_idx+shift_row<0: continue
+            if x_idx-shift_col<0: continue
+            if y_idx+shift_row>=num_rows: continue
+            if x_idx-shift_col>=num_cols: continue
+            for img in range(0,len(input_image_2d)):
+                image_shift[img][y_idx+shift_row,x_idx-shift_col] = input_image_2d[img][y_idx,x_idx]
+
+    toc_task = time.perf_counter()
+    #print (f'image_translation completed in {toc_task - tic_task:0.4f} sec.')
+
     return image_shift
 
 def image_rotation(input_image_2d, angle_rad):
+
+    tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -180,6 +272,42 @@ def image_rotation(input_image_2d, angle_rad):
             if rot_col<0: continue
             if rot_col>=num_cols: continue
             image_rotate[rot_row,rot_col] = input_image_2d[y_idx,x_idx]
+
+    toc_task = time.perf_counter()
+    #print (f'image_rotation completed in {toc_task - tic_task:0.4f} sec.')
+
+    return image_rotate
+
+def movie_rotation(input_image_2d, angle_rad):
+
+    tic_task = time.perf_counter()
+
+    num_rows, num_cols = input_image_2d[0].shape
+
+    image_rotate = []
+    for img in range(0,len(input_image_2d)):
+        image_rotate += [np.zeros_like(input_image_2d[img])]
+
+    rotation_matrix = np.array([[np.cos(angle_rad), -np.sin(angle_rad)],[np.sin(angle_rad), np.cos(angle_rad)]])
+    center_col = float(num_cols)/2.
+    center_row = float(num_rows)/2.
+    for x_idx in range(0,num_cols):
+        for y_idx in range(0,num_rows):
+            delta_row = float(y_idx - center_row)
+            delta_col = float(x_idx - center_col)
+            delta_coord = np.array([delta_col,delta_row])
+            rot_coord = rotation_matrix @ delta_coord
+            rot_row = round(rot_coord[1]+center_row)
+            rot_col = round(rot_coord[0]+center_col)
+            if rot_row<0: continue
+            if rot_row>=num_rows: continue
+            if rot_col<0: continue
+            if rot_col>=num_cols: continue
+            for img in range(0,len(input_image_2d)):
+                image_rotate[img][rot_row,rot_col] = input_image_2d[img][y_idx,x_idx]
+
+    toc_task = time.perf_counter()
+    #print (f'image_rotation completed in {toc_task - tic_task:0.4f} sec.')
 
     return image_rotate
 
@@ -222,16 +350,18 @@ def image_smooth(input_image_2d,mask_2d):
 
     return image_smooth
 
-def image_cutout(geometry, image_input_1d):
+def image_cutout(geometry, image_input_1d, pixs_to_keep=[]):
 
     eco_image_1d = []
-    for pix in range(0,len(image_input_1d)):
-        x = float(geometry.pix_x[pix]/u.m)
-        y = float(geometry.pix_y[pix]/u.m)
-        if abs(y)<0.05:
+    if len(pixs_to_keep)==0:
+        for pix in range(0,len(image_input_1d)):
+            x = float(geometry.pix_x[pix]/u.m)
+            y = float(geometry.pix_y[pix]/u.m)
+            if abs(y)<0.05:
+                eco_image_1d += [image_input_1d[pix]]
+    else:
+        for pix in pixs_to_keep:
             eco_image_1d += [image_input_1d[pix]]
-        else:
-            image_input_1d[pix] = 0.
     return eco_image_1d
 
 def image_cutout_restore(geometry, eco_image_1d, origin_image_1d):
@@ -348,7 +478,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         image_center_y += float(geometry.pix_y[pix]/u.m)*input_image_1d[pix]
         center_time += input_time_1d[pix]*input_image_1d[pix]
 
-    if image_size==0.:
+    if image_size<image_size_cut:
         return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
 
     mask_center_x = mask_center_x/mask_size
@@ -389,7 +519,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     aT, bT, wT = fit_image_to_line(geometry,input_image_1d,transpose=True)
     #print (f'angle 1 = {np.arctan(a)}')
     #print (f'angle 2 = {np.arctan(1./aT)}')
-    if w<wT:
+    if w<wT and aT!=0.:
         a = 1./aT
         b = -bT/aT
         w = wT
@@ -419,12 +549,20 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     if diff_t_norm>0.:
         direction_of_time = direction_of_time/pow(diff_t_norm,0.5)
 
-    direction_of_time = direction_of_time/time_direction_cut
-    direction_of_image = direction_of_image/image_direction_cut
+    #direction_of_time = direction_of_time/time_direction_cut
+    #direction_of_image = direction_of_image/image_direction_cut
+
+    image_center_r = pow(image_center_x*image_center_x+image_center_y*image_center_y,0.5)
+
     #if (direction_of_time+direction_of_image)>0.:
-    if (direction_of_image)>0.:
-        angle = angle+np.pi
-        #print (f'change direction.')
+
+    if image_center_r<0.25:
+        if (direction_of_image)>0.:
+            angle = angle+np.pi
+            #print (f'change direction.')
+    else:
+        if (direction_of_time)>0.:
+            angle = angle+np.pi
 
     truth_angle = np.arctan2(-image_center_y,-image_center_x)
     if not star_cam_xy==None:
@@ -526,7 +664,7 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
-def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lookup_table, movie_eigen_vectors):
+def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lookup_table, movie_eigen_vectors, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -568,6 +706,8 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
 
     for win in range(0,n_windows):
 
+        if not make_plots: continue
+
         fig.clf()
         axbig = fig.add_subplot()
         label_x = 'X'
@@ -581,6 +721,42 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
         axbig.set_ylim(ymin,ymax)
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_sim.png',bbox_inches='tight')
         axbig.remove()
+
+    return eco_image_1d, sim_image_2d
+
+def make_a_gif(fig, subarray, run_id, tel_id, event, eco_image_1d, movie1_2d, movie2_2d):
+
+    event_id = event.index['event_id']
+    geometry = subarray.tel[tel_id].camera.geometry
+
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
+
+    movie_2d = []
+    for m in range (0,len(movie1_2d)):
+        movie_2d += [np.vstack((movie1_2d[m],movie2_2d[m]))]
+
+    image_max = np.max(eco_image_1d[:])
+    n_windows = len(movie_2d)
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'X'
+    label_y = 'Y'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    im = axbig.imshow(movie_2d[0],origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=2.*image_max/float(n_windows))
+    cbar = fig.colorbar(im)
+
+    def animate(i):
+        im.set_array(movie_2d[i])
+        return im,
+
+    ani = animation.FuncAnimation(fig, animate, repeat=True, frames=len(movie_2d), interval=200)
+    ani.save(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie.gif',writer=animation.PillowWriter(fps=2))
+    axbig.remove()
 
 
 def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors):
@@ -763,11 +939,24 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image_{tag}.png',bbox_inches='tight')
     axbig.remove()
 
+def calc_waveform_baseline(geometry,tel_id,waveform,image_mask):
+
+    n_pix, n_samp = waveform.shape
+    baselines = []
+    for pix in range(0,n_pix):
+        if image_mask[pix]: continue
+        baselines += [np.sum(waveform[pix,:])]
+    return np.mean(baselines)
+
 
 def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
+    tic_task = time.perf_counter()
+
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
+
+    #selected_gain_channel = event.r1.tel[tel_id].selected_gain_channel
 
     dirty_image_1d = event.dl1.tel[tel_id].image
     dirty_image_2d = geometry.image_to_cartesian_representation(dirty_image_1d)
@@ -783,6 +972,44 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
         else:
             clean_image_1d[pix] = event.dl1.tel[tel_id].image[pix]
             clean_time_1d[pix] = event.dl1.tel[tel_id].peak_time[pix]
+
+    print (f'np.sum(clean_image_1d) = {np.sum(clean_image_1d)}')
+
+
+    waveform = event.dl0.tel[tel_id].waveform
+    n_pix, n_samp = waveform.shape
+    n_windows = int(total_samples/n_samples_per_window)
+
+    n_windows = int(total_samples/n_samples_per_window)
+    clean_movie_1d = []
+    for win in range(0,n_windows):
+        clean_movie_1d += [np.zeros_like(clean_image_1d)]
+    for pix in range(0,n_pix):
+        if not image_mask[pix]: continue # select signal
+        for win in range(0,n_windows):
+            for sample in range(0,n_samples_per_window):
+                sample_idx = int(sample + win*n_samples_per_window)
+                if sample_idx<0: continue
+                if sample_idx>=n_samp: continue
+                clean_movie_1d[win][pix] += waveform[pix,sample_idx]
+
+    for win in range(0,n_windows):
+        image_sum = np.sum(clean_movie_1d[win])
+        if image_sum==0.: continue 
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
+        mask_sum = np.sum(movie_mask)
+        if mask_sum==0.: continue 
+        image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask)
+        if image_leakage.pixels_width_1>0.:
+            for pix in range(0,len(movie_mask)):
+                clean_movie_1d[win][pix] = 0.
+
+    for pix in range(0,len(image_mask)):
+        clean_image_1d[pix] = 0.
+    for win in range(0,n_windows):
+        for pix in range(0,len(image_mask)):
+            if not image_mask[pix]: continue
+            clean_image_1d[pix] += clean_movie_1d[win][pix]
 
     center_time = reset_time(clean_image_1d, clean_time_1d)
 
@@ -819,10 +1046,13 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     eco_image_1d = image_cutout(geometry, rotate_image_1d)
     eco_time_1d = image_cutout(geometry, rotate_time_1d)
 
+    toc_task = time.perf_counter()
+    print (f'make_standard_image completed in {toc_task - tic_task:0.4f} sec.')
+
     return lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
-def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_movie_1d):
+def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_movie_1d, make_plots = False):
 
     n_windows = int(select_samples/n_samples_per_window)
     eco_image_1d = []
@@ -847,10 +1077,13 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
     for win in range(0,n_windows):
         image_1d += [np.zeros_like(dirty_image_1d)]
     
+    list_image_2d = []
     for win in range(0,n_windows):
         image_cutout_restore(geometry, eco_image_1d[win], image_1d[win])
         image_2d = geometry.image_to_cartesian_representation(image_1d[win])
+        list_image_2d += [image_2d]
 
+        if not make_plots: continue
         fig.clf()
         axbig = fig.add_subplot()
         label_x = 'X'
@@ -869,7 +1102,11 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
         axbig.remove()
 
+    return dirty_image_1d, list_image_2d
+
 def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
+
+    tic_task = time.perf_counter()
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -888,6 +1125,42 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         else:
             clean_image_1d[pix] = event.dl1.tel[tel_id].image[pix]
             clean_time_1d[pix] = event.dl1.tel[tel_id].peak_time[pix]
+
+    waveform = event.dl0.tel[tel_id].waveform
+    n_pix, n_samp = waveform.shape
+    n_windows = int(total_samples/n_samples_per_window)
+
+    n_windows = int(total_samples/n_samples_per_window)
+    clean_movie_1d = []
+    for win in range(0,n_windows):
+        clean_movie_1d += [np.zeros_like(clean_image_1d)]
+    for pix in range(0,n_pix):
+        if not image_mask[pix]: continue # select signal
+        for win in range(0,n_windows):
+            for sample in range(0,n_samples_per_window):
+                sample_idx = int(sample + win*n_samples_per_window)
+                if sample_idx<0: continue
+                if sample_idx>=n_samp: continue
+                clean_movie_1d[win][pix] += waveform[pix,sample_idx]
+
+    for win in range(0,n_windows):
+        image_sum = np.sum(clean_movie_1d[win])
+        if image_sum==0.: continue 
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
+        mask_sum = np.sum(movie_mask)
+        if mask_sum==0.: continue 
+        image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask)
+        if image_leakage.pixels_width_1>0.:
+            for pix in range(0,len(movie_mask)):
+                clean_movie_1d[win][pix] = 0.
+
+    for pix in range(0,len(image_mask)):
+        clean_image_1d[pix] = 0.
+    for win in range(0,n_windows):
+        for pix in range(0,len(image_mask)):
+            if not image_mask[pix]: continue
+            clean_image_1d[pix] += clean_movie_1d[win][pix]
+    print (f'np.sum(clean_image_1d) = {np.sum(clean_image_1d)} (after truncation removal)')
 
     center_time = reset_time(clean_image_1d, clean_time_1d)
     print (f'movie center_time = {center_time}')
@@ -921,41 +1194,7 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
 
     shift_pix_x = image_center_x/pixel_width
     shift_pix_y = image_center_y/pixel_width
-    #shift_image_2d = image_translation(clean_image_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-    #rotate_image_2d = image_rotation(shift_image_2d, angle*u.rad)
-    #rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
-    #eco_image_1d = image_cutout(geometry, rotate_image_1d)
 
-    waveform = event.dl0.tel[tel_id].waveform
-    n_pix, n_samp = waveform.shape
-    print (f'n_pix = {n_pix}, n_samp = {n_samp}')
-
-
-    #n_windows = 64
-    ##n_windows = 16
-    #window_size = int(n_samp/n_windows)
-    #clean_movie_1d = []
-    #for win in range(0,n_windows):
-    #    clean_movie_1d += [np.zeros_like(clean_image_1d)]
-    #for pix in range(0,n_pix):
-    #    if not image_mask[pix]: continue # select signal
-    #    for win in range(0,n_windows):
-    #        for sample in range(0,window_size):
-    #            sample_idx = sample + win*window_size
-    #            clean_movie_1d[win][pix] +=  waveform[pix,sample_idx]
-
-    n_windows = int(total_samples/n_samples_per_window)
-    clean_movie_1d = []
-    for win in range(0,n_windows):
-        clean_movie_1d += [np.zeros_like(clean_image_1d)]
-    for pix in range(0,n_pix):
-        if not image_mask[pix]: continue # select signal
-        for win in range(0,n_windows):
-            for sample in range(0,n_samples_per_window):
-                sample_idx = int(sample + win*n_samples_per_window)
-                if sample_idx<0: continue
-                if sample_idx>=n_samp: continue
-                clean_movie_1d[win][pix] += waveform[pix,sample_idx]
 
     center_time_window = 0.
     total_weight = 0.
@@ -965,13 +1204,6 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
     center_time_window = round(center_time_window/total_weight)
     print (f'center_time_window = {center_time_window}')
     #center_time_sample = center_time_window*n_samples_per_window
-
-    # better not use this...
-    #for win in range(0,n_windows):
-    #    movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=0.5,picture_thresh=1,min_number_picture_neighbors=2)
-    #    for pix in range(0,len(movie_mask)):
-    #        if not movie_mask[pix]:
-    #            clean_movie_1d[win][pix] = 0.
 
     n_windows_slim = int(select_samples/n_samples_per_window)
     slim_movie_1d = []
@@ -990,6 +1222,9 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
             #for win2 in range(old_win,n_windows):
             #    slim_movie_1d[win][pix] += clean_movie_1d[win2][pix]
 
+    toc_task = time.perf_counter()
+    print (f'make_a_movie stage 1 completed in {toc_task - tic_task:0.4f} sec.')
+
     image_max = np.max(slim_movie_1d[:][:])
 
     xmax = max(geometry.pix_x)/u.m
@@ -997,51 +1232,33 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
     ymax = max(geometry.pix_y)/u.m
     ymin = min(geometry.pix_y)/u.m
 
-    whole_movie_1d = []
+    whole_movie_2d = []
     for win in range(0,n_windows_slim):
-
-        #movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=0.5,picture_thresh=1.0,min_number_picture_neighbors=2)
-        #for pix in range(0,len(movie_mask)):
-        #    if not movie_mask[pix]:
-        #        clean_movie_1d[win][pix] = 0.
-
         clean_movie_2d = geometry.image_to_cartesian_representation(slim_movie_1d[win])
         remove_nan_pixels(clean_movie_2d)
+        whole_movie_2d += [clean_movie_2d]
 
-        #image_mask_2d = geometry.image_to_cartesian_representation(image_mask)
-        #smooth_movie_2d = image_smooth(clean_movie_2d,image_mask_2d)
-        #shift_movie_2d = image_translation(smooth_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-        shift_movie_2d = image_translation(clean_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-        rotate_movie_2d = image_rotation(shift_movie_2d, angle*u.rad)
-        rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d)
-        eco_movie_1d = image_cutout(geometry, rotate_movie_1d)
-        eco_movie_2d = geometry.image_to_cartesian_representation(rotate_movie_1d)
-        remove_nan_pixels(eco_movie_2d)
+    tic_task = time.perf_counter()
+    shift_movie_2d = movie_translation(whole_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
+    rotate_movie_2d = movie_rotation(shift_movie_2d, angle*u.rad)
+    toc_task = time.perf_counter()
+    print (f'make_a_movie stage 2 completed in {toc_task - tic_task:0.4f} sec.')
 
+    tic_task = time.perf_counter()
+    whole_movie_1d = []
+    pixs_to_keep = []
+    for pix in range(0,len(clean_image_1d)):
+        x = float(geometry.pix_x[pix]/u.m)
+        y = float(geometry.pix_y[pix]/u.m)
+        if abs(y)<0.05:
+            pixs_to_keep += [pix]
+    for win in range(0,n_windows_slim):
+        rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d[win])
+        eco_movie_1d = image_cutout(geometry, rotate_movie_1d, pixs_to_keep=pixs_to_keep)
         whole_movie_1d.extend(eco_movie_1d)
-        #print (f'len(whole_movie_1d) = {len(whole_movie_1d)}')
 
-        #if image_size>image_size_cut and make_plots:
-
-        #    print ('make data movie...')
-        #    fig.clf()
-        #    axbig = fig.add_subplot()
-        #    label_x = 'X'
-        #    label_y = 'Y'
-        #    axbig.set_xlabel(label_x)
-        #    axbig.set_ylabel(label_y)
-        #    im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=image_max)
-        #    #im = axbig.imshow(rotate_movie_2d,origin='lower',extent=(xmin,xmax,ymin,ymax), norm=colors.LogNorm())
-        #    cbar = fig.colorbar(im)
-        #    line_x = np.linspace(xmin, xmax, 100)
-        #    line_y = -(0.*line_x + 0.05)
-        #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-        #    line_x = np.linspace(xmin, xmax, 100)
-        #    line_y = -(0.*line_x - 0.05)
-        #    axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-        #    fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie{win}_data.png',bbox_inches='tight')
-        #    axbig.remove()
-
+    toc_task = time.perf_counter()
+    print (f'make_a_movie stage 3 completed in {toc_task - tic_task:0.4f} sec.')
 
     if image_size>image_size_cut and make_plots:
 
@@ -1082,6 +1299,9 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
         axbig.remove()
+
+    toc_task = time.perf_counter()
+    print (f'make_a_movie completed in {toc_task - tic_task:0.4f} sec.')
 
     return lightcone, image_moment_array, whole_movie_1d
 

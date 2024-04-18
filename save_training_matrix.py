@@ -27,7 +27,6 @@ image_rotation = common_functions.image_rotation
 find_image_truth = common_functions.find_image_truth
 make_a_movie = common_functions.make_a_movie
 make_standard_image = common_functions.make_standard_image
-pass_lightcone = common_functions.pass_lightcone
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -126,7 +125,6 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             #lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=True)
             #exit()
 
-            #if pass_lightcone(lightcone) and image_size>image_size_cut:
             if image_size>image_size_cut:
                 big_movie_matrix += [eco_movie_1d]
                 big_image_matrix += [eco_image_1d]

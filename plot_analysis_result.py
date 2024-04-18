@@ -25,7 +25,10 @@ fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
 #ana_tag = 'image'
-ana_tag = 'movie'
+#ana_tag = 'movie_box1d'
+#ana_tag = 'movie_box2d'
+ana_tag = 'movie_box3d'
+#ana_tag = 'movie_train'
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
@@ -34,11 +37,16 @@ particle_type = []
 max_nfiles = 1e10
 nfiles = 0
 
+image_dir_cut = 0.7
+fit_chi2_cut = 2.0
+
 def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
-    if abs(image_direction)<0.5: 
+    return True
+
+    if abs(image_direction)<image_dir_cut: 
         return False
-    if fit_chi2/image_size>2.0:
+    if fit_chi2/image_size>fit_chi2_cut:
         return False
 
     #lightcone_cut = 0.8
@@ -140,7 +148,8 @@ def plot_monotel_analysis():
             delta_camy = float((fit_camy-truth_camy))
 
             delta_camr = pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)
-            if delta_camr>4.0:
+            if delta_camr>4.0 and image_size>5000.:
+            #if delta_camr<0.05 and image_size>5000. and lightcone>0.:
                 print (f'file {img_header[0]}, evt_id {img_header[1]}, tel_id {img_header[2]}')
                 print (f'delta_camr = {delta_camr:0.2f}, image_size = {image_size:0.1f}, lightcone = {lightcone:0.2f}, image_direction = {image_direction:0.2f}')
 
@@ -209,6 +218,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.scatter(list_fit_chi2, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    axbig.axvline(x=fit_chi2_cut)
     fig.savefig(f'{ctapipe_output}/output_plots/fit_chi2_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
@@ -220,6 +230,8 @@ def plot_monotel_analysis():
     axbig.set_ylabel(label_y)
     axbig.scatter(list_image_direction, list_fit_chi2, s=90, c='b', marker='+', alpha=0.3)
     axbig.scatter(list_bad_image_direction, list_bad_fit_chi2, s=90, c='r', marker='+', alpha=0.3)
+    axbig.axvline(x=image_dir_cut)
+    axbig.axhline(y=fit_chi2_cut)
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_chi2_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
@@ -253,6 +265,7 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.scatter(list_image_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    axbig.axvline(x=image_dir_cut)
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
@@ -328,7 +341,7 @@ def plot_monotel_analysis():
         popt, pcov = curve_fit(gauss_func,hist_delta_camr.bin_centers(0),hist_delta_camr.hist,p0=start,bounds=((0, 0.),(np.inf, np.inf)))
         profile_fit = gauss_func(hist_delta_camr.bin_centers(0), *popt)
         residual = hist_delta_camr.hist - profile_fit
-        print ('E[e], gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
+        print (f'E = {hist_delta_energy.bin_lower_edges[0][e]-hist_delta_energy.bin_lower_edges[0][e+1]} TeV, gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
         delta_camr_per_energy += [popt[1]]
 
     fig.clf()
