@@ -21,6 +21,22 @@ MyArray3D = common_functions.MyArray3D
 linear_regression = common_functions.linear_regression
 linear_model = common_functions.linear_model
 
+n_bins_arrival = common_functions.n_bins_arrival
+arrival_lower = common_functions.arrival_lower
+arrival_upper = common_functions.arrival_upper
+n_bins_impact = common_functions.n_bins_impact
+impact_lower = common_functions.impact_lower
+impact_upper = common_functions.impact_upper
+n_bins_xmax = common_functions.n_bins_xmax
+xmax_lower = common_functions.xmax_lower
+xmax_upper = common_functions.xmax_upper
+n_bins_height = common_functions.n_bins_height
+height_lower = common_functions.height_lower
+height_upper = common_functions.height_upper
+n_bins_energy = common_functions.n_bins_energy
+log_energy_lower = common_functions.log_energy_lower
+log_energy_upper = common_functions.log_energy_upper
+
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
@@ -35,7 +51,7 @@ training_sample_path = []
 n_samples = 0
 with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
     for line in file:
-        if n_samples==15: continue
+        #if n_samples==15: continue
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         n_samples += 1
 
@@ -107,11 +123,11 @@ def BigMatrixSVD(big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name):
     axbig.remove()
 
     MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box3d',nvar=3)
-    MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box2d',nvar=2)
-    MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box1d',nvar=1)
+    #MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box2d',nvar=2)
+    #MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box1d',nvar=1)
 
-    if pkl_name=='movie':
-        MakeLookupTableNN(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_nn')
+    return VT_eco
+
 
 #class NeuralNetwork(torch.nn.Module):
 #    def __init__(self,x_dim=100,y_dim=10,nodes=1):
@@ -165,7 +181,7 @@ def normalize_data(list_data):
     list_data = (np.array(list_data)-data_mean)/data_rms
 
 
-def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name):
+def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,moment_matrix,truth_matrix,pkl_name):
 
     list_image_size = []
     list_evt_weight = []
@@ -174,7 +190,7 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
     list_log_energy = []
     list_latent_space = []
 
-    for img in range(0,len(big_matrix)):
+    for img in range(0,len(big_image_matrix)):
     
         image_size = moment_matrix[img][0]
         image_center_x = moment_matrix[img][1]
@@ -195,14 +211,16 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
         impact = pow(impact_x*impact_x+impact_y*impact_y,0.5)
         log_energy = np.log10(truth_energy)
 
-        image_1d = np.array(big_matrix[img])
-        image_latent_space = eigenvectors @ image_1d
-        list_latent_space += [image_latent_space]
+        image_1d = np.array(big_image_matrix[img])
+        image_latent_space = image_eigenvectors @ image_1d
+        time_1d = np.array(big_time_matrix[img])
+        time_latent_space = time_eigenvectors @ time_1d
+        list_latent_space += [np.concatenate((image_latent_space, time_latent_space))]
 
         list_image_size += [image_size]
-        list_evt_weight += [pow(image_size,0.5)]
-        list_arrival += [image_size/arrival]
-        list_impact += [image_size/impact]
+        list_evt_weight += [pow(image_size,1.0)]
+        list_arrival += [arrival]
+        list_impact += [impact]
         list_log_energy += [pow(10.,log_energy)]
 
     target = list_arrival
@@ -215,7 +233,7 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
     print (f'chi2 = {chi2}')
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival_poly.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -229,7 +247,7 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
     print (f'chi2 = {chi2}')
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact_poly.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -243,7 +261,7 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
     print (f'chi2 = {chi2}')
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy_poly.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -288,27 +306,20 @@ def MakeLookupTableNN(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_r
 
 def MakeLookupTable(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name,nvar=3):
 
-    n_bins_arrival = 40
-    arrival_lower = 0.
-    arrival_upper = 0.4
-    n_bins_impact = 40
-    impact_lower = 0.
-    impact_upper = 800.
-    n_bins_xmax = 10
-    xmax_lower = 150.
-    xmax_upper = 375.
-    n_bins_height = 30
-    height_lower = 10000.
-    height_upper = 70000.
-    n_bins_energy = 15
-    log_energy_lower = -1.
-    log_energy_upper = 2.
-
-    if nvar==2:
-        n_bins_energy = 1
-    if nvar==1:
-        n_bins_energy = 1
-        n_bins_impact = 1
+    global arrival_upper
+    global arrival_lower
+    global n_bins_arrival
+    global impact_upper
+    global impact_lower
+    global n_bins_impact
+    global log_energy_upper
+    global log_energy_lower
+    global n_bins_energy
+    #if nvar==2:
+    #    n_bins_energy = 1
+    #if nvar==1:
+    #    n_bins_energy = 1
+    #    n_bins_impact = 1
 
 
     lookup_table = []
@@ -435,12 +446,12 @@ def MakeLookupTable(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_ran
     
 
 print ('Compute movie matrix SVD...')
-BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,50,'movie')
+movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,50,'movie')
 print ('Compute image matrix SVD...')
-BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,50,'image')
+image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,50,'image')
 print ('Compute time matrix SVD...')
-BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,200,'time')
+time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,200,'time')
 
-
+MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,big_moment_matrix,big_truth_matrix,'polynomial')
 
 tracemalloc.stop()

@@ -26,6 +26,21 @@ total_samples = 64
 #select_samples = 10
 select_samples = 16
 
+n_bins_arrival = 40
+arrival_lower = 0.
+arrival_upper = 0.4
+n_bins_impact = 40
+impact_lower = 0.
+impact_upper = 800.
+n_bins_xmax = 10
+xmax_lower = 150.
+xmax_upper = 375.
+n_bins_height = 30
+height_lower = 10000.
+height_upper = 70000.
+n_bins_energy = 15
+log_energy_lower = -1.
+log_energy_upper = 2.
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
@@ -82,6 +97,22 @@ class MyArray3D:
         if value_z>self.zaxis.max():
             key_idx_z = len(self.zaxis)-2
         return [key_idx_x,key_idx_y,key_idx_z]
+
+    def get_heaviest_axis(self):
+        max_weight = 0.
+        key_idx_x = -1
+        key_idx_y = -1
+        key_idx_z = -1
+        for idx_x in range(0,len(self.xaxis)-1):
+            for idx_y in range(0,len(self.yaxis)-1):
+                for idx_z in range(0,len(self.zaxis)-1):
+                    local_weight = abs(self.waxis[idx_x,idx_y,idx_z])
+                    if max_weight<local_weight:
+                        max_weight = local_weight
+                        key_idx_x = idx_x
+                        key_idx_y = idx_y
+                        key_idx_z = idx_z
+        return [self.xaxis[key_idx_x],self.yaxis[key_idx_y],self.zaxis[key_idx_z]]
 
     def fill(self, value_x, value_y, value_z, weight=1.):
         key_idx = self.get_bin(value_x, value_y, value_z)
@@ -163,8 +194,8 @@ def linear_regression(input_data, target_data, weight):
         for entry in range(0,len(input_data[evt])):
             single_x += [input_data[evt][entry]]
             single_x += [input_data[evt][entry]**2]
-            single_x += [input_data[evt][entry]**3]
-            single_x += [input_data[evt][entry]**4]
+            #single_x += [input_data[evt][entry]**3]
+            #single_x += [input_data[evt][entry]**4]
             #single_x += [input_data[evt][entry]**5]
             #single_x += [input_data[evt][entry]**6]
         single_x += [1.]
@@ -193,8 +224,8 @@ def linear_model(input_data,A):
     for entry in range(0,len(input_data)):
         x += [input_data[entry]]
         x += [input_data[entry]**2]
-        x += [input_data[entry]**3]
-        x += [input_data[entry]**4]
+        #x += [input_data[entry]**3]
+        #x += [input_data[entry]**4]
         #x += [input_data[entry]**5]
         #x += [input_data[entry]**6]
     x += [1.]
@@ -207,8 +238,6 @@ def linear_model(input_data,A):
 
 def image_translation(input_image_2d, shift_row, shift_col):
 
-    tic_task = time.perf_counter()
-
     num_rows, num_cols = input_image_2d.shape
 
     image_shift = np.zeros_like(input_image_2d)
@@ -220,14 +249,9 @@ def image_translation(input_image_2d, shift_row, shift_col):
             if x_idx-shift_col>=num_cols: continue
             image_shift[y_idx+shift_row,x_idx-shift_col] = input_image_2d[y_idx,x_idx]
 
-    toc_task = time.perf_counter()
-    #print (f'image_translation completed in {toc_task - tic_task:0.4f} sec.')
-
     return image_shift
 
 def movie_translation(input_image_2d, shift_row, shift_col):
-
-    tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d[0].shape
 
@@ -244,14 +268,9 @@ def movie_translation(input_image_2d, shift_row, shift_col):
             for img in range(0,len(input_image_2d)):
                 image_shift[img][y_idx+shift_row,x_idx-shift_col] = input_image_2d[img][y_idx,x_idx]
 
-    toc_task = time.perf_counter()
-    #print (f'image_translation completed in {toc_task - tic_task:0.4f} sec.')
-
     return image_shift
 
 def image_rotation(input_image_2d, angle_rad):
-
-    tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d.shape
 
@@ -273,14 +292,9 @@ def image_rotation(input_image_2d, angle_rad):
             if rot_col>=num_cols: continue
             image_rotate[rot_row,rot_col] = input_image_2d[y_idx,x_idx]
 
-    toc_task = time.perf_counter()
-    #print (f'image_rotation completed in {toc_task - tic_task:0.4f} sec.')
-
     return image_rotate
 
 def movie_rotation(input_image_2d, angle_rad):
-
-    tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d[0].shape
 
@@ -305,9 +319,6 @@ def movie_rotation(input_image_2d, angle_rad):
             if rot_col>=num_cols: continue
             for img in range(0,len(input_image_2d)):
                 image_rotate[img][rot_row,rot_col] = input_image_2d[img][y_idx,x_idx]
-
-    toc_task = time.perf_counter()
-    #print (f'image_rotation completed in {toc_task - tic_task:0.4f} sec.')
 
     return image_rotate
 
@@ -951,8 +962,6 @@ def calc_waveform_baseline(geometry,tel_id,waveform,image_mask):
 
 def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
-    tic_task = time.perf_counter()
-
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
@@ -1046,9 +1055,6 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     eco_image_1d = image_cutout(geometry, rotate_image_1d)
     eco_time_1d = image_cutout(geometry, rotate_time_1d)
 
-    toc_task = time.perf_counter()
-    print (f'make_standard_image completed in {toc_task - tic_task:0.4f} sec.')
-
     return lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
@@ -1105,8 +1111,6 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
     return dirty_image_1d, list_image_2d
 
 def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
-
-    tic_task = time.perf_counter()
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -1222,9 +1226,6 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
             #for win2 in range(old_win,n_windows):
             #    slim_movie_1d[win][pix] += clean_movie_1d[win2][pix]
 
-    toc_task = time.perf_counter()
-    print (f'make_a_movie stage 1 completed in {toc_task - tic_task:0.4f} sec.')
-
     image_max = np.max(slim_movie_1d[:][:])
 
     xmax = max(geometry.pix_x)/u.m
@@ -1238,13 +1239,9 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         remove_nan_pixels(clean_movie_2d)
         whole_movie_2d += [clean_movie_2d]
 
-    tic_task = time.perf_counter()
     shift_movie_2d = movie_translation(whole_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
     rotate_movie_2d = movie_rotation(shift_movie_2d, angle*u.rad)
-    toc_task = time.perf_counter()
-    print (f'make_a_movie stage 2 completed in {toc_task - tic_task:0.4f} sec.')
 
-    tic_task = time.perf_counter()
     whole_movie_1d = []
     pixs_to_keep = []
     for pix in range(0,len(clean_image_1d)):
@@ -1256,9 +1253,6 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d[win])
         eco_movie_1d = image_cutout(geometry, rotate_movie_1d, pixs_to_keep=pixs_to_keep)
         whole_movie_1d.extend(eco_movie_1d)
-
-    toc_task = time.perf_counter()
-    print (f'make_a_movie stage 3 completed in {toc_task - tic_task:0.4f} sec.')
 
     if image_size>image_size_cut and make_plots:
 
@@ -1299,9 +1293,6 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
         axbig.remove()
-
-    toc_task = time.perf_counter()
-    print (f'make_a_movie completed in {toc_task - tic_task:0.4f} sec.')
 
     return lightcone, image_moment_array, whole_movie_1d
 

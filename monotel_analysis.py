@@ -38,6 +38,22 @@ display_a_movie = common_functions.display_a_movie
 make_a_gif = common_functions.make_a_gif
 linear_model = common_functions.linear_model
 
+n_bins_arrival = common_functions.n_bins_arrival
+arrival_lower = common_functions.arrival_lower
+arrival_upper = common_functions.arrival_upper
+n_bins_impact = common_functions.n_bins_impact
+impact_lower = common_functions.impact_lower
+impact_upper = common_functions.impact_upper
+n_bins_xmax = common_functions.n_bins_xmax
+xmax_lower = common_functions.xmax_lower
+xmax_upper = common_functions.xmax_upper
+n_bins_height = common_functions.n_bins_height
+height_lower = common_functions.height_lower
+height_upper = common_functions.height_upper
+n_bins_energy = common_functions.n_bins_energy
+log_energy_lower = common_functions.log_energy_lower
+log_energy_upper = common_functions.log_energy_upper
+
 #image_size_cut = 500.
 
 fig, ax = plt.subplots()
@@ -51,9 +67,6 @@ time_weight_ratio = 1.
 ana_tag = 'movie'
 #ana_tag = 'image'
 
-
-#lookup_table_type = 'box1d'
-
 init_lookup_table_type = 'box3d'
 lookup_table_type = 'box3d'
 ana_tag += f'_{lookup_table_type}'
@@ -66,7 +79,7 @@ if is_training:
 select_event_id = 0
 #select_event_id = 42306
 
-def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,eigen_vectors,full_table=False,use_poisson=False):
+def sqaure_difference_between_1d_images(init_params,data_latent_space,lookup_table,eigen_vectors,full_table=False):
 
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
@@ -80,25 +93,41 @@ def sqaure_difference_between_1d_images(init_params,image_1d_data,lookup_table,e
         fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
     fit_latent_space = np.array(fit_latent_space)
 
+    sum_chi2 = 0.
+    n_rows = len(data_latent_space)
+    for row in range(0,n_rows):
+        if data_latent_space[row]==0. and fit_latent_space[row]==0.: continue
+        diff = data_latent_space[row] - fit_latent_space[row]
+        sum_chi2 += diff*diff
+
+    return sum_chi2
+
+def sqaure_difference_between_1d_images_poisson(init_params,image_1d_data,lookup_table,eigen_vectors,full_table=False):
+
+    fit_arrival = init_params[0]
+    fit_impact = init_params[1]
+    fit_log_energy = init_params[2]
+    if not full_table:
+        if lookup_table[0].get_bin_content(fit_arrival,fit_impact,fit_log_energy)==0.:
+            return 1e10
+
+    fit_latent_space = []
+    for r in range(0,len(lookup_table)):
+        fit_latent_space += [lookup_table[r].get_bin_content(fit_arrival,fit_impact,fit_log_energy)]
+    fit_latent_space = np.array(fit_latent_space)
 
     sum_chi2 = 0.
-    if use_poisson:
-        image_1d_fit = eigen_vectors.T @ fit_latent_space
-        n_rows = len(image_1d_fit)
-        for row in range(0,n_rows):
-            n_expect = max(0.0001,image_1d_fit[row])
-            n_data = max(0.,image_1d_data[row])
-            if n_data==0.:
-                sum_chi2 += n_expect
-            else:
-                sum_chi2 += -1.*(n_data*np.log(n_expect) - n_expect - (n_data*np.log(n_data)-n_data))
-    else:
-        data_latent_space = eigen_vectors @ image_1d_data
-        n_rows = len(data_latent_space)
-        for row in range(0,n_rows):
-            if data_latent_space[row]==0. and fit_latent_space[row]==0.: continue
-            diff = data_latent_space[row] - fit_latent_space[row]
-            sum_chi2 += diff*diff
+    image_1d_fit = eigen_vectors.T @ fit_latent_space
+    n_rows = len(image_1d_fit)
+    for row in range(0,n_rows):
+        n_expect = max(0.0001,image_1d_fit[row])
+        n_data = max(0.,image_1d_data[row])
+        if n_data==0.:
+            sum_chi2 += n_expect
+        else:
+            sum_chi2 += -1.*(n_data*np.log(n_expect) - n_expect - (n_data*np.log(n_data)-n_data))
+
+    #print (f'intermed fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}, sum_chi2 = {sum_chi2}')
 
     return sum_chi2
 
@@ -108,47 +137,134 @@ def sortFirst(val):
 
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors,movie_lookup_table_poly, use_movie=True):
 
-    #image_size = np.sum(input_movie_1d)
-    #movie_latent_space = movie_eigen_vectors @ input_movie_1d
-    #fit_arrival = image_size/linear_model(movie_latent_space, movie_lookup_table_poly[0])
-    #fit_impact = image_size/linear_model(movie_latent_space, movie_lookup_table_poly[1])
-    #fit_log_energy = np.log10(abs(linear_model(movie_latent_space, movie_lookup_table_poly[2])))
+    global arrival_upper
+    global arrival_lower
+    global n_bins_arrival
+    global impact_upper
+    global impact_lower
+    global n_bins_impact
+    global log_energy_upper
+    global log_energy_lower
+    global n_bins_energy
+    #n_bins_arrival = len(image_lookup_table[0].xaxis)
+    #n_bins_impact = len(image_lookup_table[0].yaxis)
+    #n_bins_energy = len(image_lookup_table[0].zaxis)
+
+    arrival_step_size = (arrival_upper-arrival_lower)/float(n_bins_arrival)
+    impact_step_size = (impact_upper-impact_lower)/float(n_bins_impact)
+    log_energy_step_size = (log_energy_upper-log_energy_lower)/float(n_bins_energy)
+    print (f'arrival_step_size = {arrival_step_size}, impact_step_size = {impact_step_size}, log_energy_step_size = {log_energy_step_size}')
+
+    movie_latent_space = movie_eigen_vectors @ input_movie_1d
+    image_latent_space = image_eigen_vectors @ input_image_1d
+    time_latent_space = time_eigen_vectors @ input_time_1d
+    combine_latent_space = np.concatenate((image_latent_space, time_latent_space))
+
+    image_size = np.sum(input_movie_1d)
+    fit_arrival = linear_model(combine_latent_space, movie_lookup_table_poly[0])
+    fit_impact = linear_model(combine_latent_space, movie_lookup_table_poly[1])
+    fit_log_energy = np.log10(abs(linear_model(combine_latent_space, movie_lookup_table_poly[2])))
+    cov_arrival = 0.
+    cov_impact = 0.
+    cov_log_energy = 0.
+    fit_chi2 = 0.
+    print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
+
+    is_good_result = True
+    if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
+        print ('arrival is bad.')
+        is_good_result = False
+    if fit_impact>impact_upper or fit_impact<impact_lower:
+        print ('impact is bad.')
+        is_good_result = False
+    if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
+        print ('log_energy is bad.')
+        is_good_result = False
+
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
+    fit_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+
+    return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    #if is_good_result:
+    #    return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+
+    #tic_a = time.perf_counter()
+
+    #heavy_axis = movie_lookup_table[0].get_heaviest_axis()
+    #if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
+    #    fit_arrival = heavy_axis[0]
+    #if fit_impact>impact_upper or fit_impact<impact_lower:
+    #    fit_impact = heavy_axis[1]
+    #if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
+    #    fit_log_energy = heavy_axis[2]
+    #init_params = [fit_arrival,fit_impact,fit_log_energy]
+    #stepsize = [1.0*arrival_step_size,1.0*impact_step_size,1.0*log_energy_step_size]
+    #solution = minimize(
+    #    sqaure_difference_between_1d_images_poisson,
+    #    x0=init_params,
+    #    args=(input_movie_1d,movie_lookup_table,movie_eigen_vectors),
+    #    method='L-BFGS-B',
+    #    #method='Nelder-Mead',
+    #    #jac=None,
+    #    #options={'eps':stepsize,'ftol':0.000001},
+    #    options={'eps':stepsize},
+    #)
+    #fit_params = solution['x']
+    #fit_arrival = fit_params[0]
+    #fit_impact = fit_params[1]
+    #fit_log_energy = fit_params[2]
     #cov_arrival = 0.
     #cov_impact = 0.
     #cov_log_energy = 0.
     #fit_chi2 = 0.
-    #return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    #print (f'final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
+    #return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
     image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
     time_weight = time_weight_ratio/np.sum(np.array(input_time_1d)*np.array(input_time_1d))
 
-    n_bins_arrival = len(image_lookup_table[0].xaxis)
-    n_bins_impact = len(image_lookup_table[0].yaxis)
-    n_bins_energy = len(image_lookup_table[0].zaxis)
-
-    fit_arrival = 0.15
-    fit_impact = 100.
-    fit_log_energy = 0.
     init_params = [fit_arrival,fit_impact,fit_log_energy]
-    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,image_latent_space,image_lookup_table,image_eigen_vectors)
+    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,time_latent_space,time_lookup_table,time_eigen_vectors)
     fit_chi2 = fit_chi2_image + fit_chi2_time
 
+    search_range = 100.
+    if is_good_result:
+        search_range = 10.
+    arrival_range = search_range*arrival_step_size 
+    impact_range = search_range*impact_step_size 
+    log_energy_range = search_range*log_energy_step_size 
+    #if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
+    #    arrival_range = 1e10
+    #if fit_impact>impact_upper or fit_impact<impact_lower:
+    #    impact_range = 1e10
+    #if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
+    #    log_energy_range = 1e10
+
+    init_arrival = fit_arrival
+    init_impact = fit_impact
+    init_log_energy = fit_log_energy
     fit_coord = []
     fit_idx_x = 0
     fit_idx_y = 0
     fit_idx_z = 0
     for idx_x  in range(0,n_bins_arrival):
+        try_arrival = image_lookup_table[0].xaxis[idx_x]
+        if abs(init_arrival-try_arrival)>arrival_range:
+            continue
         for idx_y  in range(0,n_bins_impact):
+            try_impact = image_lookup_table[0].yaxis[idx_y]
+            if abs(init_impact-try_impact)>impact_range:
+                continue
             for idx_z  in range(0,n_bins_energy):
-
-                try_arrival = image_lookup_table[0].xaxis[idx_x]
-                try_impact = image_lookup_table[0].yaxis[idx_y]
                 try_log_energy = image_lookup_table[0].zaxis[idx_z]
+                if abs(init_log_energy-try_log_energy)>log_energy_range:
+                    continue
+
                 init_params = [try_arrival,try_impact,try_log_energy]
 
-                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,input_time_1d,time_lookup_table,time_eigen_vectors)
+                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,image_latent_space,image_lookup_table,image_eigen_vectors)
+                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,time_latent_space,time_lookup_table,time_eigen_vectors)
                 try_chi2 = try_chi2_image + try_chi2_time
 
                 fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
@@ -167,38 +283,10 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     cov_log_energy = 0.
 
     if not use_movie:
-        return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+        return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    #fit_arrival = 0.15
-    #fit_impact = 100.
-    #fit_log_energy = 0.
-    #init_params = [fit_arrival,fit_impact,fit_log_energy]
-    #image_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #movie_fit_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #fit_chi2 = image_weight*image_fit_chi2 + movie_weight*movie_fit_chi2
-
-    #fit_coord = []
-    #for idx_x  in range(0,n_bins_arrival):
-    #    for idx_y  in range(0,n_bins_impact):
-    #        for idx_z  in range(0,n_bins_energy):
-
-    #            try_arrival = movie_lookup_table[0].xaxis[idx_x]
-    #            try_impact = movie_lookup_table[0].yaxis[idx_y]
-    #            try_log_energy = movie_lookup_table[0].zaxis[idx_z]
-    #            init_params = [try_arrival,try_impact,try_log_energy]
-
-    #            image_try_chi2 = sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #            movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            try_chi2 = image_weight*image_try_chi2 + movie_weight*movie_try_chi2
-
-    #            if try_chi2<1e10:
-    #                fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
-
-    #            if try_chi2<fit_chi2:
-    #                fit_chi2 = try_chi2
-    #                fit_arrival = try_arrival
-    #                fit_impact = try_impact
-    #                fit_log_energy = try_log_energy
+    #toc_a = time.perf_counter()
+    #print (f'Brutal search completed in {toc_a - tic_a:0.4f} sec.')
 
     n_bins_arrival = len(movie_lookup_table[0].xaxis)
     n_bins_impact = len(movie_lookup_table[0].yaxis)
@@ -209,85 +297,36 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
     fit_coord.sort(key=sortFirst)
     fit_chi2 = 1e10
-    #for entry in range(0,len(fit_coord)):
-    for entry in range(0,min(20,len(fit_coord))):
+    n_short_list = 5
+    for entry in range(0,min(n_short_list,len(fit_coord))):
         try_arrival = fit_coord[entry][1]
         try_impact = fit_coord[entry][2]
         try_log_energy = fit_coord[entry][3]
         init_params = [try_arrival,try_impact,try_log_energy]
-        movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors,use_poisson=True)
+        movie_try_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
         try_chi2 = movie_weight*movie_try_chi2
         if try_chi2<fit_chi2:
             fit_chi2 = try_chi2
             fit_arrival = try_arrival
             fit_impact = try_impact
             fit_log_energy = try_log_energy
+        #for idx_z  in range(0,n_bins_energy):
+        #    try_log_energy = movie_lookup_table[0].zaxis[idx_z]
+        #    init_params = [try_arrival,try_impact,try_log_energy]
+        #    movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors,use_poisson=True)
+        #    try_chi2 = movie_weight*movie_try_chi2
+        #    if try_chi2<fit_chi2:
+        #        fit_chi2 = try_chi2
+        #        fit_arrival = try_arrival
+        #        fit_impact = try_impact
+        #        fit_log_energy = try_log_energy
     print (f'Final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
 
     cov_arrival = 0.
     cov_impact = 0.
     cov_log_energy = 0.
 
-    #n_sampling = 3
-    #fit_coord.sort(key=sortFirst)
-    #for entry in range(1,n_sampling+1):
-    #    dchi2 = fit_coord[entry][0] - fit_coord[0][0]
-    #    dx2 = pow(fit_coord[entry][1]-fit_coord[0][1],2)
-    #    dy2 = pow(fit_coord[entry][2]-fit_coord[0][2],2)
-    #    dz2 = pow(fit_coord[entry][3]-fit_coord[0][3],2)
-    #    cov_arrival += dx2/dchi2*fit_chi2
-    #    cov_impact = dy2/dchi2*fit_chi2
-    #    cov_log_energy = dz2/dchi2*fit_chi2
-    #cov_arrival = cov_arrival/float(n_sampling)
-    #cov_impact = cov_impact/float(n_sampling)
-    #cov_log_energy = cov_log_energy/float(n_sampling)
-
-    #hessian_xx = 0.
-    #hessian_yy = 0.
-    #hessian_zz = 0.
-    #delta_x = movie_lookup_table[0].xaxis[1]-movie_lookup_table[0].xaxis[0]
-    #delta_y = movie_lookup_table[0].yaxis[1]-movie_lookup_table[0].yaxis[0]
-    #delta_z = movie_lookup_table[0].zaxis[1]-movie_lookup_table[0].zaxis[0]
-    #for idx_x  in range(0,n_bins_arrival):
-    #    for idx_y  in range(0,n_bins_impact):
-    #        for idx_z  in range(0,n_bins_energy):
-    #            try_arrival = movie_lookup_table[0].xaxis[idx_x]
-    #            try_impact = movie_lookup_table[0].yaxis[idx_y]
-    #            try_log_energy = movie_lookup_table[0].zaxis[idx_z]
-    #            init_params = [try_arrival,try_impact,try_log_energy]
-    #            if idx_x==fit_idx_x:
-    #                hessian_xx += -2.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_xx += -2.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            if idx_x==fit_idx_x-1 or idx_x==fit_idx_x+1:
-    #                hessian_xx += 1.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_xx += 1.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            if idx_y==fit_idx_y:
-    #                hessian_yy += -2.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_yy += -2.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            if idx_y==fit_idx_y-1 or idx_y==fit_idx_y+1:
-    #                hessian_yy += 1.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_yy += 1.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            if idx_z==fit_idx_z:
-    #                hessian_zz += -2.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_zz += -2.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #            if idx_z==fit_idx_z-1 or idx_z==fit_idx_z+1:
-    #                hessian_zz += 1.*image_weight*sqaure_difference_between_1d_images(init_params,input_image_1d,image_lookup_table,image_eigen_vectors)
-    #                hessian_zz += 1.*movie_weight*sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-    #cov_arrival = delta_x*delta_x/hessian_xx
-    #cov_impact = delta_y*delta_y/hessian_yy
-    #cov_log_energy = delta_z*delta_z/hessian_zz
-    #print (f'cov_arrival = {cov_arrival:0.2e}, cov_impact = {cov_impact:0.2e}, cov_log_energy = {cov_log_energy:0.2e}')
-
-    #print (f'initial fit_arrival = {fit_arrival:0.3f}, fit_impact = {fit_impact:0.1f}, fit_log_energy = {fit_log_energy:0.3f}')
-    #arrival_lower = fit_arrival*0.5
-    #arrival_upper = fit_arrival*2.0
-    #impact_lower = fit_impact*0.5
-    #impact_upper = fit_impact*2.0
-    #log_energy_lower = fit_log_energy-np.log10(2)
-    #log_energy_upper = fit_log_energy+np.log10(2)
-
-
-    return fit_arrival+0.005, fit_impact+0.005, fit_log_energy+0.05, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
 
 
@@ -297,11 +336,11 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
 
     print ('loading svd pickle data... ')
     movie_lookup_table_poly_pkl = []
-    output_filename = f'{ctapipe_output}/output_machines/movie_nn_lookup_table_arrival_poly.pkl'
+    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_arrival.pkl'
     movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    output_filename = f'{ctapipe_output}/output_machines/movie_nn_lookup_table_impact_poly.pkl'
+    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_impact.pkl'
     movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    output_filename = f'{ctapipe_output}/output_machines/movie_nn_lookup_table_log_energy_poly.pkl'
+    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_log_energy.pkl'
     movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
 
     output_filename = f'{ctapipe_output}/output_machines/movie_{lookup_table_type}_lookup_table.pkl'
@@ -383,8 +422,6 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
     
         for tel_idx in range(0,len(list(event.dl0.tel.keys()))):
 
-            tic_img = time.perf_counter()
-
             tel_id = list(event.dl0.tel.keys())[tel_idx]
 
             if select_event_id!=0:
@@ -447,11 +484,13 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             else:
                 use_movie = False
 
-            tic_task = time.perf_counter()
+            print ('==================================================================')
             lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
+            tic_task = time.perf_counter()
             image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,movie_lookup_table_poly_pkl,use_movie=use_movie)
             toc_task = time.perf_counter()
             print (f'Image reconstruction completed in {toc_task - tic_task:0.4f} sec.')
+            print ('==================================================================')
 
             image_fit_cam_x = image_center_x + image_fit_arrival*np.cos(angle*u.rad)
             image_fit_cam_y = image_center_y + image_fit_arrival*np.sin(angle*u.rad)
@@ -478,9 +517,6 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             print (f'image_method_error = {image_method_error:0.3f} deg')
             print (f'image_method_unc = {image_method_unc:0.3f} deg')
 
-            toc_img = time.perf_counter()
-            print (f'Image analysis completed in {toc_img - tic_img:0.4f} sec.')
-
             fit_arrival = image_fit_arrival
             fit_impact = image_fit_impact
             fit_log_energy = image_fit_log_energy
@@ -489,8 +525,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            if image_size>image_size_cut:
-            #if image_size>5000. or select_event_id!=0:
+            #if image_size>image_size_cut:
+            if image_size>5000. or select_event_id!=0:
 
                 if 'image' in ana_tag:
 
