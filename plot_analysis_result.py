@@ -30,6 +30,9 @@ fig.set_figwidth(figsize_x)
 ana_tag = 'movie_box3d'
 #ana_tag = 'movie_train'
 
+sim_files = 'sim_files.txt'
+#sim_files = 'sim_files_diffuse_gamma.txt'
+
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
 training_sample_path = []
@@ -57,7 +60,7 @@ def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
     return True
 
-with open('%s/sim_files.txt'%(ctapipe_input), 'r') as file:
+with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         particle_type += [0]

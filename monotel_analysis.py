@@ -135,6 +135,36 @@ def sqaure_difference_between_1d_images_poisson(init_params,image_1d_data,lookup
 def sortFirst(val):
     return val[0]
 
+def box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,arrival_range,impact_range,log_energy_range):
+
+    init_arrival = init_params[0]
+    init_impact = init_params[1]
+    init_log_energy = init_params[2]
+    short_list = []
+    fit_idx_x = 0
+    fit_idx_y = 0
+    fit_idx_z = 0
+    for idx_x  in range(0,n_bins_arrival):
+        try_arrival = image_lookup_table[0].xaxis[idx_x]
+        if abs(init_arrival-try_arrival)>arrival_range:
+            continue
+        for idx_y  in range(0,n_bins_impact):
+            try_impact = image_lookup_table[0].yaxis[idx_y]
+            if abs(init_impact-try_impact)>impact_range:
+                continue
+            for idx_z  in range(0,n_bins_energy):
+                try_log_energy = image_lookup_table[0].zaxis[idx_z]
+                if abs(init_log_energy-try_log_energy)>log_energy_range:
+                    continue
+
+                try_params = [try_arrival,try_impact,try_log_energy]
+
+                try_chi2 = sqaure_difference_between_1d_images(try_params,image_latent_space,image_lookup_table,image_eigen_vectors)
+
+                short_list += [(try_chi2,try_arrival,try_impact,try_log_energy)]
+
+    return short_list
+
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors,movie_lookup_table_poly, use_movie=True):
 
     global arrival_upper
@@ -153,7 +183,6 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     arrival_step_size = (arrival_upper-arrival_lower)/float(n_bins_arrival)
     impact_step_size = (impact_upper-impact_lower)/float(n_bins_impact)
     log_energy_step_size = (log_energy_upper-log_energy_lower)/float(n_bins_energy)
-    print (f'arrival_step_size = {arrival_step_size}, impact_step_size = {impact_step_size}, log_energy_step_size = {log_energy_step_size}')
 
     movie_latent_space = movie_eigen_vectors @ input_movie_1d
     image_latent_space = image_eigen_vectors @ input_image_1d
@@ -163,30 +192,66 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     image_size = np.sum(input_movie_1d)
     fit_arrival = linear_model(combine_latent_space, movie_lookup_table_poly[0])
     fit_impact = linear_model(combine_latent_space, movie_lookup_table_poly[1])
-    fit_log_energy = np.log10(abs(linear_model(combine_latent_space, movie_lookup_table_poly[2])))
+    fit_log_energy = linear_model(combine_latent_space, movie_lookup_table_poly[2])
     cov_arrival = 0.
     cov_impact = 0.
     cov_log_energy = 0.
     fit_chi2 = 0.
     print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
 
-    is_good_result = True
-    if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
-        print ('arrival is bad.')
-        is_good_result = False
-    if fit_impact>impact_upper or fit_impact<impact_lower:
-        print ('impact is bad.')
-        is_good_result = False
-    if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
-        print ('log_energy is bad.')
-        is_good_result = False
+    arrival_range = 0.5*arrival_step_size
+    impact_range = 0.5*impact_step_size
+    log_energy_range = 3.
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
+    short_list = box_search(init_params,movie_latent_space,movie_lookup_table,movie_eigen_vectors,arrival_range,impact_range,log_energy_range)
+    short_list.sort(key=sortFirst)
 
+    fit_arrival = short_list[0][1]
+    fit_impact = short_list[0][2]
+    fit_log_energy = short_list[0][3]
     init_params = [fit_arrival,fit_impact,fit_log_energy]
     fit_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+    normalized_chi2 = fit_chi2/image_size
+    print (f'normalized_chi2 = {normalized_chi2}')
 
-    return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
-    #if is_good_result:
-    #    return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    is_good_result = True
+    if normalized_chi2>2.0:
+        print ('chi2 is bad.')
+        is_good_result = False
+
+    if is_good_result:
+        return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+
+    arrival_range = 10.5*arrival_step_size
+    impact_range = 10.5*impact_step_size
+    log_energy_range = 3.
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
+    short_list = box_search(init_params,movie_latent_space,movie_lookup_table,movie_eigen_vectors,arrival_range,impact_range,log_energy_range)
+    short_list.sort(key=sortFirst)
+
+    cov_arrival = 0.
+    cov_impact = 0.
+    cov_log_energy = 0.
+
+    fit_chi2 = 1e10
+    n_short_list = 5
+    for entry in range(0,min(n_short_list,len(short_list))):
+        try_arrival = short_list[entry][1]
+        try_impact = short_list[entry][2]
+        try_log_energy = short_list[entry][3]
+        init_params = [try_arrival,try_impact,try_log_energy]
+        try_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+        if try_chi2<fit_chi2:
+            fit_chi2 = try_chi2
+            fit_arrival = try_arrival
+            fit_impact = try_impact
+            fit_log_energy = try_log_energy
+
+    print (f'Final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
+
+    cov_arrival = 0.
+    cov_impact = 0.
+    cov_log_energy = 0.
 
     #tic_a = time.perf_counter()
 
@@ -220,111 +285,6 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     #print (f'final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
     #return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    image_weight = 1./np.sum(np.array(input_image_1d)*np.array(input_image_1d))
-    time_weight = time_weight_ratio/np.sum(np.array(input_time_1d)*np.array(input_time_1d))
-
-    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    fit_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,image_latent_space,image_lookup_table,image_eigen_vectors)
-    fit_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,time_latent_space,time_lookup_table,time_eigen_vectors)
-    fit_chi2 = fit_chi2_image + fit_chi2_time
-
-    search_range = 100.
-    if is_good_result:
-        search_range = 10.
-    arrival_range = search_range*arrival_step_size 
-    impact_range = search_range*impact_step_size 
-    log_energy_range = search_range*log_energy_step_size 
-    #if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
-    #    arrival_range = 1e10
-    #if fit_impact>impact_upper or fit_impact<impact_lower:
-    #    impact_range = 1e10
-    #if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
-    #    log_energy_range = 1e10
-
-    init_arrival = fit_arrival
-    init_impact = fit_impact
-    init_log_energy = fit_log_energy
-    fit_coord = []
-    fit_idx_x = 0
-    fit_idx_y = 0
-    fit_idx_z = 0
-    for idx_x  in range(0,n_bins_arrival):
-        try_arrival = image_lookup_table[0].xaxis[idx_x]
-        if abs(init_arrival-try_arrival)>arrival_range:
-            continue
-        for idx_y  in range(0,n_bins_impact):
-            try_impact = image_lookup_table[0].yaxis[idx_y]
-            if abs(init_impact-try_impact)>impact_range:
-                continue
-            for idx_z  in range(0,n_bins_energy):
-                try_log_energy = image_lookup_table[0].zaxis[idx_z]
-                if abs(init_log_energy-try_log_energy)>log_energy_range:
-                    continue
-
-                init_params = [try_arrival,try_impact,try_log_energy]
-
-                try_chi2_image = image_weight*sqaure_difference_between_1d_images(init_params,image_latent_space,image_lookup_table,image_eigen_vectors)
-                try_chi2_time = time_weight*sqaure_difference_between_1d_images(init_params,time_latent_space,time_lookup_table,time_eigen_vectors)
-                try_chi2 = try_chi2_image + try_chi2_time
-
-                fit_coord += [(try_chi2,try_arrival,try_impact,try_log_energy)]
-
-                if try_chi2<fit_chi2:
-                    fit_chi2 = try_chi2
-                    fit_arrival = try_arrival
-                    fit_impact = try_impact
-                    fit_log_energy = try_log_energy
-                    fit_idx_x = idx_x
-                    fit_idx_y = idx_y
-                    fit_idx_z = idx_z
-
-    cov_arrival = 0.
-    cov_impact = 0.
-    cov_log_energy = 0.
-
-    if not use_movie:
-        return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
-
-    #toc_a = time.perf_counter()
-    #print (f'Brutal search completed in {toc_a - tic_a:0.4f} sec.')
-
-    n_bins_arrival = len(movie_lookup_table[0].xaxis)
-    n_bins_impact = len(movie_lookup_table[0].yaxis)
-    n_bins_energy = len(movie_lookup_table[0].zaxis)
-
-    movie_weight = 1.
-
-    print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
-    fit_coord.sort(key=sortFirst)
-    fit_chi2 = 1e10
-    n_short_list = 5
-    for entry in range(0,min(n_short_list,len(fit_coord))):
-        try_arrival = fit_coord[entry][1]
-        try_impact = fit_coord[entry][2]
-        try_log_energy = fit_coord[entry][3]
-        init_params = [try_arrival,try_impact,try_log_energy]
-        movie_try_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-        try_chi2 = movie_weight*movie_try_chi2
-        if try_chi2<fit_chi2:
-            fit_chi2 = try_chi2
-            fit_arrival = try_arrival
-            fit_impact = try_impact
-            fit_log_energy = try_log_energy
-        #for idx_z  in range(0,n_bins_energy):
-        #    try_log_energy = movie_lookup_table[0].zaxis[idx_z]
-        #    init_params = [try_arrival,try_impact,try_log_energy]
-        #    movie_try_chi2 = sqaure_difference_between_1d_images(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors,use_poisson=True)
-        #    try_chi2 = movie_weight*movie_try_chi2
-        #    if try_chi2<fit_chi2:
-        #        fit_chi2 = try_chi2
-        #        fit_arrival = try_arrival
-        #        fit_impact = try_impact
-        #        fit_log_energy = try_log_energy
-    print (f'Final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
-
-    cov_arrival = 0.
-    cov_impact = 0.
-    cov_log_energy = 0.
 
     return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
@@ -531,13 +491,13 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
                 if 'image' in ana_tag:
 
                     fit_params = [fit_arrival,fit_impact,fit_log_energy]
-                    plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, 'image')
+                    plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, star_cam_x, star_cam_y, fit_cam_x, fit_cam_y, 'image')
                     image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
 
                 if 'movie' in ana_tag:
 
                     fit_params = [fit_arrival,fit_impact,fit_log_energy]
-                    plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, 'movie')
+                    plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, star_cam_x, star_cam_y, fit_cam_x, fit_cam_y, 'movie')
                     sim_image, sim_movie = movie_simulation(fig, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl)
                     data_image, data_movie = display_a_movie(fig, subarray, run_id, tel_id, event, len(eco_image_1d), eco_movie_1d)
                     make_a_gif(fig, subarray, run_id, tel_id, event, data_image, data_movie, sim_movie)

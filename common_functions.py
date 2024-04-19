@@ -878,7 +878,7 @@ def calculate_lightcone(image_direction,time_direction):
 
     return lightcone
 
-def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, fit_cam_x, fit_cam_y, tag):
+def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, star_cam_x, star_cam_y, fit_cam_x, fit_cam_y, tag):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -931,7 +931,7 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     axbig.set_ylabel(label_y)
     im = axbig.imshow(clean_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
     cbar = fig.colorbar(im)
-    axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+    axbig.scatter(star_cam_x, -star_cam_y, s=90, facecolors='none', edgecolors='r', marker='o')
     axbig.scatter(fit_cam_x, -fit_cam_y, s=90, facecolors='none', c='r', marker='+')
     if np.cos(angle*u.rad)>0.:
         line_x = np.linspace(image_center_x, xmax, 100)
