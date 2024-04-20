@@ -54,7 +54,8 @@ training_sample_path = []
 n_samples = 0
 with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
-        #if n_samples==15: continue
+        if not overwrite_file:
+            if n_samples==15: continue
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         n_samples += 1
 
@@ -224,7 +225,7 @@ def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_
         list_evt_weight += [pow(image_size,1.0)]
         list_arrival += [arrival]
         list_impact += [impact]
-        list_log_energy += [log_energy]
+        list_log_energy += [pow(10.,log_energy)/impact]
 
     target = list_arrival
     model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)

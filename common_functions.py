@@ -766,7 +766,7 @@ def make_a_gif(fig, subarray, run_id, tel_id, event, eco_image_1d, movie1_2d, mo
         return im,
 
     ani = animation.FuncAnimation(fig, animate, repeat=True, frames=len(movie_2d), interval=200)
-    ani.save(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie.gif',writer=animation.PillowWriter(fps=2))
+    ani.save(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_movie.gif',writer=animation.PillowWriter(fps=4))
     axbig.remove()
 
 

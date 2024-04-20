@@ -41,11 +41,11 @@ max_nfiles = 1e10
 nfiles = 0
 
 image_dir_cut = 0.7
-fit_chi2_cut = 2.0
+fit_chi2_cut = 1.2
 
 def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
-    return True
+    #return True
 
     if abs(image_direction)<image_dir_cut: 
         return False
@@ -169,7 +169,7 @@ def plot_monotel_analysis():
             list_delta_camr += [pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
             list_delta_camr_weight += [1./pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
 
-            if delta_camr>0.6:
+            if delta_camr>0.5:
                 list_bad_fit_chi2 += [fit_chi2/image_size]
                 list_bad_image_direction += [abs(image_direction)]
 
@@ -344,7 +344,9 @@ def plot_monotel_analysis():
         popt, pcov = curve_fit(gauss_func,hist_delta_camr.bin_centers(0),hist_delta_camr.hist,p0=start,bounds=((0, 0.),(np.inf, np.inf)))
         profile_fit = gauss_func(hist_delta_camr.bin_centers(0), *popt)
         residual = hist_delta_camr.hist - profile_fit
-        print (f'E = {hist_delta_energy.bin_lower_edges[0][e]-hist_delta_energy.bin_lower_edges[0][e+1]} TeV, gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
+        low_energy = pow(10.,hist_delta_energy.bin_lower_edges[0][e])
+        high_energy = pow(10.,hist_delta_energy.bin_lower_edges[0][e+1])
+        print (f'E = {low_energy:0.2f}-{high_energy:0.2f} TeV, gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
         delta_camr_per_energy += [popt[1]]
 
     fig.clf()
