@@ -1052,8 +1052,16 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     rotate_time_2d = image_rotation(shift_time_2d, angle*u.rad)
     rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
     rotate_time_1d = geometry.image_from_cartesian_representation(rotate_time_2d)
-    eco_image_1d = image_cutout(geometry, rotate_image_1d)
-    eco_time_1d = image_cutout(geometry, rotate_time_1d)
+
+    pixs_to_keep = []
+    for pix in range(0,len(clean_image_1d)):
+        x = float(geometry.pix_x[pix]/u.m)
+        y = float(geometry.pix_y[pix]/u.m)
+        if abs(y)<0.05:
+            pixs_to_keep += [pix]
+
+    eco_image_1d = image_cutout(geometry, rotate_image_1d, pixs_to_keep=pixs_to_keep)
+    eco_time_1d = image_cutout(geometry, rotate_time_1d, pixs_to_keep=pixs_to_keep)
 
     return lightcone, image_moment_array, eco_image_1d, eco_time_1d
 

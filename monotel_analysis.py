@@ -76,8 +76,10 @@ is_training = False
 if is_training:
     ana_tag += '_train'
 
-#do_it_fast = True
-do_it_fast = False
+do_it_fast = True
+#do_it_fast = False
+if do_it_fast:
+    ana_tag += '_fast'
 
 select_event_id = 0
 select_tel_id = 0
@@ -251,7 +253,9 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     cov_arrival = 0.
     cov_impact = 0.
     cov_log_energy = 0.
+    init_params = [fit_arrival,fit_impact,fit_log_energy]
     fit_chi2 = 0.
+    #fit_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
     print (f'initial fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
 
     if do_it_fast:
@@ -470,6 +474,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             impact_y = truth_info_array[10]
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
+            print ('==================================================================')
+            tic_task = time.perf_counter()
+
             lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
@@ -486,11 +493,6 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             if image_size<image_size_cut: 
                 print ('failed image_size_cut')
                 continue
-            #if image_size>300.: 
-            #    print ('failed image_size_cut')
-            #    continue
-            #if not pass_lightcone(lightcone,image_direction): continue
-
 
             truth_projection = image_moment_array[10]
             print (f'truth_projection = {truth_projection:0.3f}')
@@ -509,10 +511,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             else:
                 use_movie = False
 
-            print ('==================================================================')
             lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
-            tic_task = time.perf_counter()
             image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,movie_lookup_table_poly_pkl,use_movie=use_movie)
+
             toc_task = time.perf_counter()
             print (f'Image reconstruction completed in {toc_task - tic_task:0.4f} sec.')
             print ('==================================================================')

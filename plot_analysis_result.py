@@ -24,11 +24,8 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-#ana_tag = 'image'
-#ana_tag = 'movie_box1d'
-#ana_tag = 'movie_box2d'
-ana_tag = 'movie_box3d'
-#ana_tag = 'movie_train'
+#ana_tag = 'movie_box3d'
+ana_tag = 'movie_box3d_fast'
 
 sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
@@ -45,7 +42,7 @@ fit_chi2_cut = 1.2
 
 def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
-    #return True
+    return True
 
     if abs(image_direction)<image_dir_cut: 
         return False
