@@ -71,9 +71,10 @@ init_lookup_table_type = 'box3d'
 lookup_table_type = 'box3d'
 ana_tag += f'_{lookup_table_type}'
 
-is_training = False
-#is_training = True
-if is_training:
+#is_training = 0 # not training sample
+#is_training = 1 # is training sample 
+is_training = 2 # all sample 
+if is_training==1:
     ana_tag += '_train'
 
 do_it_fast = True
@@ -437,9 +438,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
         event_id = event.index['event_id']
     
         evt_count += 1
-        if not is_training:
+        if is_training==0:
             if (evt_count % training_event_select)==0: continue
-        else:
+        elif is_training==1:
             if (evt_count % training_event_select)!=0: continue
 
         ntel = len(event.r0.tel)
@@ -474,10 +475,8 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             impact_y = truth_info_array[10]
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
-            print ('==================================================================')
-            tic_task = time.perf_counter()
 
-            lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
             image_center_y = image_moment_array[2]
@@ -493,6 +492,9 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             if image_size<image_size_cut: 
                 print ('failed image_size_cut')
                 continue
+            #if is_edge_image:
+            #    print ('failed: edge image.')
+            #    continue
 
             truth_projection = image_moment_array[10]
             print (f'truth_projection = {truth_projection:0.3f}')
@@ -511,7 +513,11 @@ def run_monotel_analysis(training_sample_path, min_energy=0.1, max_energy=1000.,
             else:
                 use_movie = False
 
-            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
+            print ('==================================================================')
+            tic_task = time.perf_counter()
+
+            is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
+
             image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,movie_lookup_table_poly_pkl,use_movie=use_movie)
 
             toc_task = time.perf_counter()

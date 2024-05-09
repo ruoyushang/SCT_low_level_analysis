@@ -272,6 +272,8 @@ def movie_translation(input_image_2d, shift_row, shift_col):
 
 def image_rotation(input_image_2d, angle_rad):
 
+    #tic_task = time.perf_counter()
+
     num_rows, num_cols = input_image_2d.shape
 
     image_rotate = np.zeros_like(input_image_2d)
@@ -280,6 +282,7 @@ def image_rotation(input_image_2d, angle_rad):
     center_row = float(num_rows)/2.
     for x_idx in range(0,num_cols):
         for y_idx in range(0,num_rows):
+            if input_image_2d[y_idx,x_idx]==0.: continue
             delta_row = float(y_idx - center_row)
             delta_col = float(x_idx - center_col)
             delta_coord = np.array([delta_col,delta_row])
@@ -292,9 +295,14 @@ def image_rotation(input_image_2d, angle_rad):
             if rot_col>=num_cols: continue
             image_rotate[rot_row,rot_col] = input_image_2d[y_idx,x_idx]
 
+    #toc_task = time.perf_counter()
+    #print (f'Image rotation completed in {toc_task - tic_task:0.4f} sec.')
+
     return image_rotate
 
 def movie_rotation(input_image_2d, angle_rad):
+
+    #tic_task = time.perf_counter()
 
     num_rows, num_cols = input_image_2d[0].shape
 
@@ -307,6 +315,11 @@ def movie_rotation(input_image_2d, angle_rad):
     center_row = float(num_rows)/2.
     for x_idx in range(0,num_cols):
         for y_idx in range(0,num_rows):
+            is_empty_cell = True
+            for img in range(0,len(input_image_2d)):
+                if input_image_2d[img][y_idx,x_idx]!=0.:
+                    is_empty_cell = False
+            if is_empty_cell: continue 
             delta_row = float(y_idx - center_row)
             delta_col = float(x_idx - center_col)
             delta_coord = np.array([delta_col,delta_row])
@@ -319,6 +332,9 @@ def movie_rotation(input_image_2d, angle_rad):
             if rot_col>=num_cols: continue
             for img in range(0,len(input_image_2d)):
                 image_rotate[img][rot_row,rot_col] = input_image_2d[img][y_idx,x_idx]
+
+    #toc_task = time.perf_counter()
+    #print (f'Movie rotation completed in {toc_task - tic_task:0.4f} sec.')
 
     return image_rotate
 
@@ -1002,14 +1018,25 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
                 if sample_idx>=n_samp: continue
                 clean_movie_1d[win][pix] += waveform[pix,sample_idx]
 
+    is_edge_image = False
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
         movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
-        image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask)
-        if image_leakage.pixels_width_1>0.:
+        #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
+        #if image_leakage.pixels_width_1>0.:
+        #    is_edge_image = True
+        #    for pix in range(0,len(movie_mask)):
+        #        clean_movie_1d[win][pix] = 0.
+        border_pixels = geometry.get_border_pixel_mask(1)
+        border_mask = border_pixels & movie_mask
+        leakage_intensity = np.sum(clean_movie_1d[win][border_mask])
+        n_pe_cleaning = np.sum(clean_movie_1d[win])
+        frac_leakage_intensity = leakage_intensity / n_pe_cleaning
+        if frac_leakage_intensity>0.05:
+            is_edge_image = True
             for pix in range(0,len(movie_mask)):
                 clean_movie_1d[win][pix] = 0.
 
@@ -1019,6 +1046,7 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
         for pix in range(0,len(image_mask)):
             if not image_mask[pix]: continue
             clean_image_1d[pix] += clean_movie_1d[win][pix]
+
 
     center_time = reset_time(clean_image_1d, clean_time_1d)
 
@@ -1063,7 +1091,7 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     eco_image_1d = image_cutout(geometry, rotate_image_1d, pixs_to_keep=pixs_to_keep)
     eco_time_1d = image_cutout(geometry, rotate_time_1d, pixs_to_keep=pixs_to_keep)
 
-    return lightcone, image_moment_array, eco_image_1d, eco_time_1d
+    return is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
 def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_movie_1d, make_plots = False):
@@ -1155,14 +1183,25 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
                 if sample_idx>=n_samp: continue
                 clean_movie_1d[win][pix] += waveform[pix,sample_idx]
 
+    is_edge_image = False
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
         movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
-        image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask)
-        if image_leakage.pixels_width_1>0.:
+        #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
+        #if image_leakage.pixels_width_1>0.:
+        #    is_edge_image = True
+        #    for pix in range(0,len(movie_mask)):
+        #        clean_movie_1d[win][pix] = 0.
+        border_pixels = geometry.get_border_pixel_mask(1)
+        border_mask = border_pixels & movie_mask
+        leakage_intensity = np.sum(clean_movie_1d[win][border_mask])
+        n_pe_cleaning = np.sum(clean_movie_1d[win])
+        frac_leakage_intensity = leakage_intensity / n_pe_cleaning
+        if frac_leakage_intensity>0.05:
+            is_edge_image = True
             for pix in range(0,len(movie_mask)):
                 clean_movie_1d[win][pix] = 0.
 
@@ -1302,5 +1341,5 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
         fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
         axbig.remove()
 
-    return lightcone, image_moment_array, whole_movie_1d
+    return is_edge_image, lightcone, image_moment_array, whole_movie_1d
 

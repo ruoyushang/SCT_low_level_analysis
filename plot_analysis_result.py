@@ -27,8 +27,8 @@ fig.set_figwidth(figsize_x)
 #ana_tag = 'movie_box3d'
 ana_tag = 'movie_box3d_fast'
 
-sim_files = 'sim_files.txt'
-#sim_files = 'sim_files_diffuse_gamma.txt'
+#sim_files = 'sim_files.txt'
+sim_files = 'sim_files_diffuse_gamma.txt'
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
@@ -46,14 +46,11 @@ def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
     if abs(image_direction)<image_dir_cut: 
         return False
+
+    #return True
+
     if fit_chi2/image_size>fit_chi2_cut:
         return False
-
-    #lightcone_cut = 0.8
-    #if lightcone<-1.*lightcone_cut:
-    #    return False
-    #if lightcone>lightcone_cut:
-    #    return False
 
     return True
 

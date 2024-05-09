@@ -2,6 +2,7 @@
 import os, sys
 import subprocess
 import glob
+import tracemalloc
 
 import time
 import numpy as np
@@ -33,6 +34,9 @@ figsize_x = 8.6
 figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
+
+# start memory profiling
+tracemalloc.start()
 
 def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
@@ -113,17 +117,19 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             star_cam_y = truth_info_array[8]
             star_cam_xy = [star_cam_x,star_cam_y]
 
-            lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy)
+            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy)
+
             image_size = image_moment_array[0]
             print (f'image_size = {image_size:0.3f}')
-            #if image_size<5000.:
+
             if image_size<image_size_cut:
                 print ('failed image_size_cut.')
                 continue
+            if is_edge_image:
+                print ('failed: edge image.')
+                continue
 
-            lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=False)
-            #lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=True)
-            #exit()
+            is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=False)
 
             if image_size>image_size_cut:
                 big_movie_matrix += [eco_movie_1d]
@@ -135,6 +141,8 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
             toc_img = time.perf_counter()
             print (f'Image analysis completed in {toc_img - tic_img:0.4f} sec.')
+    
+            print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
 
     ana_tag = 'training_sample'
@@ -142,7 +150,6 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
         pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix,big_movie_matrix], file)
-        #pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix], file)
 
     return
 
