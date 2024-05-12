@@ -24,11 +24,11 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-#ana_tag = 'movie_box3d'
-ana_tag = 'movie_box3d_fast'
+#ana_tag = 'image_box3d'
+ana_tag = 'image_box3d_fast'
 
-#sim_files = 'sim_files.txt'
-sim_files = 'sim_files_diffuse_gamma.txt'
+sim_files = 'sim_files.txt'
+#sim_files = 'sim_files_diffuse_gamma.txt'
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
@@ -71,6 +71,7 @@ def plot_monotel_analysis():
     list_image_direction = []
     list_time_direction = []
     list_bad_fit_chi2 = []
+    list_bad_image_size = []
     list_bad_image_direction = []
     list_lightcone = []
     list_truth_projection = []
@@ -165,6 +166,7 @@ def plot_monotel_analysis():
 
             if delta_camr>0.5:
                 list_bad_fit_chi2 += [fit_chi2/image_size]
+                list_bad_image_size += [image_size]
                 list_bad_image_direction += [abs(image_direction)]
 
             list_truth_energy += [np.log10(truth_energy)]
@@ -231,6 +233,20 @@ def plot_monotel_analysis():
     axbig.axhline(y=fit_chi2_cut)
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_chi2_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Image direction'
+    label_y = 'Image size'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_image_direction, list_image_size, s=90, c='b', marker='+', alpha=0.3)
+    axbig.scatter(list_bad_image_direction, list_bad_image_size, s=90, c='r', marker='+', alpha=0.3)
+    axbig.axvline(x=image_dir_cut)
+    axbig.set_xscale('log')
+    axbig.set_yscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_size_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
 

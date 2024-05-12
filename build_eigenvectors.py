@@ -1,5 +1,5 @@
 
-import os
+import os, sys
 import subprocess
 import glob
 import tracemalloc
@@ -48,48 +48,40 @@ sim_files = 'sim_files.txt'
 overwrite_file = True
 #overwrite_file = False
 
+make_movie = False
+
+telescope_type = sys.argv[1]
+
 training_sample_path = []
-#training_sample_path += [get_dataset_path("gamma_40deg_0deg_run2006___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
-#training_sample_path += [get_dataset_path("gamma_20deg_0deg_run744___cta-prod3-sct_desert-2150m-Paranal-SCT.simtel.gz")]
 n_samples = 0
 with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
-        if not overwrite_file:
-            if n_samples==15: continue
         training_sample_path += [get_dataset_path(line.strip('\n'))]
         n_samples += 1
 
 # start memory profiling
 tracemalloc.start()
 
-big_truth_matrix = []
-big_moment_matrix = []
-big_movie_matrix = []
-big_image_matrix = []
-big_time_matrix = []
-for path in range(0,len(training_sample_path)):
-    source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
-    subarray = source.subarray
-    ob_keys = source.observation_blocks.keys()
-    run_id = list(ob_keys)[0]
-    output_filename = f'{ctapipe_output}/output_samples/training_sample_run{run_id}.pkl'
-    print (f'loading pickle trainging sample data: {output_filename}')
-    if not os.path.exists(output_filename):
-        print (f'file does not exist.')
-        continue
-    training_sample = pickle.load(open(output_filename, "rb"))
+output_filename = f'{ctapipe_output}/output_machines/big_truth_matrix_{telescope_type}.pkl'
+big_truth_matrix = pickle.load(open(output_filename, "rb"))
 
-    big_truth_matrix += training_sample[0]
-    big_moment_matrix += training_sample[1]
-    big_image_matrix += training_sample[2]
-    big_time_matrix += training_sample[3]
-    big_movie_matrix += training_sample[4]
+output_filename = f'{ctapipe_output}/output_machines/big_moment_matrix_{telescope_type}.pkl'
+big_moment_matrix = pickle.load(open(output_filename, "rb"))
 
-    print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
+output_filename = f'{ctapipe_output}/output_machines/big_image_matrix_{telescope_type}.pkl'
+big_image_matrix = pickle.load(open(output_filename, "rb"))
 
-big_movie_matrix = np.array(big_movie_matrix)
+output_filename = f'{ctapipe_output}/output_machines/big_time_matrix_{telescope_type}.pkl'
+big_time_matrix= pickle.load(open(output_filename, "rb"))
+
+if make_movie:
+    output_filename = f'{ctapipe_output}/output_machines/big_movie_matrix_{telescope_type}.pkl'
+    big_movie_matrix = pickle.load(open(output_filename, "rb"))
+
 big_image_matrix = np.array(big_image_matrix)
 big_time_matrix = np.array(big_time_matrix)
+if make_movie:
+    big_movie_matrix = np.array(big_movie_matrix)
 
 fig, ax = plt.subplots()
 figsize_x = 8.6
@@ -110,7 +102,7 @@ def BigMatrixSVD(big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name):
 
     if overwrite_file:
         print (f'saving image eigenvector to {ctapipe_output}/output_machines...')
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_eigen_vectors.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_eigen_vectors_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(VT_eco, file)
 
@@ -123,7 +115,7 @@ def BigMatrixSVD(big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name):
     #axbig.set_xlim(0,100)
     axbig.set_xscale('log')
     axbig.plot(S_full)
-    fig.savefig(f'{ctapipe_output}/output_plots/training_{pkl_name}_signularvalue.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/training_{pkl_name}_signularvalue_{telescope_type}.png',bbox_inches='tight')
     axbig.remove()
 
     MakeLookupTable(VT_eco,big_matrix,moment_matrix,truth_matrix,image_rank,pkl_name+'_box3d',nvar=3)
@@ -222,50 +214,88 @@ def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_
         list_latent_space += [np.concatenate((image_latent_space, time_latent_space))]
 
         list_image_size += [image_size]
-        list_evt_weight += [pow(image_size,1.0)]
+        list_evt_weight += [pow(image_size,0.5)]
+        #list_evt_weight += [np.log(image_size)]
         list_arrival += [arrival]
         list_impact += [impact]
-        list_log_energy += [pow(10.,log_energy)/impact]
+        list_log_energy += [log_energy]
+        #list_log_energy += [pow(10.,log_energy)/impact]
 
+    list_predict = []
     target = list_arrival
     model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
-        if img % 20 != 0: continue
         predict = linear_model(list_latent_space[img], model)
+        list_predict += [predict]
+        if img % 20 != 0: continue
         print (f'arrival target = {target[img]}, predict = {predict}')
     print (f'chi2 = {chi2}')
 
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'predict arrival'
+    label_y = 'error (predict - truth)'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_predict, np.array(list_predict)-np.array(list_arrival), s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_predict_error_arrival.png',bbox_inches='tight')
+    axbig.remove()
+
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
+    list_predict = []
     target = list_impact
     model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
-        if img % 20 != 0: continue
         predict = linear_model(list_latent_space[img], model)
+        list_predict += [predict]
+        if img % 20 != 0: continue
         print (f'impact target = {target[img]}, predict = {predict}')
     print (f'chi2 = {chi2}')
 
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'predict impact'
+    label_y = 'error (predict - truth)'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_predict, np.array(list_predict)-np.array(list_impact), s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_predict_error_impact.png',bbox_inches='tight')
+    axbig.remove()
+
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
+    list_predict = []
     target = list_log_energy
     model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
-        if img % 20 != 0: continue
         predict = linear_model(list_latent_space[img], model)
+        list_predict += [predict]
+        if img % 20 != 0: continue
         print (f'log_energy target = {target[img]}, predict = {predict}')
     print (f'chi2 = {chi2}')
 
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'predict log energy'
+    label_y = 'error (predict - truth)'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_predict, np.array(list_predict)-np.array(list_log_energy), s=90, c='b', marker='+', alpha=0.1)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_predict_error_log_energy.png',bbox_inches='tight')
+    axbig.remove()
+
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -391,7 +421,7 @@ def MakeLookupTable(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_ran
     print (f'n_empty_cells = {n_empty_cells}, n_filled_cells = {n_filled_cells}, n_training_images = {n_training_images}, avg_images_per_cell = {avg_images_per_cell:0.1f}')
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(lookup_table, file)
 
@@ -449,12 +479,13 @@ def MakeLookupTable(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_ran
     axbig.remove()
     
 
-print ('Compute movie matrix SVD...')
-movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,50,'movie')
+if make_movie:
+    print ('Compute movie matrix SVD...')
+    movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,40,'movie')
 print ('Compute image matrix SVD...')
-image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,50,'image')
+image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,40,'image')
 print ('Compute time matrix SVD...')
-time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,200,'time')
+time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,160,'time')
 
 MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,big_moment_matrix,big_truth_matrix,'polynomial')
 

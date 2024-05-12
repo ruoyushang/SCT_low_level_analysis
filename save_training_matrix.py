@@ -38,7 +38,7 @@ fig.set_figwidth(figsize_x)
 # start memory profiling
 tracemalloc.start()
 
-def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=1000., max_evt=1e10):
+def run_save_training_matrix(training_sample_path,telescope_type, min_energy=0.1, max_energy=1000., max_evt=1e10):
 
     big_movie_matrix = []
     big_image_matrix = []
@@ -51,6 +51,8 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
     
     # Explore the instrument description
     subarray = source.subarray
+    print ('Array info:')
+    print (subarray.info())
     print (subarray.to_table())
     
     ob_keys = source.observation_blocks.keys()
@@ -107,8 +109,13 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
             tel_id = list(event.dl0.tel.keys())[tel_idx]
             #if event_id!=23003: continue
             #if tel_id!=20: continue
+
+            if str(telescope_type)!=str(source.subarray.tel[tel_id]): continue
+
             print ('====================================================================================')
+            print (f'Select telescope type: {telescope_type}')
             print (f'event_id = {event_id}, tel_id = {tel_id}')
+            print("TEL{:03}: {}".format(tel_id, source.subarray.tel[tel_id]))
 
             tic_img = time.perf_counter()
 
@@ -146,7 +153,7 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 
 
     ana_tag = 'training_sample'
-    output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}.pkl'
+    output_filename = f'{ctapipe_output}/output_samples/{ana_tag}_run{run_id}_{telescope_type}.pkl'
     print (f'writing file to {output_filename}')
     with open(output_filename,"wb") as file:
         pickle.dump([big_truth_matrix,big_moment_matrix,big_image_matrix,big_time_matrix,big_movie_matrix], file)
@@ -156,11 +163,12 @@ def run_save_training_matrix(training_sample_path, min_energy=0.1, max_energy=10
 tic = time.perf_counter()
 
 training_sample_path = sys.argv[1]
+telescope_type = sys.argv[2]
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 #subprocess.call(['sh', './clean_plots.sh'])
 
-run_save_training_matrix(training_sample_path,min_energy=0.1,max_energy=100.0,max_evt=1e10)
+run_save_training_matrix(training_sample_path,telescope_type,min_energy=0.1,max_energy=100.0,max_evt=1e10)
 
 toc = time.perf_counter()
 

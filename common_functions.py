@@ -194,6 +194,8 @@ def linear_regression(input_data, target_data, weight):
         for entry in range(0,len(input_data[evt])):
             single_x += [input_data[evt][entry]]
             single_x += [input_data[evt][entry]**2]
+            #for entry2 in range(entry,len(input_data[evt])):
+            #    single_x += [input_data[evt][entry]*input_data[evt][entry2]]
             #single_x += [input_data[evt][entry]**3]
             #single_x += [input_data[evt][entry]**4]
             #single_x += [input_data[evt][entry]**5]
@@ -224,6 +226,8 @@ def linear_model(input_data,A):
     for entry in range(0,len(input_data)):
         x += [input_data[entry]]
         x += [input_data[entry]**2]
+        #for entry2 in range(entry,len(input_data)):
+        #    x += [input_data[entry]*input_data[entry2]]
         #x += [input_data[entry]**3]
         #x += [input_data[entry]**4]
         #x += [input_data[entry]**5]
@@ -696,7 +700,7 @@ def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lo
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
     n_eco_pix = len(eco_image_1d)
 
     fit_arrival = init_params[0]
@@ -791,7 +795,7 @@ def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lo
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
 
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
