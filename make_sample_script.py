@@ -10,18 +10,18 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_work = os.environ.get("CTAPIPE_WORK_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
-#sim_files = 'sim_files.txt'
+sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
-sim_files = 'sim_files_merged_point_20deg.txt'
+#sim_files = 'sim_files_merged_point_20deg.txt'
 
 list_tel_type = []
 list_tel_type += ['MST_SCT_SCTCam']
-list_tel_type += ['MST_MST_NectarCam']
-list_tel_type += ['MST_MST_FlashCam']
-list_tel_type += ['SST_1M_DigiCam']
-list_tel_type += ['SST_ASTRI_ASTRICam']
-list_tel_type += ['SST_GCT_CHEC']
-list_tel_type += ['LST_LST_LSTCam']
+#list_tel_type += ['MST_MST_NectarCam']
+#list_tel_type += ['MST_MST_FlashCam']
+#list_tel_type += ['SST_1M_DigiCam']
+#list_tel_type += ['SST_ASTRI_ASTRICam']
+#list_tel_type += ['SST_GCT_CHEC']
+#list_tel_type += ['LST_LST_LSTCam']
 
 n_samples = 0
 runlist = []

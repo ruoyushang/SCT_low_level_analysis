@@ -695,12 +695,12 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
-def movie_simulation(fig, subarray, run_id, tel_id, event, init_params, movie_lookup_table, movie_eigen_vectors, make_plots=False):
+def movie_simulation(fig, telescope_type, subarray, run_id, tel_id, event, init_params, movie_lookup_table, movie_eigen_vectors, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event)
     n_eco_pix = len(eco_image_1d)
 
     fit_arrival = init_params[0]
@@ -790,12 +790,12 @@ def make_a_gif(fig, subarray, run_id, tel_id, event, eco_image_1d, movie1_2d, mo
     axbig.remove()
 
 
-def image_simulation(fig, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors):
+def image_simulation(fig, telescope_type, subarray, run_id, tel_id, event, init_params, image_lookup_table, image_eigen_vectors, time_lookup_table, time_eigen_vectors):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
 
-    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+    is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event)
 
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
@@ -980,10 +980,14 @@ def calc_waveform_baseline(geometry,tel_id,waveform,image_mask):
     return np.mean(baselines)
 
 
-def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
+def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
+    xmax = max(geometry.pix_x)/u.m
+    xmin = min(geometry.pix_x)/u.m
+    ymax = max(geometry.pix_y)/u.m
+    ymin = min(geometry.pix_y)/u.m
 
     #selected_gain_channel = event.r1.tel[tel_id].selected_gain_channel
 
@@ -993,7 +997,14 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
+    boundary_thresh=1
+    picture_thresh=3
+    min_number_picture_neighbors=2
+    if telescope_type!="MST_SCT_SCTCam":
+        boundary_thresh=5
+        picture_thresh=8
+        min_number_picture_neighbors=0
+    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
     for pix in range(0,len(image_mask)):
         if not image_mask[pix]:
             clean_image_1d[pix] = 0.
@@ -1026,7 +1037,14 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
-        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
+        boundary_thresh=1
+        picture_thresh=2
+        min_number_picture_neighbors=2
+        if telescope_type!="MST_SCT_SCTCam":
+            boundary_thresh=5
+            picture_thresh=5
+            min_number_picture_neighbors=0
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
         #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
@@ -1095,6 +1113,59 @@ def make_standard_image(fig, subarray, run_id, tel_id, event, star_cam_xy=None, 
     eco_image_1d = image_cutout(geometry, rotate_image_1d, pixs_to_keep=pixs_to_keep)
     eco_time_1d = image_cutout(geometry, rotate_time_1d, pixs_to_keep=pixs_to_keep)
 
+    if image_size>image_size_cut and make_plots:
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(clean_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+        if np.cos(angle*u.rad)>0.:
+            line_x = np.linspace(image_center_x, xmax, 100)
+            line_y = -(line_a*line_x + line_b)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        else:
+            line_x = np.linspace(xmin, image_center_x, 100)
+            line_y = -(line_a*line_x + line_b)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        axbig.set_xlim(xmin,xmax)
+        axbig.set_ylim(ymin,ymax)
+        txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
+        txt = axbig.text(-0.35, 0.32, 'image direction = %0.2e'%(image_direction), fontdict=font)
+        txt = axbig.text(-0.35, 0.29, 'time direction = %0.2e'%(time_direction), fontdict=font)
+        txt = axbig.text(-0.35, 0.26, 'light cone = %0.2e'%(lightcone), fontdict=font)
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_image.png',bbox_inches='tight')
+        axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(clean_time_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_clean_time.png',bbox_inches='tight')
+        axbig.remove()
+
+        fig.clf()
+        axbig = fig.add_subplot()
+        label_x = 'X'
+        label_y = 'Y'
+        axbig.set_xlabel(label_x)
+        axbig.set_ylabel(label_y)
+        im = axbig.imshow(rotate_image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax))
+        cbar = fig.colorbar(im)
+        axbig.scatter(0., 0., s=90, facecolors='none', edgecolors='r', marker='o')
+        fig.savefig(f'{ctapipe_output}/output_plots/evt{event_id}_tel{tel_id}_rotate_image.png',bbox_inches='tight')
+        axbig.remove()
+
+
     return is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d
 
 
@@ -1150,7 +1221,7 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
 
     return dirty_image_1d, list_image_2d
 
-def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
+def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_xy=None, make_plots=False):
 
     event_id = event.index['event_id']
     geometry = subarray.tel[tel_id].camera.geometry
@@ -1161,7 +1232,14 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
+    boundary_thresh=1
+    picture_thresh=3
+    min_number_picture_neighbors=2
+    if telescope_type!="MST_SCT_SCTCam":
+        boundary_thresh=5
+        picture_thresh=8
+        min_number_picture_neighbors=0
+    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
     for pix in range(0,len(image_mask)):
         if not image_mask[pix]:
             clean_image_1d[pix] = 0.
@@ -1191,7 +1269,14 @@ def make_a_movie(fig, subarray, run_id, tel_id, event, star_cam_xy=None, make_pl
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
-        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=1,picture_thresh=2,min_number_picture_neighbors=2)
+        boundary_thresh=1
+        picture_thresh=2
+        min_number_picture_neighbors=2
+        if telescope_type!="MST_SCT_SCTCam":
+            boundary_thresh=5
+            picture_thresh=5
+            min_number_picture_neighbors=0
+        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
         #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem

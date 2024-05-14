@@ -42,8 +42,9 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 print (f'ctapipe_output = {ctapipe_output}')
 
-sim_files = 'sim_files.txt'
+#sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
+sim_files = 'sim_files_merged_point_20deg.txt'
 
 overwrite_file = True
 #overwrite_file = False
@@ -52,12 +53,12 @@ make_movie = False
 
 telescope_type = sys.argv[1]
 
-training_sample_path = []
-n_samples = 0
-with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
-    for line in file:
-        training_sample_path += [get_dataset_path(line.strip('\n'))]
-        n_samples += 1
+#training_sample_path = []
+#n_samples = 0
+#with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
+#    for line in file:
+#        training_sample_path += [get_dataset_path(line.strip('\n'))]
+#        n_samples += 1
 
 # start memory profiling
 tracemalloc.start()
@@ -478,14 +479,19 @@ def MakeLookupTable(eigenvectors,big_matrix,moment_matrix,truth_matrix,image_ran
     fig.savefig(f'{ctapipe_output}/output_plots/scatter_log_energy_vs_arrival.png',bbox_inches='tight')
     axbig.remove()
     
+matrix_rank = 40
+if telescope_type=="MST_SCT_SCTCam":
+    matrix_rank = 40
+else:
+    matrix_rank = 20
 
 if make_movie:
     print ('Compute movie matrix SVD...')
-    movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,40,'movie')
+    movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'movie')
 print ('Compute image matrix SVD...')
-image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,40,'image')
+image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'image')
 print ('Compute time matrix SVD...')
-time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,160,'time')
+time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,4*matrix_rank,'time')
 
 MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,big_moment_matrix,big_truth_matrix,'polynomial')
 

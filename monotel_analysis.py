@@ -264,8 +264,11 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     if do_it_fast:
         return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    arrival_range = 1.5*arrival_step_size
-    impact_range = 1.5*impact_step_size
+    arrival_search_range = 1.5
+    if telescope_type!="MST_SCT_SCTCam": arrival_search_range = 100.5
+
+    arrival_range = arrival_search_range*arrival_step_size
+    impact_range = arrival_search_range*impact_step_size
     log_energy_range = 100.5*log_energy_step_size
     init_params = [fit_arrival,fit_impact,fit_log_energy]
     short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
@@ -291,8 +294,8 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     if is_good_result:
         return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    arrival_range = 5.5*arrival_step_size
-    impact_range = 5.5*impact_step_size
+    arrival_range = 4*arrival_search_range*arrival_step_size
+    impact_range = 4*arrival_search_range*impact_step_size
     log_energy_range = 100.5*log_energy_step_size
     init_params = [fit_arrival,fit_impact,fit_log_energy]
     short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
@@ -310,8 +313,8 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     if is_good_result:
         return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    arrival_range = 100.5*arrival_step_size
-    impact_range = 100.5*impact_step_size
+    arrival_range = 100*arrival_search_range*arrival_step_size
+    impact_range = 100*arrival_search_range*impact_step_size
     log_energy_range = 100.5*log_energy_step_size
     init_params = [fit_arrival,fit_impact,fit_log_energy]
     short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
@@ -471,7 +474,10 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             if select_tel_id!=0:
                 if tel_id!=select_tel_id: continue
 
+            if str(telescope_type)!=str(source.subarray.tel[tel_id]): continue
+
             print ('====================================================================================')
+            print (f'Select telescope type: {telescope_type}')
             print (f'event_id = {event_id}, tel_id = {tel_id}')
 
             truth_info_array = find_image_truth(source, subarray, run_id, tel_id, event)
@@ -489,7 +495,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length/u.m
 
 
-            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, subarray, run_id, tel_id, event)
+            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event)
             image_size = image_moment_array[0]
             image_center_x = image_moment_array[1]
             image_center_y = image_moment_array[2]
@@ -523,7 +529,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             print ('==================================================================')
             tic_task = time.perf_counter()
 
-            is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, subarray, run_id, tel_id, event, make_plots=False)
+            is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, make_plots=False)
 
             image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,movie_lookup_table_poly_pkl)
 
@@ -572,13 +578,13 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
                     fit_params = [fit_arrival,fit_impact,fit_log_energy]
                     plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, star_cam_x, star_cam_y, fit_cam_x, fit_cam_y, 'image')
                     if not do_it_fast:
-                        image_simulation(fig, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
+                        image_simulation(fig, telescope_type, subarray, run_id, tel_id, event, fit_params, image_lookup_table_pkl, image_eigen_vectors_pkl, time_lookup_table_pkl, time_eigen_vectors_pkl)
 
                 if 'movie' in ana_tag:
 
                     fit_params = [fit_arrival,fit_impact,fit_log_energy]
                     plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_moment_array, star_cam_x, star_cam_y, fit_cam_x, fit_cam_y, 'movie')
-                    sim_image, sim_movie = movie_simulation(fig, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl)
+                    sim_image, sim_movie = movie_simulation(fig, telescope_type, subarray, run_id, tel_id, event, fit_params, movie_lookup_table_pkl, movie_eigen_vectors_pkl)
                     data_image, data_movie = display_a_movie(fig, subarray, run_id, tel_id, event, len(eco_image_1d), eco_movie_1d)
                     make_a_gif(fig, subarray, run_id, tel_id, event, data_image, data_movie, sim_movie)
 

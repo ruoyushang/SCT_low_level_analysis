@@ -24,8 +24,10 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-#ana_tag = 'image_box3d'
-ana_tag = 'image_box3d_fast'
+ana_tag = 'image_box3d'
+#ana_tag = 'image_box3d_fast'
+
+telescope_type = 'MST_SCT_SCTCam'
 
 sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
@@ -94,7 +96,7 @@ def plot_monotel_analysis():
         ob_keys = source.observation_blocks.keys()
         run_id = list(ob_keys)[0]
     
-        input_filename = f'{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}.pkl'
+        input_filename = f'{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}_{telescope_type}.pkl'
         print (f'loading pickle analysis data: {input_filename}')
         if not os.path.exists(input_filename):
             print (f'file does not exist.')
@@ -232,6 +234,7 @@ def plot_monotel_analysis():
     axbig.axvline(x=image_dir_cut)
     axbig.axhline(y=fit_chi2_cut)
     axbig.set_xscale('log')
+    axbig.set_yscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_chi2_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
