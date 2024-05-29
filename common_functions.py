@@ -239,6 +239,71 @@ def linear_model(input_data,A):
 
     return y
 
+def image_translation_and_rotation(geometry, input_image_1d, shift_x, shift_y, angle_rad):
+
+    pixel_width = float(geometry.pixel_width[0]/u.m)
+    rotation_matrix = np.array([[np.cos(angle_rad), -np.sin(angle_rad)],[np.sin(angle_rad), np.cos(angle_rad)]])
+
+    all_coord_x = []
+    all_coord_y = []
+    for pix in range(0,len(input_image_1d[0])):
+        x = float(geometry.pix_x[pix]/u.m)
+        y = float(geometry.pix_y[pix]/u.m)
+        all_coord_x += [x]
+        all_coord_y += [y]
+
+    list_output_image_1d = []
+    for img in range(0,len(input_image_1d)):
+        old_coord_x = []
+        old_coord_y = []
+        old_image = []
+        for pix in range(0,len(input_image_1d[img])):
+            x = all_coord_x[pix]
+            y = all_coord_y[pix]
+            if input_image_1d[img][pix]==0.: continue
+            old_coord_x += [x]
+            old_coord_y += [y]
+            old_image += [input_image_1d[img][pix]]
+
+        trans_x = []
+        trans_y = []
+        for pix in range(0,len(old_coord_x)):
+            x = old_coord_x[pix]
+            y = old_coord_y[pix]
+            new_x = (x-shift_x)
+            new_y = (y-shift_y)
+            trans_x += [new_x]
+            trans_y += [new_y]
+
+        rotat_x = []
+        rotat_y = []
+        for pix in range(0,len(old_coord_x)):
+            x = trans_x[pix]
+            y = trans_y[pix]
+            initi_coord = np.array([y,x])
+            rotat_coord = rotation_matrix @ initi_coord
+            new_x = float(rotat_coord[0])
+            new_y = float(rotat_coord[1])
+            rotat_x += [new_x]
+            rotat_y += [-new_y]
+
+        output_image_1d = np.zeros_like(input_image_1d[img])
+        for pix1 in range(0,len(old_coord_x)):
+            min_dist = 1e10
+            nearest_pix = 0
+            for pix2 in range(0,len(input_image_1d[img])):
+                x = all_coord_x[pix2]
+                y = all_coord_y[pix2]
+                if abs(x-rotat_x[pix1])>pixel_width: continue
+                if abs(y-rotat_y[pix1])>pixel_width: continue
+                dist = (x-rotat_x[pix1])*(x-rotat_x[pix1]) + (y-rotat_y[pix1])*(y-rotat_y[pix1])
+                if min_dist>dist:
+                    min_dist = dist
+                    nearest_pix = pix2
+            output_image_1d[nearest_pix] += old_image[pix1] 
+        list_output_image_1d += [output_image_1d]
+
+    return list_output_image_1d
 
 def image_translation(input_image_2d, shift_row, shift_col):
 
@@ -1014,6 +1079,7 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
             clean_time_1d[pix] = event.dl1.tel[tel_id].peak_time[pix]
 
     print (f'np.sum(clean_image_1d) = {np.sum(clean_image_1d)}')
+    center_time = reset_time(clean_image_1d, clean_time_1d)
 
 
     waveform = event.dl0.tel[tel_id].waveform
@@ -1062,15 +1128,14 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
             for pix in range(0,len(movie_mask)):
                 clean_movie_1d[win][pix] = 0.
 
-    for pix in range(0,len(image_mask)):
-        clean_image_1d[pix] = 0.
-    for win in range(0,n_windows):
-        for pix in range(0,len(image_mask)):
-            if not image_mask[pix]: continue
-            clean_image_1d[pix] += clean_movie_1d[win][pix]
+    #for pix in range(0,len(image_mask)):
+    #    clean_image_1d[pix] = 0.
+    #for win in range(0,n_windows):
+    #    for pix in range(0,len(image_mask)):
+    #        if not image_mask[pix]: continue
+    #        clean_image_1d[pix] += clean_movie_1d[win][pix]
 
-
-    center_time = reset_time(clean_image_1d, clean_time_1d)
+    #center_time = reset_time(clean_image_1d, clean_time_1d)
 
     clean_image_2d = geometry.image_to_cartesian_representation(clean_image_1d)
     remove_nan_pixels(clean_image_2d)
@@ -1092,16 +1157,34 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     line_b = image_moment_array[9]
     truth_projection = image_moment_array[10]
 
+    # verify with hillas
+    if image_size>1.*image_size_cut:
+        print (f'image_center_x = {image_center_x}')
+        print (f'image_center_y = {image_center_y}')
+        print (f'semi_major = {semi_major}')
+        print (f'semi_minor = {semi_minor}')
+        print (f'angle = {angle}')
+        hillas = hillas_parameters(geometry, clean_image_1d)
+        print ('hillas:')
+        print (hillas)
+        #exit()
+
     lightcone = calculate_lightcone(image_direction,time_direction)
 
-    shift_pix_x = image_center_x/pixel_width
-    shift_pix_y = image_center_y/pixel_width
-    shift_image_2d = image_translation(clean_image_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-    shift_time_2d = image_translation(clean_time_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-    rotate_image_2d = image_rotation(shift_image_2d, angle*u.rad)
-    rotate_time_2d = image_rotation(shift_time_2d, angle*u.rad)
-    rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
-    rotate_time_1d = geometry.image_from_cartesian_representation(rotate_time_2d)
+    #shift_pix_x = image_center_x/pixel_width
+    #shift_pix_y = image_center_y/pixel_width
+    #shift_image_2d = image_translation(clean_image_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
+    #shift_time_2d = image_translation(clean_time_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
+    #rotate_image_2d = image_rotation(shift_image_2d, angle*u.rad)
+    #rotate_time_2d = image_rotation(shift_time_2d, angle*u.rad)
+    #rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
+    #rotate_time_1d = geometry.image_from_cartesian_representation(rotate_time_2d)
+
+    list_rotat_image_1d = image_translation_and_rotation(geometry, [clean_image_1d,clean_time_1d], image_center_x, image_center_y, angle*u.rad)
+    rotate_image_1d = list_rotat_image_1d[0]
+    rotate_time_1d = list_rotat_image_1d[1]
+    rotate_image_2d = geometry.image_to_cartesian_representation(rotate_image_1d)
+    rotate_time_2d = geometry.image_to_cartesian_representation(rotate_time_1d)
 
     pixs_to_keep = []
     for pix in range(0,len(clean_image_1d)):
@@ -1248,6 +1331,8 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
             clean_image_1d[pix] = event.dl1.tel[tel_id].image[pix]
             clean_time_1d[pix] = event.dl1.tel[tel_id].peak_time[pix]
 
+    center_time = reset_time(clean_image_1d, clean_time_1d)
+
     waveform = event.dl0.tel[tel_id].waveform
     n_pix, n_samp = waveform.shape
     n_windows = int(total_samples/n_samples_per_window)
@@ -1294,16 +1379,16 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
             for pix in range(0,len(movie_mask)):
                 clean_movie_1d[win][pix] = 0.
 
-    for pix in range(0,len(image_mask)):
-        clean_image_1d[pix] = 0.
-    for win in range(0,n_windows):
-        for pix in range(0,len(image_mask)):
-            if not image_mask[pix]: continue
-            clean_image_1d[pix] += clean_movie_1d[win][pix]
-    print (f'np.sum(clean_image_1d) = {np.sum(clean_image_1d)} (after truncation removal)')
+    #for pix in range(0,len(image_mask)):
+    #    clean_image_1d[pix] = 0.
+    #for win in range(0,n_windows):
+    #    for pix in range(0,len(image_mask)):
+    #        if not image_mask[pix]: continue
+    #        clean_image_1d[pix] += clean_movie_1d[win][pix]
+    #print (f'np.sum(clean_image_1d) = {np.sum(clean_image_1d)} (after truncation removal)')
 
-    center_time = reset_time(clean_image_1d, clean_time_1d)
-    print (f'movie center_time = {center_time}')
+    #center_time = reset_time(clean_image_1d, clean_time_1d)
+    #print (f'movie center_time = {center_time}')
 
     clean_image_2d = geometry.image_to_cartesian_representation(clean_image_1d)
     remove_nan_pixels(clean_image_2d)
