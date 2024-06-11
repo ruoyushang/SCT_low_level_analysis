@@ -491,7 +491,7 @@ def image_cutout_restore(geometry, eco_image_1d, origin_image_1d):
         else:
             origin_image_1d[pix] = 0.
 
-def fit_image_to_line(geometry,image_input_1d,transpose=False):
+def least_square_fit(power, input_data, target_data, weight):
 
     # solve x*A = y using SVD
     # y_{0} = ( x_{0,0} x_{0,1} ... 1 )  a_{0}
@@ -502,59 +502,154 @@ def fit_image_to_line(geometry,image_input_1d,transpose=False):
     x = []
     y = []
     w = []
-    for pix in range(0,len(image_input_1d)):
-        if image_input_1d[pix]==0.: continue
-        if not transpose:
-            input_x = []
-            input_x += [1.]
-            input_x += [float(geometry.pix_x[pix]/u.m)]
-            x += [input_x]
-            y += [float(geometry.pix_y[pix]/u.m)]
-            w += [image_input_1d[pix]]
-        else:
-            input_x = []
-            input_x += [1.]
-            input_x += [float(geometry.pix_y[pix]/u.m)]
-            x += [input_x]
-            y += [float(geometry.pix_x[pix]/u.m)]
-            w += [image_input_1d[pix]]
+    for evt in range(0,len(input_data)):
+        input_x = []
+        for p in range(0,power):
+            input_x += [pow(input_data[evt],p)]
+        x += [input_x]
+        y += [target_data[evt]]
+        w += [weight[evt]]
     x = np.array(x)
     y = np.array(y)
     w = np.diag(w)
-
-    if np.sum(w)==0.:
-        return 0., 0., np.inf
-
+  
     # Have a look: https://en.wikipedia.org/wiki/Weighted_least_squares
     # Compute the weighted SVD
     U, S, Vt = np.linalg.svd(x.T @ w @ x, full_matrices=False)
-    #entry_cut = 1
-    #for entry in range(0,len(S)):
-    #    entry_cut = entry
-    #    if S[entry]/S[0]<1e-10: break
-    #U_eco = U[:, :entry_cut]
-    #Vt_eco = Vt[:entry_cut, :]
-    #S_eco = S[:entry_cut]
-    U_eco = U
-    Vt_eco = Vt
-    S_eco = S
     # Calculate the weighted pseudo-inverse
-    S_pseudo_inv = np.diag(1 / S_eco)
-    x_pseudo_inv = (Vt_eco.T @ S_pseudo_inv @ U_eco.T) @ x.T
+    S_pseudo_inv = np.diag(1 / S)
+    for entry in range(0,len(S)):
+        if S[entry]/S[0]<1e-5: 
+            S_pseudo_inv[entry,entry] = 0.
+    x_pseudo_inv = (Vt.T @ S_pseudo_inv @ U.T) @ x.T
     # Compute the weighted least-squares solution
     A_svd = x_pseudo_inv @ (w @ y)
     # Compute parameter error
-    A_cov = (Vt_eco.T @ S_pseudo_inv @ U_eco.T)
+    A_cov = (Vt.T @ S_pseudo_inv @ U.T)
     A_err = np.sqrt(np.diag(A_cov))
 
     # Compute chi
     chi = (x.dot(A_svd)-y) @ np.sqrt(w)
+    chi2 = np.sum(np.square(chi))
 
-    b = float(A_svd[0])
-    a = float(A_svd[1])
-    a_err = float(A_err[1])
+    return A_svd, A_err, chi2
 
-    return a, b, a_err
+def pca_fit_image_to_line(geometry,image_input_1d,transpose=False):
+
+    x = []
+    y = []
+    w = []
+    for pix in range(0,len(image_input_1d)):
+        if image_input_1d[pix]==0.: continue
+        if not transpose:
+            x += [float(geometry.pix_x[pix]/u.m)]
+            y += [float(geometry.pix_y[pix]/u.m)]
+            w += [image_input_1d[pix]]
+        else:
+            x += [float(geometry.pix_y[pix]/u.m)]
+            y += [float(geometry.pix_x[pix]/u.m)]
+            w += [image_input_1d[pix]]
+    x = np.array(x)
+    y = np.array(y)
+    w = np.array(w)
+
+    if np.sum(w)==0.:
+        return 0., 0., np.inf
+
+    avg_x = np.sum(w * x)/np.sum(w)
+    avg_y = np.sum(w * y)/np.sum(w)
+
+    # zero-centered data
+    x = []
+    y = []
+    D = []
+    for pix in range(0,len(image_input_1d)):
+        if image_input_1d[pix]==0.: continue
+        for pe in range(0,int(image_input_1d[pix])):
+            if not transpose:
+                x += [float(geometry.pix_x[pix]/u.m)-avg_x]
+                y += [float(geometry.pix_y[pix]/u.m)-avg_y]
+            else:
+                x += [float(geometry.pix_y[pix]/u.m)-avg_y]
+                y += [float(geometry.pix_x[pix]/u.m)-avg_x]
+    x = np.array(x)
+    y = np.array(y)
+    D += [x]
+    D += [y]
+
+    # Find principal components (SVD)
+    U, S, VT = np.linalg.svd(D,full_matrices=0)
+    fit_a = np.arctan(U[0][1]/U[0][0])
+    fit_b = float(avg_y - fit_a*avg_x)
+
+    R_inv = np.array([[np.cos(-fit_a), -np.sin(-fit_a)],     # Rotation matrix
+                      [np.sin(-fit_a), np.cos(-fit_a)]])
+
+    C = R_inv @ D # rotated data
+
+    x_rot = C[0,:]
+    y_rot = C[1,:]
+    error = float(geometry.pixel_width[0]/u.m)
+    weights = np.full(y_rot.shape, pow(1./error,2))
+
+    a_rot, a_rot_err, chi2 = least_square_fit(2, x_rot, y_rot, weights)
+    #print (f'b_rot = {a_rot[0]:0.3f} +/- {a_rot_err[0]:0.3f}')
+    #print (f'a_rot = {a_rot[1]:0.3f} +/- {a_rot_err[1]:0.3f}')
+    fit_a_err = a_rot_err[1]
+
+    return fit_a, fit_b, fit_a_err, chi2
+
+def fit_image_to_line(geometry,image_input_1d,transpose=False):
+
+    x = []
+    y = []
+    w = []
+    for pix in range(0,len(image_input_1d)):
+        if image_input_1d[pix]==0.: continue
+        if not transpose:
+            x += [float(geometry.pix_x[pix]/u.m)]
+            y += [float(geometry.pix_y[pix]/u.m)]
+            w += [image_input_1d[pix]]
+        else:
+            x += [float(geometry.pix_y[pix]/u.m)]
+            y += [float(geometry.pix_x[pix]/u.m)]
+            w += [image_input_1d[pix]]
+    x = np.array(x)
+    y = np.array(y)
+    w = np.array(w)
+
+    if np.sum(w)==0.:
+        return 0., 0., np.inf
+
+    avg_x = np.sum(w * x)/np.sum(w)
+    avg_y = np.sum(w * y)/np.sum(w)
+
+    # zero-centered data
+    xc = []
+    yc = []
+    for pix in range(0,len(image_input_1d)):
+        if image_input_1d[pix]==0.: continue
+        for pe in range(0,int(image_input_1d[pix])):
+            if not transpose:
+                xc += [float(geometry.pix_x[pix]/u.m)-avg_x]
+                yc += [float(geometry.pix_y[pix]/u.m)-avg_y]
+            else:
+                xc += [float(geometry.pix_y[pix]/u.m)-avg_y]
+                yc += [float(geometry.pix_x[pix]/u.m)-avg_x]
+    xc = np.array(xc)
+    yc = np.array(yc)
+
+    error = float(geometry.pixel_width[0]/u.m)
+    weights = np.full(yc.shape, pow(1./error,2))
+
+    a_mtx, a_mtx_err, chi2 = least_square_fit(2, xc, yc, weights)
+    fit_a = a_mtx[1]
+    fit_a_err = 2.*a_mtx_err[1]
+    fit_b = float(avg_y - fit_a*avg_x)
+    fit_b_err = 2.*a_mtx_err[0]
+
+    return fit_a, fit_b, fit_a_err, fit_b_err, chi2
+
 
 def reset_time(input_image_1d, input_time_1d):
 
@@ -596,7 +691,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         center_time += input_time_1d[pix]*input_image_1d[pix]
 
     if image_size<image_size_cut:
-        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
 
     mask_center_x = mask_center_x/mask_size
     mask_center_y = mask_center_y/mask_size
@@ -632,16 +727,33 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         semi_minor_sq = semi_major_sq
         semi_major_sq = x
 
-    a, b, a_err = fit_image_to_line(geometry,input_image_1d)
-    aT, bT, a_err_T = fit_image_to_line(geometry,input_image_1d,transpose=True)
-    #print (f'angle 1 = {np.arctan(a)}')
-    #print (f'angle 2 = {np.arctan(1./aT)}')
-    if a_err>a_err_T and aT!=0.:
+    truth_a = image_center_y/image_center_x
+    print (f'truth_a = {truth_a}')
+
+    #a, b, a_err, chi2 = pca_fit_image_to_line(geometry,input_image_1d)
+    #aT, bT, aT_err, chi2T = pca_fit_image_to_line(geometry,input_image_1d,transpose=True)
+    #if chi2>chi2T and aT!=0.:
+    #    a = 1./aT
+    #    b = -bT/aT
+    #    a_err = aT_err
+    #print (f'a = {a}')
+    #print (f'b = {b}')
+    #print (f'a_err = {a_err}')
+
+    a, b, a_err, b_err, chi2 = fit_image_to_line(geometry,input_image_1d)
+    aT, bT, aT_err, bT_err, chi2T = fit_image_to_line(geometry,input_image_1d,transpose=True)
+    if chi2>chi2T and aT!=0.:
         a = 1./aT
         b = -bT/aT
-        a_err = a_err_T
+        a_err = aT_err/(aT*aT)
+        b_err = bT_err/aT
+    print (f'a = {a}')
+    print (f'b = {b}')
+    print (f'a_err = {a_err}')
+    print (f'b_err = {b_err}')
+
     if a_err==np.inf:
-        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
     angle = np.arctan(a)
     angle_err = 1./(1.+a*a)*a_err
 
@@ -694,7 +806,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     if not star_cam_xy==None:
         angle = truth_angle
 
-    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection, a_err]
+    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection, a_err, b_err]
 
 def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
 
@@ -1046,18 +1158,18 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
         line_x = np.linspace(image_center_x, xmax, 100)
         line_y = -(line_a*line_x + line_b)
         axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-        #line_y = -((line_a+line_a_err)*line_x + line_b)
-        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-        #line_y = -((line_a-line_a_err)*line_x + line_b)
-        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
     else:
         line_x = np.linspace(xmin, image_center_x, 100)
         line_y = -(line_a*line_x + line_b)
         axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-        #line_y = -((line_a+line_a_err)*line_x + line_b)
-        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-        #line_y = -((line_a-line_a_err)*line_x + line_b)
-        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+        axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
     txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
@@ -1189,6 +1301,7 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     line_b = image_moment_array[9]
     truth_projection = image_moment_array[10]
     line_a_err = image_moment_array[11]
+    line_b_err = image_moment_array[12]
 
     # verify with hillas
     if image_size>1.*image_size_cut:
@@ -1243,18 +1356,18 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
             line_x = np.linspace(image_center_x, xmax, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            #line_y = -((line_a+line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-            #line_y = -((line_a-line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         else:
             line_x = np.linspace(xmin, image_center_x, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            #line_y = -((line_a+line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-            #line_y = -((line_a-line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
         txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
@@ -1452,6 +1565,7 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
     line_b = image_moment_array[9]
     truth_projection = image_moment_array[10]
     line_a_err = image_moment_array[11]
+    line_b_err = image_moment_array[12]
     print (f'image_size = {image_size:0.1f}')
 
     lightcone = calculate_lightcone(image_direction,time_direction)
@@ -1520,18 +1634,18 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
             line_x = np.linspace(image_center_x, xmax, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            #line_y = -((line_a+line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-            #line_y = -((line_a-line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         else:
             line_x = np.linspace(xmin, image_center_x, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
-            #line_y = -((line_a+line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
-            #line_y = -((line_a-line_a_err)*line_x + line_b)
-            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a+line_a_err)*line_x + line_b-line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            line_y = -((line_a-line_a_err)*line_x + line_b+line_a_err*image_center_x)
+            axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
         txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
