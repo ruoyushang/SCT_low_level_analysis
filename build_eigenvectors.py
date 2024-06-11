@@ -42,9 +42,9 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 print (f'ctapipe_output = {ctapipe_output}')
 
-#sim_files = 'sim_files.txt'
+sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
-sim_files = 'sim_files_merged_point_20deg.txt'
+#sim_files = 'sim_files_merged_point_20deg.txt'
 
 overwrite_file = True
 #overwrite_file = False
@@ -224,14 +224,25 @@ def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_
 
     list_predict = []
     target = list_arrival
-    model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
+    model, model_err, chi = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
         predict = linear_model(list_latent_space[img], model)
         list_predict += [predict]
         if img % 20 != 0: continue
         print (f'arrival target = {target[img]}, predict = {predict}')
-    print (f'chi2 = {chi2}')
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    hist_binsize = 0.1
+    chi_axis = np.arange(-5., 5., 0.01)
+    total_entries = len(chi)
+    normal_dist = hist_binsize*total_entries/pow(2.*np.pi,0.5)*np.exp(-chi_axis*chi_axis/2.)
+    hist_chi, bin_edges = np.histogram(chi,bins=int(10./hist_binsize),range=(-5.,5.))
+    axbig.hist(chi, bin_edges)
+    axbig.plot(chi_axis,normal_dist)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_arrival_chi.png',bbox_inches='tight')
+    axbig.remove
 
     fig.clf()
     axbig = fig.add_subplot()
@@ -250,14 +261,25 @@ def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_
 
     list_predict = []
     target = list_impact
-    model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
+    model, model_err, chi = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
         predict = linear_model(list_latent_space[img], model)
         list_predict += [predict]
         if img % 20 != 0: continue
         print (f'impact target = {target[img]}, predict = {predict}')
-    print (f'chi2 = {chi2}')
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    hist_binsize = 0.1
+    chi_axis = np.arange(-5., 5., 0.01)
+    total_entries = len(chi)
+    normal_dist = hist_binsize*total_entries/pow(2.*np.pi,0.5)*np.exp(-chi_axis*chi_axis/2.)
+    hist_chi, bin_edges = np.histogram(chi,bins=int(10./hist_binsize),range=(-5.,5.))
+    axbig.hist(chi, bin_edges)
+    axbig.plot(chi_axis,normal_dist)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_impact_chi.png',bbox_inches='tight')
+    axbig.remove
 
     fig.clf()
     axbig = fig.add_subplot()
@@ -276,14 +298,25 @@ def MakeLookupTableNN(image_eigenvectors,big_image_matrix,time_eigenvectors,big_
 
     list_predict = []
     target = list_log_energy
-    model, chi2 = linear_regression(list_latent_space, target, list_evt_weight)
+    model, model_err, chi = linear_regression(list_latent_space, target, list_evt_weight)
     print (f'pkl_name = {pkl_name}')
     for img in range(0,len(target)):
         predict = linear_model(list_latent_space[img], model)
         list_predict += [predict]
         if img % 20 != 0: continue
         print (f'log_energy target = {target[img]}, predict = {predict}')
-    print (f'chi2 = {chi2}')
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    hist_binsize = 0.1
+    chi_axis = np.arange(-5., 5., 0.01)
+    total_entries = len(chi)
+    normal_dist = hist_binsize*total_entries/pow(2.*np.pi,0.5)*np.exp(-chi_axis*chi_axis/2.)
+    hist_chi, bin_edges = np.histogram(chi,bins=int(10./hist_binsize),range=(-5.,5.))
+    axbig.hist(chi, bin_edges)
+    axbig.plot(chi_axis,normal_dist)
+    fig.savefig(f'{ctapipe_output}/output_plots/ploynominal_log_energy_chi.png',bbox_inches='tight')
+    axbig.remove
 
     fig.clf()
     axbig = fig.add_subplot()

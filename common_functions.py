@@ -208,17 +208,36 @@ def linear_regression(input_data, target_data, weight):
     y = np.array(y)
     w = np.diag(w)
 
-    # Compute the weighted SVD
-    U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
-    # Calculate the weighted pseudo-inverse
-    S_pseudo_w = np.diag(1 / S)
-    x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
-    # Compute the weighted least-squares solution
-    A_svd = x_pseudo_w @ (w @ y)
-    # Compute chi2
-    chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
+    ## Compute the weighted SVD
+    #U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
+    ## Calculate the weighted pseudo-inverse
+    #S_pseudo_w = np.diag(1 / S)
+    #x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
+    ## Compute the weighted least-squares solution
+    #A_svd = x_pseudo_w @ (w @ y)
+    ## Compute chi2
+    #chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
 
-    return A_svd, chi2
+    # Have a look: https://en.wikipedia.org/wiki/Weighted_least_squares
+    # Compute the weighted SVD
+    U, S, Vt = np.linalg.svd(x.T @ w @ x, full_matrices=False)
+    # Calculate the weighted pseudo-inverse
+    S_pseudo_inv = np.diag(1 / S)
+    #for entry in range(0,len(S)):
+    #    if S[entry]/S[0]<1e-5: 
+    #        S_pseudo_inv[entry,entry] = 0.
+    x_pseudo_inv = (Vt.T @ S_pseudo_inv @ U.T) @ x.T
+    # Compute the weighted least-squares solution
+    A_svd = x_pseudo_inv @ (w @ y)
+    # Compute parameter error
+    A_cov = (Vt.T @ S_pseudo_inv @ U.T)
+    A_err = np.sqrt(np.diag(A_cov))
+
+    # Compute chi
+    chi = (x.dot(A_svd)-y) @ np.sqrt(w)
+
+
+    return A_svd, A_err, chi
 
 def linear_model(input_data,A):
 
@@ -1180,7 +1199,7 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     #rotate_image_1d = geometry.image_from_cartesian_representation(rotate_image_2d)
     #rotate_time_1d = geometry.image_from_cartesian_representation(rotate_time_2d)
 
-    list_rotat_image_1d = image_translation_and_rotation(geometry, [clean_image_1d,clean_time_1d], image_center_x, image_center_y, angle*u.rad)
+    list_rotat_image_1d = image_translation_and_rotation(geometry, [clean_image_1d,clean_time_1d], image_center_x, image_center_y, (angle+0.5*np.pi)*u.rad)
     rotate_image_1d = list_rotat_image_1d[0]
     rotate_time_1d = list_rotat_image_1d[1]
     rotate_image_2d = geometry.image_to_cartesian_representation(rotate_image_1d)

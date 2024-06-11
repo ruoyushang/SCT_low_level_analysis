@@ -124,7 +124,7 @@ def run_save_training_matrix(training_sample_path,telescope_type, min_energy=0.1
             star_cam_y = truth_info_array[8]
             star_cam_xy = [star_cam_x,star_cam_y]
 
-            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=True)
+            is_edge_image, lightcone, image_moment_array, eco_image_1d, eco_time_1d = make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_xy=star_cam_xy, make_plots=False)
 
             image_size = image_moment_array[0]
             print (f'image_size = {image_size:0.3f}')
