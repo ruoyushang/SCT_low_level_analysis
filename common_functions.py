@@ -493,66 +493,68 @@ def image_cutout_restore(geometry, eco_image_1d, origin_image_1d):
 
 def fit_image_to_line(geometry,image_input_1d,transpose=False):
 
-    x = []
-    y = []
-    w = []
-    for pix in range(0,len(image_input_1d)):
-        if image_input_1d[pix]==0.: continue
-        if not transpose:
-            x += [float(geometry.pix_x[pix]/u.m)]
-            y += [float(geometry.pix_y[pix]/u.m)]
-            w += [pow(image_input_1d[pix],1.0)]
-        else:
-            x += [float(geometry.pix_y[pix]/u.m)]
-            y += [float(geometry.pix_x[pix]/u.m)]
-            w += [pow(image_input_1d[pix],1.0)]
-    x = np.array(x)
-    y = np.array(y)
-    w = np.array(w)
-
-    if np.sum(w)==0.:
-        return 0., 0., np.inf
-
-    avg_x = np.sum(w * x)/np.sum(w)
-    avg_y = np.sum(w * y)/np.sum(w)
-
     # solve x*A = y using SVD
+    # y_{0} = ( x_{0,0} x_{0,1} ... 1 )  a_{0}
+    # y_{1} = ( x_{1,0} x_{1,1} ... 1 )  a_{1}
+    # y_{2} = ( x_{2,0} x_{2,1} ... 1 )  .
+    #                                    b  
+
     x = []
     y = []
     w = []
     for pix in range(0,len(image_input_1d)):
         if image_input_1d[pix]==0.: continue
         if not transpose:
-            x += [[float(geometry.pix_x[pix]/u.m)-avg_x]]
-            y += [[float(geometry.pix_y[pix]/u.m)-avg_y]]
-            w += [pow(image_input_1d[pix],1.0)]
+            input_x = []
+            input_x += [1.]
+            input_x += [float(geometry.pix_x[pix]/u.m)]
+            x += [input_x]
+            y += [float(geometry.pix_y[pix]/u.m)]
+            w += [image_input_1d[pix]]
         else:
-            x += [[float(geometry.pix_y[pix]/u.m)-avg_x]]
-            y += [[float(geometry.pix_x[pix]/u.m)-avg_y]]
-            w += [pow(image_input_1d[pix],1.0)]
+            input_x = []
+            input_x += [1.]
+            input_x += [float(geometry.pix_y[pix]/u.m)]
+            x += [input_x]
+            y += [float(geometry.pix_x[pix]/u.m)]
+            w += [image_input_1d[pix]]
     x = np.array(x)
     y = np.array(y)
     w = np.diag(w)
 
+    if np.sum(w)==0.:
+        return 0., 0., np.inf
+
+    # Have a look: https://en.wikipedia.org/wiki/Weighted_least_squares
     # Compute the weighted SVD
-    U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
+    U, S, Vt = np.linalg.svd(x.T @ w @ x, full_matrices=False)
+    #entry_cut = 1
+    #for entry in range(0,len(S)):
+    #    entry_cut = entry
+    #    if S[entry]/S[0]<1e-10: break
+    #U_eco = U[:, :entry_cut]
+    #Vt_eco = Vt[:entry_cut, :]
+    #S_eco = S[:entry_cut]
+    U_eco = U
+    Vt_eco = Vt
+    S_eco = S
     # Calculate the weighted pseudo-inverse
-    if S[0]==0.:
-        return 0., 0., np.inf
-    S_pseudo_w = np.diag(1 / S)
-    x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
+    S_pseudo_inv = np.diag(1 / S_eco)
+    x_pseudo_inv = (Vt_eco.T @ S_pseudo_inv @ U_eco.T) @ x.T
     # Compute the weighted least-squares solution
-    A_svd = x_pseudo_w @ (w @ y)
-    # Compute chi2
-    chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
+    A_svd = x_pseudo_inv @ (w @ y)
+    # Compute parameter error
+    A_cov = (Vt_eco.T @ S_pseudo_inv @ U_eco.T)
+    A_err = np.sqrt(np.diag(A_cov))
 
-    a = float(A_svd[0])
-    b = float(avg_y - a*avg_x)
+    # Compute chi
+    chi = (x.dot(A_svd)-y) @ np.sqrt(w)
 
-    if chi2==0.:
-        return 0., 0., np.inf
-    else:
-        return a, b, np.trace(w)/chi2
+    b = float(A_svd[0])
+    a = float(A_svd[1])
+    a_err = float(A_err[1])
+
+    return a, b, a_err
 
 def reset_time(input_image_1d, input_time_1d):
 
@@ -594,7 +596,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         center_time += input_time_1d[pix]*input_image_1d[pix]
 
     if image_size<image_size_cut:
-        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
 
     mask_center_x = mask_center_x/mask_size
     mask_center_y = mask_center_y/mask_size
@@ -630,17 +632,18 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         semi_minor_sq = semi_major_sq
         semi_major_sq = x
 
-    a, b, w = fit_image_to_line(geometry,input_image_1d)
-    aT, bT, wT = fit_image_to_line(geometry,input_image_1d,transpose=True)
+    a, b, a_err = fit_image_to_line(geometry,input_image_1d)
+    aT, bT, a_err_T = fit_image_to_line(geometry,input_image_1d,transpose=True)
     #print (f'angle 1 = {np.arctan(a)}')
     #print (f'angle 2 = {np.arctan(1./aT)}')
-    if w<wT and aT!=0.:
+    if a_err>a_err_T and aT!=0.:
         a = 1./aT
         b = -bT/aT
-        w = wT
-    if w==np.inf:
+        a_err = a_err_T
+    if a_err==np.inf:
         return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
     angle = np.arctan(a)
+    angle_err = 1./(1.+a*a)*a_err
 
     rotation_matrix = np.array([[np.cos(-angle), -np.sin(-angle)],[np.sin(-angle), np.cos(-angle)]])
     diff_x = mask_center_x-image_center_x
@@ -682,15 +685,16 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     truth_angle = np.arctan2(-image_center_y,-image_center_x)
     if not star_cam_xy==None:
         truth_angle = np.arctan2(star_cam_xy[1]-image_center_y,star_cam_xy[0]-image_center_x)
-    #print (f'angle = {angle}')
-    #print (f'truth_angle = {truth_angle}')
+    print (f'truth_angle = {truth_angle}')
+    print (f'angle = {angle}')
+    print (f'angle_err = {angle_err}')
 
     truth_projection = np.cos(truth_angle-angle)
 
     if not star_cam_xy==None:
         angle = truth_angle
 
-    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection]
+    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection, a_err]
 
 def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
 
@@ -1019,6 +1023,7 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
     image_direction = image_moment_array[7]
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
+    line_a_err = image_moment_array[11]
 
     lightcone = calculate_lightcone(image_direction,time_direction)
 
@@ -1041,10 +1046,18 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
         line_x = np.linspace(image_center_x, xmax, 100)
         line_y = -(line_a*line_x + line_b)
         axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        #line_y = -((line_a+line_a_err)*line_x + line_b)
+        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        #line_y = -((line_a-line_a_err)*line_x + line_b)
+        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
     else:
         line_x = np.linspace(xmin, image_center_x, 100)
         line_y = -(line_a*line_x + line_b)
         axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+        #line_y = -((line_a+line_a_err)*line_x + line_b)
+        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+        #line_y = -((line_a-line_a_err)*line_x + line_b)
+        #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
     axbig.set_xlim(xmin,xmax)
     axbig.set_ylim(ymin,ymax)
     txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
@@ -1175,6 +1188,7 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
     truth_projection = image_moment_array[10]
+    line_a_err = image_moment_array[11]
 
     # verify with hillas
     if image_size>1.*image_size_cut:
@@ -1211,7 +1225,6 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
         y = float(geometry.pix_y[pix]/u.m)
         if abs(y)<0.05:
             pixs_to_keep += [pix]
-
     eco_image_1d = image_cutout(geometry, rotate_image_1d, pixs_to_keep=pixs_to_keep)
     eco_time_1d = image_cutout(geometry, rotate_time_1d, pixs_to_keep=pixs_to_keep)
 
@@ -1230,10 +1243,18 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
             line_x = np.linspace(image_center_x, xmax, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            #line_y = -((line_a+line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            #line_y = -((line_a-line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         else:
             line_x = np.linspace(xmin, image_center_x, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            #line_y = -((line_a+line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            #line_y = -((line_a-line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
         txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
@@ -1430,15 +1451,12 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
     line_a = image_moment_array[8]
     line_b = image_moment_array[9]
     truth_projection = image_moment_array[10]
+    line_a_err = image_moment_array[11]
     print (f'image_size = {image_size:0.1f}')
 
     lightcone = calculate_lightcone(image_direction,time_direction)
 
     whole_movie_1d = []
-
-    shift_pix_x = image_center_x/pixel_width
-    shift_pix_y = image_center_y/pixel_width
-
 
     center_time_window = 0.
     total_weight = 0.
@@ -1473,14 +1491,7 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
     ymax = max(geometry.pix_y)/u.m
     ymin = min(geometry.pix_y)/u.m
 
-    whole_movie_2d = []
-    for win in range(0,n_windows_slim):
-        clean_movie_2d = geometry.image_to_cartesian_representation(slim_movie_1d[win])
-        remove_nan_pixels(clean_movie_2d)
-        whole_movie_2d += [clean_movie_2d]
-
-    shift_movie_2d = movie_translation(whole_movie_2d, round(float(shift_pix_y)), round(float(shift_pix_x)))
-    rotate_movie_2d = movie_rotation(shift_movie_2d, angle*u.rad)
+    list_rotat_movie_1d = image_translation_and_rotation(geometry, slim_movie_1d, image_center_x, image_center_y, (angle+0.5*np.pi)*u.rad)
 
     whole_movie_1d = []
     pixs_to_keep = []
@@ -1490,7 +1501,7 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
         if abs(y)<0.05:
             pixs_to_keep += [pix]
     for win in range(0,n_windows_slim):
-        rotate_movie_1d = geometry.image_from_cartesian_representation(rotate_movie_2d[win])
+        rotate_movie_1d = list_rotat_movie_1d[win]
         eco_movie_1d = image_cutout(geometry, rotate_movie_1d, pixs_to_keep=pixs_to_keep)
         whole_movie_1d.extend(eco_movie_1d)
 
@@ -1509,10 +1520,18 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
             line_x = np.linspace(image_center_x, xmax, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            #line_y = -((line_a+line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            #line_y = -((line_a-line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         else:
             line_x = np.linspace(xmin, image_center_x, 100)
             line_y = -(line_a*line_x + line_b)
             axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='dashed')
+            #line_y = -((line_a+line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
+            #line_y = -((line_a-line_a_err)*line_x + line_b)
+            #axbig.plot(line_x,line_y,color='w',alpha=0.3,linestyle='solid')
         axbig.set_xlim(xmin,xmax)
         axbig.set_ylim(ymin,ymax)
         txt = axbig.text(-0.35, 0.35, 'image size = %0.2e'%(image_size), fontdict=font)
