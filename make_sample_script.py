@@ -2,13 +2,19 @@
 import os, sys
 import subprocess
 
+print ('basic packages imported.')
+
 from ctapipe import utils
 from ctapipe.utils.datasets import get_dataset_path
 from ctapipe.io import EventSource, SimTelEventSource, HDF5TableWriter
 
+print ('ctapipe package imported.')
+
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_work = os.environ.get("CTAPIPE_WORK_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
+
+print ('environment seting done.')
 
 sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
@@ -28,18 +34,27 @@ runlist = []
 with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
         #if n_samples==15: continue
+
         training_sample_path = get_dataset_path(line.strip('\n'))
         print (f'loading file: {training_sample_path}')
         source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
         ob_keys = source.observation_blocks.keys()
         run_id = list(ob_keys)[0]
         runlist += [run_id]
+
         file = open("run/save_sample_run%s.sh"%(run_id),"w") 
         file.write('cd %s\n'%(ctapipe_work))
         for tel_type in range(0,len(list_tel_type)):
             file.write('python3 save_training_matrix.py "%s" "%s"\n'%(training_sample_path,list_tel_type[tel_type]))
         file.close() 
         n_samples += 1
+
+        file = open("run/analyze_monotel_run%s.sh"%(run_id),"w") 
+        file.write('cd %s\n'%(ctapipe_work))
+        for tel_type in range(0,len(list_tel_type)):
+            file.write('python3 monotel_analysis.py "%s" "%s"\n'%(training_sample_path,list_tel_type[tel_type]))
+        file.close() 
+
 
 job_counts = 0
 qfile = open("run/condor_ctapipe_sample.sh","w") 
@@ -93,21 +108,6 @@ qfile.write('log = eigenvector.log\n')
 qfile.write('queue\n')
 qfile.close() 
 
-
-runlist = []
-with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
-    for line in file:
-        training_sample_path = get_dataset_path(line.strip('\n'))
-        print (f'loading file: {training_sample_path}')
-        source = SimTelEventSource(training_sample_path, focal_length_choice='EQUIVALENT')
-        ob_keys = source.observation_blocks.keys()
-        run_id = list(ob_keys)[0]
-        runlist += [run_id]
-        file = open("run/analyze_monotel_run%s.sh"%(run_id),"w") 
-        file.write('cd %s\n'%(ctapipe_work))
-        for tel_type in range(0,len(list_tel_type)):
-            file.write('python3 monotel_analysis.py "%s" "%s"\n'%(training_sample_path,list_tel_type[tel_type]))
-        file.close() 
 
 job_counts = 0
 qfile = open("run/condor_ctapipe_monotel.sh","w") 
