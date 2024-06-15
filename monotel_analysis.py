@@ -64,7 +64,7 @@ fig.set_figwidth(figsize_x)
 
 time_weight_ratio = 1.
 
-use_movie = False
+use_movie = True
 ana_tag = 'image'
 if use_movie:
     ana_tag = 'movie'
@@ -506,6 +506,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             image_direction = image_moment_array[7]
             line_a = image_moment_array[8]
             line_b = image_moment_array[9]
+            angle_err = image_moment_array[13]
             print (f'image_size = {image_size}')
 
             if image_size<image_size_cut: 
@@ -526,7 +527,6 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             image_fit_log_energy_err = 0.
             image_fit_chi2 = 1e10
 
-            print ('==================================================================')
             tic_task = time.perf_counter()
 
             is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, make_plots=False)
@@ -535,7 +535,6 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
 
             toc_task = time.perf_counter()
             print (f'Image reconstruction completed in {toc_task - tic_task:0.4f} sec.')
-            print ('==================================================================')
 
             image_fit_cam_x = image_center_x + image_fit_arrival*np.cos(angle*u.rad)
             image_fit_cam_y = image_center_y + image_fit_arrival*np.sin(angle*u.rad)
@@ -589,7 +588,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
                     make_a_gif(fig, subarray, run_id, tel_id, event, data_image, data_movie, sim_movie)
 
             evt_header = [training_sample_path,event_id,tel_id]
-            evt_geometry = [image_size,lightcone,focal_length,image_direction,time_direction]
+            evt_geometry = [image_size,lightcone,focal_length,image_direction,time_direction,angle_err]
             evt_truth = [truth_energy,truth_alt,truth_az,star_cam_x,star_cam_y,truth_projection]
             evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y,image_fit_chi2]
 

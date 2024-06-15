@@ -21,9 +21,8 @@ training_event_select = 2
 image_size_cut = 100.
 #image_size_cut = 500.
 
-n_samples_per_window = 1
+n_samples_per_window = 2
 total_samples = 64
-#select_samples = 10
 select_samples = 16
 
 n_bins_arrival = 40
@@ -194,8 +193,6 @@ def linear_regression(input_data, target_data, weight):
         for entry in range(0,len(input_data[evt])):
             single_x += [input_data[evt][entry]]
             single_x += [input_data[evt][entry]**2]
-            #for entry2 in range(entry,len(input_data[evt])):
-            #    single_x += [input_data[evt][entry]*input_data[evt][entry2]]
             #single_x += [input_data[evt][entry]**3]
             #single_x += [input_data[evt][entry]**4]
             #single_x += [input_data[evt][entry]**5]
@@ -208,36 +205,50 @@ def linear_regression(input_data, target_data, weight):
     y = np.array(y)
     w = np.diag(w)
 
-    ## Compute the weighted SVD
-    #U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
-    ## Calculate the weighted pseudo-inverse
-    #S_pseudo_w = np.diag(1 / S)
-    #x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
-    ## Compute the weighted least-squares solution
-    #A_svd = x_pseudo_w @ (w @ y)
-    ## Compute chi2
-    #chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
-
-    # Have a look: https://en.wikipedia.org/wiki/Weighted_least_squares
     # Compute the weighted SVD
-    U, S, Vt = np.linalg.svd(x.T @ w @ x, full_matrices=False)
+    U, S, Vt = np.linalg.svd(w @ x, full_matrices=False)
     # Calculate the weighted pseudo-inverse
-    S_pseudo_inv = np.diag(1 / S)
-    #for entry in range(0,len(S)):
-    #    if S[entry]/S[0]<1e-5: 
-    #        S_pseudo_inv[entry,entry] = 0.
-    x_pseudo_inv = (Vt.T @ S_pseudo_inv @ U.T) @ x.T
+    S_pseudo_w = np.diag(1 / S)
+    x_pseudo_w = Vt.T @ S_pseudo_w @ U.T
     # Compute the weighted least-squares solution
-    A_svd = x_pseudo_inv @ (w @ y)
-    # Compute parameter error
-    A_cov = (Vt.T @ S_pseudo_inv @ U.T)
-    A_err = np.sqrt(np.diag(A_cov))
+    A_svd = x_pseudo_w @ (w @ y)
+    # Compute chi2
+    chi2 = np.linalg.norm((w @ x).dot(A_svd)-(w @ y), 2)/np.trace(w)
 
-    # Compute chi
-    chi = (x.dot(A_svd)-y) @ np.sqrt(w)
+    return A_svd, chi2
+
+    ## Have a look: https://en.wikipedia.org/wiki/Weighted_least_squares
+    ## Compute the weighted SVD
+    #U_full, S_full, VT_full = np.linalg.svd(x.T @ w @ x, full_matrices=False)
+
+    #effective_matrix_rank = int(0.5*len(S_full))
+    ##for entry in range(1,len(S_full)):
+    ##    if S_full[entry]/S_full[0]<1e-5: 
+    ##        effective_matrix_rank = entry
+    ##        break
+    ##print (f'effective_matrix_rank = {effective_matrix_rank}')
+
+    #U_eco = U_full
+    #VT_eco = VT_full
+    #S_eco = S_full
+    ##U_eco = U_full[:, :effective_matrix_rank]
+    ##VT_eco = VT_full[:effective_matrix_rank, :]
+    ##S_eco = S_full[:effective_matrix_rank]
+
+    ## Calculate the weighted pseudo-inverse
+    #S_pseudo_inv = np.diag(1 / S_eco)
+    #x_pseudo_inv = (VT_eco.T @ S_pseudo_inv @ U_eco.T) @ x.T
+    ## Compute the weighted least-squares solution
+    #A_svd = x_pseudo_inv @ (w @ y)
+    ## Compute parameter error
+    #A_cov = (VT_eco.T @ S_pseudo_inv @ U_eco.T)
+    #A_err = np.diag(A_cov)
+
+    ## Compute chi
+    #chi = (x.dot(A_svd)-y) @ np.sqrt(w)
 
 
-    return A_svd, A_err, chi
+    #return A_svd, A_err, chi
 
 def linear_model(input_data,A):
 
@@ -255,6 +266,7 @@ def linear_model(input_data,A):
     x = np.array(x)
 
     y = x @ A
+    #y_err = np.sqrt(x @ A_err)
 
     return y
 
@@ -625,24 +637,24 @@ def fit_image_to_line(geometry,image_input_1d,transpose=False):
     avg_y = np.sum(w * y)/np.sum(w)
 
     # zero-centered data
+    error = float(geometry.pixel_width[0]/u.m)
     xc = []
     yc = []
+    wc = []
     for pix in range(0,len(image_input_1d)):
         if image_input_1d[pix]==0.: continue
-        for pe in range(0,int(image_input_1d[pix])):
-            if not transpose:
-                xc += [float(geometry.pix_x[pix]/u.m)-avg_x]
-                yc += [float(geometry.pix_y[pix]/u.m)-avg_y]
-            else:
-                xc += [float(geometry.pix_y[pix]/u.m)-avg_y]
-                yc += [float(geometry.pix_x[pix]/u.m)-avg_x]
+        if not transpose:
+            xc += [float(geometry.pix_x[pix]/u.m)-avg_x]
+            yc += [float(geometry.pix_y[pix]/u.m)-avg_y]
+        else:
+            xc += [float(geometry.pix_y[pix]/u.m)-avg_y]
+            yc += [float(geometry.pix_x[pix]/u.m)-avg_x]
+        wc += [pow(pow(image_input_1d[pix],0.5)/error,2)]
     xc = np.array(xc)
     yc = np.array(yc)
+    wc = np.array(wc)
 
-    error = float(geometry.pixel_width[0]/u.m)
-    weights = np.full(yc.shape, pow(1./error,2))
-
-    a_mtx, a_mtx_err, chi2 = least_square_fit(2, xc, yc, weights)
+    a_mtx, a_mtx_err, chi2 = least_square_fit(2, xc, yc, wc)
     fit_a = a_mtx[1]
     fit_a_err = 2.*a_mtx_err[1]
     fit_b = float(avg_y - fit_a*avg_x)
@@ -691,7 +703,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         center_time += input_time_1d[pix]*input_image_1d[pix]
 
     if image_size<image_size_cut:
-        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
 
     mask_center_x = mask_center_x/mask_size
     mask_center_y = mask_center_y/mask_size
@@ -753,9 +765,9 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     print (f'b_err = {b_err}')
 
     if a_err==np.inf:
-        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+        return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
     angle = np.arctan(a)
-    angle_err = 1./(1.+a*a)*a_err
+    angle_err = abs(np.arctan(a+a_err)-np.arctan(a-a_err))
 
     rotation_matrix = np.array([[np.cos(-angle), -np.sin(-angle)],[np.sin(-angle), np.cos(-angle)]])
     diff_x = mask_center_x-image_center_x
@@ -806,7 +818,7 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     if not star_cam_xy==None:
         angle = truth_angle
 
-    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection, a_err, b_err]
+    return [image_size, image_center_x, image_center_y, angle, pow(semi_major_sq,0.5), pow(semi_minor_sq,0.5), direction_of_time, direction_of_image, a, b, truth_projection, a_err, b_err, angle_err]
 
 def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
 
@@ -1302,18 +1314,19 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     truth_projection = image_moment_array[10]
     line_a_err = image_moment_array[11]
     line_b_err = image_moment_array[12]
+    angle_err = image_moment_array[13]
 
     # verify with hillas
-    if image_size>1.*image_size_cut:
-        print (f'image_center_x = {image_center_x}')
-        print (f'image_center_y = {image_center_y}')
-        print (f'semi_major = {semi_major}')
-        print (f'semi_minor = {semi_minor}')
-        print (f'angle = {angle}')
-        hillas = hillas_parameters(geometry, clean_image_1d)
-        print ('hillas:')
-        print (hillas)
-        #exit()
+    #if image_size>1.*image_size_cut:
+    #    print (f'image_center_x = {image_center_x}')
+    #    print (f'image_center_y = {image_center_y}')
+    #    print (f'semi_major = {semi_major}')
+    #    print (f'semi_minor = {semi_minor}')
+    #    print (f'angle = {angle}')
+    #    hillas = hillas_parameters(geometry, clean_image_1d)
+    #    print ('hillas:')
+    #    print (hillas)
+    #    #exit()
 
     lightcone = calculate_lightcone(image_direction,time_direction)
 
@@ -1566,6 +1579,7 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
     truth_projection = image_moment_array[10]
     line_a_err = image_moment_array[11]
     line_b_err = image_moment_array[12]
+    angle_err = image_moment_array[13]
     print (f'image_size = {image_size:0.1f}')
 
     lightcone = calculate_lightcone(image_direction,time_direction)
