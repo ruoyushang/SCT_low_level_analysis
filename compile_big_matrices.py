@@ -67,6 +67,9 @@ big_image_matrix = []
 big_time_matrix = []
 big_movie_matrix = []
 for path in range(0,len(training_sample_path)):
+
+    #if path>100: break
+
     source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
     subarray = source.subarray
     ob_keys = source.observation_blocks.keys()

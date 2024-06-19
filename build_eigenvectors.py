@@ -253,7 +253,7 @@ def MakeFastConversionMovie(image_eigenvectors,big_image_matrix,moment_matrix,tr
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_arrival_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -291,7 +291,7 @@ def MakeFastConversionMovie(image_eigenvectors,big_image_matrix,moment_matrix,tr
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_impact_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -329,7 +329,7 @@ def MakeFastConversionMovie(image_eigenvectors,big_image_matrix,moment_matrix,tr
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_log_energy_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -413,7 +413,7 @@ def MakeFastConversionImage(image_eigenvectors,big_image_matrix,time_eigenvector
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_arrival_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_arrival_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -451,7 +451,7 @@ def MakeFastConversionImage(image_eigenvectors,big_image_matrix,time_eigenvector
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_impact_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_impact_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -489,7 +489,7 @@ def MakeFastConversionImage(image_eigenvectors,big_image_matrix,time_eigenvector
     axbig.remove()
 
     if overwrite_file:
-        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_lookup_table_log_energy_{telescope_type}.pkl'
+        output_filename = f'{ctapipe_output}/output_machines/{pkl_name}_fast_conversion_log_energy_{telescope_type}.pkl'
         with open(output_filename,"wb") as file:
             pickle.dump(model, file)
 
@@ -681,14 +681,14 @@ else:
 
 if make_movie:
     print ('Compute movie matrix SVD...')
-    movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'movie')
+    movie_eigenvectors = BigMatrixSVD(big_movie_matrix,big_moment_matrix,big_truth_matrix,4*matrix_rank,'movie')
 print ('Compute image matrix SVD...')
 image_eigenvectors = BigMatrixSVD(big_image_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'image')
 print ('Compute time matrix SVD...')
 time_eigenvectors = BigMatrixSVD(big_time_matrix,big_moment_matrix,big_truth_matrix,4*matrix_rank,'time')
 
-MakeFastConversionImage(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,big_moment_matrix,big_truth_matrix,'polynomial')
-#MakeFastConversionMovie(movie_eigenvectors,big_movie_matrix,big_moment_matrix,big_truth_matrix,'polynomial')
+MakeFastConversionImage(image_eigenvectors,big_image_matrix,time_eigenvectors,big_time_matrix,big_moment_matrix,big_truth_matrix,'image')
+MakeFastConversionMovie(movie_eigenvectors,big_movie_matrix,big_moment_matrix,big_truth_matrix,'movie')
 
 print (f'number of training images = {len(big_image_matrix)}')
 

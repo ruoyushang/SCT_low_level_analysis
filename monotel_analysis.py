@@ -224,7 +224,7 @@ def analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,
 
     return fit_arrival, fit_impact, fit_log_energy, fit_chi2
 
-def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors,movie_lookup_table_poly):
+def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors,fast_conversion_poly):
 
     global arrival_upper
     global arrival_lower
@@ -245,15 +245,18 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     impact_step_size = (impact_upper-impact_lower)/float(n_bins_impact)
     log_energy_step_size = (log_energy_upper-log_energy_lower)/float(n_bins_energy)
 
-    #movie_latent_space = movie_eigen_vectors @ input_movie_1d
+    movie_latent_space = movie_eigen_vectors @ input_movie_1d
     image_latent_space = image_eigen_vectors @ input_image_1d
     time_latent_space = time_eigen_vectors @ input_time_1d
     combine_latent_space = np.concatenate((image_latent_space, time_latent_space))
 
     image_size = np.sum(input_movie_1d)
-    fit_arrival = linear_model(combine_latent_space, movie_lookup_table_poly[0])
-    fit_impact = linear_model(combine_latent_space, movie_lookup_table_poly[1])
-    fit_log_energy = linear_model(combine_latent_space, movie_lookup_table_poly[2])
+    #fit_arrival = linear_model(movie_latent_space, fast_conversion_poly[0])
+    #fit_impact = linear_model(movie_latent_space, fast_conversion_poly[1])
+    #fit_log_energy = linear_model(movie_latent_space, fast_conversion_poly[2])
+    fit_arrival = linear_model(combine_latent_space, fast_conversion_poly[0])
+    fit_impact = linear_model(combine_latent_space, fast_conversion_poly[1])
+    fit_log_energy = linear_model(combine_latent_space, fast_conversion_poly[2])
     cov_arrival = 0.
     cov_impact = 0.
     cov_log_energy = 0.
@@ -265,7 +268,7 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
         return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
     arrival_search_range = 1.5
-    if telescope_type!="MST_SCT_SCTCam": arrival_search_range = 100.5
+    #if telescope_type!="MST_SCT_SCTCam": arrival_search_range = 100.5
 
     arrival_range = arrival_search_range*arrival_step_size
     impact_range = arrival_search_range*impact_step_size
@@ -377,13 +380,15 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
     analysis_result = []
 
     print ('loading svd pickle data... ')
-    movie_lookup_table_poly_pkl = []
-    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_arrival_{telescope_type}.pkl'
-    movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_impact_{telescope_type}.pkl'
-    movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    output_filename = f'{ctapipe_output}/output_machines/polynomial_lookup_table_log_energy_{telescope_type}.pkl'
-    movie_lookup_table_poly_pkl += [pickle.load(open(output_filename, "rb"))]
+    #fast_conversion_type = 'movie'
+    fast_conversion_type = 'image'
+    fast_conversion_poly_pkl = []
+    output_filename = f'{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_arrival_{telescope_type}.pkl'
+    fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
+    output_filename = f'{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_impact_{telescope_type}.pkl'
+    fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
+    output_filename = f'{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_log_energy_{telescope_type}.pkl'
+    fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
 
     movie_lookup_table_pkl = None
     movie_eigen_vectors_pkl = None
@@ -531,7 +536,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
 
             is_edge_image, lightcone, image_moment_array, eco_movie_1d = make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, make_plots=False)
 
-            image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,movie_lookup_table_poly_pkl)
+            image_fit_arrival, image_fit_impact, image_fit_log_energy, image_fit_arrival_err, image_fit_impact_err, image_fit_log_energy_err, image_fit_chi2 = single_movie_reconstruction(eco_image_1d,image_lookup_table_pkl,image_eigen_vectors_pkl,eco_time_1d,time_lookup_table_pkl,time_eigen_vectors_pkl,eco_movie_1d,movie_lookup_table_pkl,movie_eigen_vectors_pkl,fast_conversion_poly_pkl)
 
             toc_task = time.perf_counter()
             print (f'Image reconstruction completed in {toc_task - tic_task:0.4f} sec.')
@@ -569,8 +574,8 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            #if image_size>image_size_cut:
-            if image_size>5000. or select_event_id!=0:
+            if image_size>image_size_cut:
+            #if image_size>5000. or select_event_id!=0:
 
                 if 'image' in ana_tag:
 

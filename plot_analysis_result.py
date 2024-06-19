@@ -24,7 +24,7 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-ana_tag = 'image_box3d'
+ana_tag = 'movie_box3d'
 #ana_tag = 'image_box3d_fast'
 
 telescope_type = 'MST_SCT_SCTCam'
@@ -44,7 +44,7 @@ fit_chi2_cut = 1.2
 
 def pass_quality(lightcone,image_direction,fit_chi2,image_size):
 
-    #return True
+    return True
 
     if abs(image_direction)<image_dir_cut: 
         return False
@@ -72,6 +72,7 @@ def plot_monotel_analysis():
     list_fit_chi2 = []
     list_image_direction = []
     list_time_direction = []
+    list_angle_err = []
     list_bad_fit_chi2 = []
     list_bad_image_size = []
     list_bad_image_direction = []
@@ -115,6 +116,7 @@ def plot_monotel_analysis():
             focal_length = img_geometry[2]
             image_direction = img_geometry[3]
             time_direction = img_geometry[4]
+            angle_err = img_geometry[5]
             truth_energy = img_truth[0]
             truth_alt = img_truth[1]
             truth_az = img_truth[2]
@@ -158,6 +160,7 @@ def plot_monotel_analysis():
             list_fit_chi2 += [fit_chi2/image_size]
             list_image_direction += [abs(image_direction)]
             list_time_direction += [abs(time_direction)]
+            list_angle_err += [abs(angle_err)]
             list_lightcone += [lightcone]
             list_truth_projection += [truth_projection]
             list_delta_arrival += [pow(delta_alt*delta_alt+delta_az*delta_az,0.5)]
@@ -295,6 +298,17 @@ def plot_monotel_analysis():
     axbig.scatter(list_time_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/time_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Angle error'
+    label_y = 'Cam delta r'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_angle_err, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/angle_err_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()

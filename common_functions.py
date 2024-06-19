@@ -45,6 +45,15 @@ ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 
 font = {'family': 'serif', 'color':  'white', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
+# unoptimized cleaning levels
+cleaning_level = {
+    "CHEC": (2, 4, 2),
+    "LSTCam": (3.5, 7, 2),
+    "FlashCam": (3.5, 7, 2),
+    "NectarCam": (4, 8, 2),
+    "SCTCam": (5, 8, 0),
+}
+
 class MyArray3D:
 
     def __init__(self,x_bins=10,start_x=0.,end_x=10.,y_bins=10,start_y=0.,end_y=10.,z_bins=10,start_z=0.,end_z=10.,overflow=True):
@@ -193,8 +202,8 @@ def linear_regression(input_data, target_data, weight):
         for entry in range(0,len(input_data[evt])):
             single_x += [input_data[evt][entry]]
             single_x += [input_data[evt][entry]**2]
-            #single_x += [input_data[evt][entry]**3]
-            #single_x += [input_data[evt][entry]**4]
+            single_x += [input_data[evt][entry]**3]
+            single_x += [input_data[evt][entry]**4]
             #single_x += [input_data[evt][entry]**5]
             #single_x += [input_data[evt][entry]**6]
         single_x += [1.]
@@ -256,10 +265,8 @@ def linear_model(input_data,A):
     for entry in range(0,len(input_data)):
         x += [input_data[entry]]
         x += [input_data[entry]**2]
-        #for entry2 in range(entry,len(input_data)):
-        #    x += [input_data[entry]*input_data[entry2]]
-        #x += [input_data[entry]**3]
-        #x += [input_data[entry]**4]
+        x += [input_data[entry]**3]
+        x += [input_data[entry]**4]
         #x += [input_data[entry]**5]
         #x += [input_data[entry]**6]
     x += [1.]
@@ -510,6 +517,12 @@ def least_square_fit(power, input_data, target_data, weight):
     # y_{1} = ( x_{1,0} x_{1,1} ... 1 )  a_{1}
     # y_{2} = ( x_{2,0} x_{2,1} ... 1 )  .
     #                                    b  
+    
+    # for a line equation y = a*x + b
+    # solve x*A = y using SVD
+    # y_{0} = ( x_{0} 1 )  a
+    # y_{1} = ( x_{1} 1 )  b
+    # y_{2} = ( x_{2} 1 )  
 
     x = []
     y = []
@@ -637,7 +650,7 @@ def fit_image_to_line(geometry,image_input_1d,transpose=False):
     avg_y = np.sum(w * y)/np.sum(w)
 
     # zero-centered data
-    error = float(geometry.pixel_width[0]/u.m)
+    pix_width = float(geometry.pixel_width[0]/u.m)
     xc = []
     yc = []
     wc = []
@@ -649,7 +662,7 @@ def fit_image_to_line(geometry,image_input_1d,transpose=False):
         else:
             xc += [float(geometry.pix_y[pix]/u.m)-avg_y]
             yc += [float(geometry.pix_x[pix]/u.m)-avg_x]
-        wc += [pow(pow(image_input_1d[pix],0.5)/error,2)]
+        wc += [pow(pow(image_input_1d[pix],0.5)/pix_width,2)]
     xc = np.array(xc)
     yc = np.array(yc)
     wc = np.array(wc)
@@ -759,10 +772,10 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
         b = -bT/aT
         a_err = aT_err/(aT*aT)
         b_err = bT_err/aT
-    print (f'a = {a}')
-    print (f'b = {b}')
-    print (f'a_err = {a_err}')
-    print (f'b_err = {b_err}')
+    #print (f'a = {a}')
+    #print (f'b = {b}')
+    #print (f'a_err = {a_err}')
+    #print (f'b_err = {b_err}')
 
     if a_err==np.inf:
         return [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
@@ -809,9 +822,9 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
     truth_angle = np.arctan2(-image_center_y,-image_center_x)
     if not star_cam_xy==None:
         truth_angle = np.arctan2(star_cam_xy[1]-image_center_y,star_cam_xy[0]-image_center_x)
-    print (f'truth_angle = {truth_angle}')
-    print (f'angle = {angle}')
-    print (f'angle_err = {angle_err}')
+    #print (f'truth_angle = {truth_angle}')
+    #print (f'angle = {angle}')
+    #print (f'angle_err = {angle_err}')
 
     truth_projection = np.cos(truth_angle-angle)
 
@@ -1121,7 +1134,8 @@ def plot_monotel_reconstruction(fig, subarray, run_id, tel_id, event, image_mome
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=1,picture_thresh=3,min_number_picture_neighbors=2)
+    boundary, picture, min_neighbors = cleaning_level[geometry.name]
+    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary,picture_thresh=picture,min_number_picture_neighbors=min_neighbors)
     for pix in range(0,len(image_mask)):
         if not image_mask[pix]:
             clean_image_1d[pix] = 0.
@@ -1218,14 +1232,8 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    boundary_thresh=1
-    picture_thresh=3
-    min_number_picture_neighbors=2
-    if telescope_type!="MST_SCT_SCTCam":
-        boundary_thresh=5
-        picture_thresh=8
-        min_number_picture_neighbors=0
-    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
+    boundary, picture, min_neighbors = cleaning_level[geometry.name]
+    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary,picture_thresh=picture,min_number_picture_neighbors=min_neighbors)
     for pix in range(0,len(image_mask)):
         if not image_mask[pix]:
             clean_image_1d[pix] = 0.
@@ -1259,14 +1267,9 @@ def make_standard_image(fig, telescope_type, subarray, run_id, tel_id, event, st
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
-        boundary_thresh=1
-        picture_thresh=2
-        min_number_picture_neighbors=2
-        if telescope_type!="MST_SCT_SCTCam":
-            boundary_thresh=5
-            picture_thresh=5
-            min_number_picture_neighbors=0
-        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
+        #boundary, picture, min_neighbors = cleaning_level[geometry.name]
+        #movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary,picture_thresh=picture,min_number_picture_neighbors=min_neighbors)
+        movie_mask = image_mask
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
         #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
@@ -1481,14 +1484,8 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    boundary_thresh=1
-    picture_thresh=3
-    min_number_picture_neighbors=2
-    if telescope_type!="MST_SCT_SCTCam":
-        boundary_thresh=5
-        picture_thresh=8
-        min_number_picture_neighbors=0
-    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
+    boundary, picture, min_neighbors = cleaning_level[geometry.name]
+    image_mask = tailcuts_clean(geometry,event.dl1.tel[tel_id].image,boundary_thresh=boundary,picture_thresh=picture,min_number_picture_neighbors=min_neighbors)
     for pix in range(0,len(image_mask)):
         if not image_mask[pix]:
             clean_image_1d[pix] = 0.
@@ -1520,14 +1517,9 @@ def make_a_movie(fig, telescope_type, subarray, run_id, tel_id, event, star_cam_
     for win in range(0,n_windows):
         image_sum = np.sum(clean_movie_1d[win])
         if image_sum==0.: continue 
-        boundary_thresh=1
-        picture_thresh=2
-        min_number_picture_neighbors=2
-        if telescope_type!="MST_SCT_SCTCam":
-            boundary_thresh=5
-            picture_thresh=5
-            min_number_picture_neighbors=0
-        movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary_thresh,picture_thresh=picture_thresh,min_number_picture_neighbors=min_number_picture_neighbors)
+        #boundary, picture, min_neighbors = cleaning_level[geometry.name]
+        #movie_mask = tailcuts_clean(geometry,clean_movie_1d[win],boundary_thresh=boundary,picture_thresh=picture,min_number_picture_neighbors=min_neighbors)
+        movie_mask = image_mask
         mask_sum = np.sum(movie_mask)
         if mask_sum==0.: continue 
         #image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
