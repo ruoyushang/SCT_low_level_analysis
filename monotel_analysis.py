@@ -87,8 +87,8 @@ if do_it_fast:
 
 select_event_id = 0
 select_tel_id = 0
-#select_event_id = 71904
-#select_tel_id = 21
+#select_event_id = 70905
+#select_tel_id = 74
 
 def sqaure_difference_between_1d_images(init_params,data_latent_space,lookup_table,eigen_vectors,full_table=False):
 
@@ -203,6 +203,52 @@ def box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vec
 
     return short_list
 
+def movie_box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,arrival_range,impact_range,log_energy_range):
+
+    init_arrival = init_params[0]
+    init_impact = init_params[1]
+    init_log_energy = init_params[2]
+    short_list = []
+
+
+    while len(short_list)==0:
+
+        fit_idx_x = 0
+        fit_idx_y = 0
+        fit_idx_z = 0
+        for idx_x  in range(0,n_bins_arrival):
+            try_arrival = image_lookup_table[0].xaxis[idx_x]
+            if abs(init_arrival-try_arrival)>arrival_range:
+                continue
+            for idx_y  in range(0,n_bins_impact):
+                try_impact = image_lookup_table[0].yaxis[idx_y]
+                if abs(init_impact-try_impact)>impact_range:
+                    continue
+                for idx_z  in range(0,n_bins_energy):
+                    try_log_energy = image_lookup_table[0].zaxis[idx_z]
+                    if abs(init_log_energy-try_log_energy)>log_energy_range:
+                        continue
+
+                    try_params = [try_arrival,try_impact,try_log_energy]
+
+                    try_chi2 = sqaure_difference_between_1d_images(try_params,image_latent_space,image_lookup_table,image_eigen_vectors)
+ 
+                    if try_chi2<1e10:
+                        short_list += [(try_chi2,try_arrival,try_impact,try_log_energy)]
+
+        if len(short_list)==0:
+            print ('short_list is zero. expand search range.')
+            arrival_range = 1e10
+            impact_range = 1e10
+            log_energy_range = 1e10
+        else:
+            break
+
+    short_list.sort(key=sortFirst)
+
+
+    return short_list
+
 def analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors):
 
     fit_chi2 = 1e10
@@ -239,8 +285,6 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     #n_bins_impact = len(image_lookup_table[0].yaxis)
     #n_bins_energy = len(image_lookup_table[0].zaxis)
 
-    chi2_cut = 1.5
-
     arrival_step_size = (arrival_upper-arrival_lower)/float(n_bins_arrival)
     impact_step_size = (impact_upper-impact_lower)/float(n_bins_impact)
     log_energy_step_size = (log_energy_upper-log_energy_lower)/float(n_bins_energy)
@@ -267,109 +311,71 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
     if do_it_fast:
         return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    arrival_search_range = 1.5
-    #if telescope_type!="MST_SCT_SCTCam": arrival_search_range = 100.5
+    param_search_range = 3.0
+    arrival_range = param_search_range*arrival_step_size
+    impact_range = param_search_range*impact_step_size
+    log_energy_range = param_search_range*log_energy_step_size
 
-    arrival_range = arrival_search_range*arrival_step_size
-    impact_range = arrival_search_range*impact_step_size
-    log_energy_range = 100.5*log_energy_step_size
+    found_minimum = False
+    fit_chi2 = 1e10
+    #fit_arrival = 0.2
+    #fit_impact = 300.
+    #fit_log_energy = 0.0
+    best_short_list = []
+
+    while not found_minimum:
+
+        init_params = [fit_arrival,fit_impact,fit_log_energy]
+        #short_list = movie_box_search(init_params,movie_latent_space,movie_lookup_table,movie_eigen_vectors,arrival_range,impact_range,log_energy_range)
+        short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
+        try_chi2 = short_list[0][0]
+        try_arrival = short_list[0][1]
+        try_impact = short_list[0][2]
+        try_log_energy = short_list[0][3]
+
+        if fit_chi2>try_chi2:
+            fit_chi2 = try_chi2
+            fit_arrival = try_arrival
+            fit_impact = try_impact
+            fit_log_energy = try_log_energy
+            best_short_list = short_list
+        else:
+            found_minimum = True
+
     init_params = [fit_arrival,fit_impact,fit_log_energy]
-    short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
-
-    fit_chi2 = short_list[0][0]
-    fit_arrival = short_list[0][1]
-    fit_impact = short_list[0][2]
-    fit_log_energy = short_list[0][3]
-
-    if not use_movie:
-        return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
-
-    fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+    fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
 
     normalized_chi2 = fit_chi2/image_size
     print (f'normalized_chi2 = {normalized_chi2}')
 
+    chi2_cut = 1.5
     is_good_result = True
     if normalized_chi2>chi2_cut:
         print ('chi2 is bad.')
         is_good_result = False
 
-    if is_good_result:
-        return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    if not is_good_result:
 
-    arrival_range = 4*arrival_search_range*arrival_step_size
-    impact_range = 4*arrival_search_range*impact_step_size
-    log_energy_range = 100.5*log_energy_step_size
-    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
+        param_search_range = 100.0
+        arrival_range = param_search_range*arrival_step_size
+        impact_range = param_search_range*impact_step_size
+        log_energy_range = param_search_range*log_energy_step_size
 
-    fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+        found_minimum = False
+        fit_chi2 = 1e10
+        fit_arrival = 0.2
+        fit_impact = 300.
+        fit_log_energy = 0.0
+        best_short_list = []
 
-    normalized_chi2 = fit_chi2/image_size
-    print (f'normalized_chi2 = {normalized_chi2}')
+        init_params = [fit_arrival,fit_impact,fit_log_energy]
+        best_short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
+        fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
 
-    is_good_result = True
-    if normalized_chi2>chi2_cut:
-        print ('chi2 is bad.')
-        is_good_result = False
+        normalized_chi2 = fit_chi2/image_size
+        print (f'normalized_chi2 = {normalized_chi2}')
 
-    if is_good_result:
-        return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
-
-    arrival_range = 100*arrival_search_range*arrival_step_size
-    impact_range = 100*arrival_search_range*impact_step_size
-    log_energy_range = 100.5*log_energy_step_size
-    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
-
-    fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-
-    normalized_chi2 = fit_chi2/image_size
-    print (f'normalized_chi2 = {normalized_chi2}')
-
-
-    cov_arrival = 0.
-    cov_impact = 0.
-    cov_log_energy = 0.
-
-    print (f'Final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
-
-    cov_arrival = 0.
-    cov_impact = 0.
-    cov_log_energy = 0.
-
-    #tic_a = time.perf_counter()
-
-    #heavy_axis = movie_lookup_table[0].get_heaviest_axis()
-    #if fit_arrival>arrival_upper or fit_arrival<arrival_lower:
-    #    fit_arrival = heavy_axis[0]
-    #if fit_impact>impact_upper or fit_impact<impact_lower:
-    #    fit_impact = heavy_axis[1]
-    #if fit_log_energy>log_energy_upper or fit_log_energy<log_energy_lower:
-    #    fit_log_energy = heavy_axis[2]
-    #init_params = [fit_arrival,fit_impact,fit_log_energy]
-    #stepsize = [1.0*arrival_step_size,1.0*impact_step_size,1.0*log_energy_step_size]
-    #solution = minimize(
-    #    sqaure_difference_between_1d_images_poisson,
-    #    x0=init_params,
-    #    args=(input_movie_1d,movie_lookup_table,movie_eigen_vectors),
-    #    method='L-BFGS-B',
-    #    #method='Nelder-Mead',
-    #    #jac=None,
-    #    #options={'eps':stepsize,'ftol':0.000001},
-    #    options={'eps':stepsize},
-    #)
-    #fit_params = solution['x']
-    #fit_arrival = fit_params[0]
-    #fit_impact = fit_params[1]
-    #fit_log_energy = fit_params[2]
-    #cov_arrival = 0.
-    #cov_impact = 0.
-    #cov_log_energy = 0.
-    #fit_chi2 = 0.
-    #print (f'final fit_arrival = {fit_arrival}, fit_impact = {fit_impact}, fit_log_energy = {fit_log_energy}')
-    #return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
-
+    #return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
     return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
@@ -574,8 +580,8 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             fit_alt = image_fit_alt
             fit_az = image_fit_az
 
-            if image_size>image_size_cut:
-            #if image_size>5000. or select_event_id!=0:
+            #if image_size>image_size_cut:
+            if image_size>5000. or select_event_id!=0:
 
                 if 'image' in ana_tag:
 

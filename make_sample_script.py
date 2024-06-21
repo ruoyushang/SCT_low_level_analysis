@@ -16,14 +16,14 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
 print ('environment seting done.')
 
-#sim_files = 'sim_files.txt'
+sim_files = 'sim_files.txt'
 #sim_files = 'sim_files_diffuse_gamma.txt'
-sim_files = 'sim_files_merged_point_20deg.txt'
+#sim_files = 'sim_files_merged_point_20deg.txt'
 
 list_tel_type = []
-#list_tel_type += ['MST_SCT_SCTCam']
-list_tel_type += ['MST_MST_NectarCam']
-list_tel_type += ['MST_MST_FlashCam']
+list_tel_type += ['MST_SCT_SCTCam']
+#list_tel_type += ['MST_MST_NectarCam']
+#list_tel_type += ['MST_MST_FlashCam']
 #list_tel_type += ['SST_1M_DigiCam']
 #list_tel_type += ['SST_ASTRI_ASTRICam']
 #list_tel_type += ['SST_GCT_CHEC']
@@ -61,7 +61,7 @@ boundle_jobs = open(f'run/submit_condor_ctapipe_sample.sh',"w")
 job_counts = 0
 qfile = open(f'run/condor_ctapipe_sample_sub{submit_cnt}.sh',"w") 
 for s in range(0,len(runlist)):
-    if job_counts==30:
+    if job_counts==30 or s==len(runlist)-1:
         job_counts = 0
         qfile.close()
         boundle_jobs.write(f'condor_submit /nevis/tehanu/home/ryshang/SCT_low_level_analysis/run/condor_ctapipe_sample_sub{submit_cnt}.sh \n')
@@ -123,7 +123,7 @@ boundle_jobs = open(f'run/submit_condor_ctapipe_monotel.sh',"w")
 job_counts = 0
 qfile = open(f'run/condor_ctapipe_monotel_sub{submit_cnt}.sh',"w") 
 for s in range(0,len(runlist)):
-    if job_counts==30:
+    if job_counts==30 or s==len(runlist)-1:
         job_counts = 0
         qfile.close()
         boundle_jobs.write(f'condor_submit /nevis/tehanu/home/ryshang/SCT_low_level_analysis/run/condor_ctapipe_monotel_sub{submit_cnt}.sh \n')
