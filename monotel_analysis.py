@@ -84,11 +84,10 @@ do_it_fast = False
 if do_it_fast:
     ana_tag += '_fast'
 
-
 select_event_id = 0
 select_tel_id = 0
-#select_event_id = 70905
-#select_tel_id = 74
+#select_event_id = 62503
+#select_tel_id = 26
 
 def sqaure_difference_between_1d_images(init_params,data_latent_space,lookup_table,eigen_vectors,full_table=False):
 
@@ -252,23 +251,55 @@ def movie_box_search(init_params,image_latent_space,image_lookup_table,image_eig
 def analyze_short_list(short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors):
 
     fit_chi2 = 1e10
+    fit_likelihood = 0.
     n_short_list = 10
     fit_arrival = init_params[0]
     fit_impact = init_params[1]
     fit_log_energy = init_params[2]
+    list_chi2 = []
+    list_likelihood = []
+    list_arrival = []
+    list_impact = []
+    list_log_energy = []
     for entry in range(0,min(n_short_list,len(short_list))):
         try_arrival = short_list[entry][1]
         try_impact = short_list[entry][2]
         try_log_energy = short_list[entry][3]
         init_params = [try_arrival,try_impact,try_log_energy]
         try_chi2 = sqaure_difference_between_1d_images_poisson(init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+        try_likelihood = np.exp(-try_chi2)
+        list_chi2 += [try_chi2]
+        list_likelihood += [try_likelihood]
+        list_arrival += [try_arrival]
+        list_impact += [try_impact]
+        list_log_energy += [try_log_energy]
         if try_chi2<fit_chi2:
             fit_chi2 = try_chi2
+            fit_likelihood = try_likelihood
             fit_arrival = try_arrival
             fit_impact = try_impact
             fit_log_energy = try_log_energy
 
-    return fit_arrival, fit_impact, fit_log_energy, fit_chi2
+    err_arrival = 0.
+    err_impact = 0.
+    err_log_energy = 0.
+    sum_likelihood = 0.
+    #print (f'list_chi2 = {list_chi2}')
+    #print (f'list_likelihood = {list_likelihood}')
+    for entry in range(0,len(list_likelihood)):
+        #norm_likelihood = list_likelihood[entry]/fit_likelihood
+        #norm_likelihood = 1./(list_chi2[entry] - fit_chi2 + 1.)
+        norm_likelihood = 1./(list_chi2[entry])
+        err_arrival += pow(list_arrival[entry]-fit_arrival,2)*norm_likelihood
+        err_impact += pow(list_impact[entry]-fit_impact,2)*norm_likelihood
+        err_log_energy += pow(list_log_energy[entry]-fit_log_energy,2)*norm_likelihood
+        sum_likelihood += norm_likelihood
+        #print (f'norm_likelihood = {norm_likelihood}, try_arrival = {list_arrival[entry]}')
+    err_arrival = pow(err_arrival/sum_likelihood,0.5)
+    err_impact = pow(err_impact/sum_likelihood,0.5)
+    err_log_energy = pow(err_log_energy/sum_likelihood,0.5)
+
+    return fit_arrival, fit_impact, fit_log_energy, err_arrival, err_impact, err_log_energy, fit_chi2
 
 def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_vectors,input_time_1d,time_lookup_table,time_eigen_vectors,input_movie_1d,movie_lookup_table,movie_eigen_vectors,fast_conversion_poly):
 
@@ -343,7 +374,7 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
             found_minimum = True
 
     init_params = [fit_arrival,fit_impact,fit_log_energy]
-    fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+    fit_arrival, fit_impact, fit_log_energy, err_arrival, err_impact, err_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
 
     normalized_chi2 = fit_chi2/image_size
     print (f'normalized_chi2 = {normalized_chi2}')
@@ -370,14 +401,14 @@ def single_movie_reconstruction(input_image_1d,image_lookup_table,image_eigen_ve
 
         init_params = [fit_arrival,fit_impact,fit_log_energy]
         best_short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
-        fit_arrival, fit_impact, fit_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
+        fit_arrival, fit_impact, fit_log_energy, err_arrival, err_impact, err_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
 
         normalized_chi2 = fit_chi2/image_size
         print (f'normalized_chi2 = {normalized_chi2}')
 
     #return fit_arrival, fit_impact, fit_log_energy, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
 
-    return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, pow(cov_arrival,0.5), pow(cov_impact,0.5), pow(cov_log_energy,0.5), fit_chi2
+    return fit_arrival+0.5*arrival_step_size, fit_impact+0.5*impact_step_size, fit_log_energy+0.5*log_energy_step_size, err_arrival, err_impact, err_log_energy, fit_chi2
 
 
 
@@ -567,8 +598,10 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
 
             print (f'truth_energy     = {truth_energy}')
             print (f'image_fit_energy = {pow(10.,image_fit_log_energy)}')
+            print (f'image_fit_energy_err = {pow(10.,image_fit_log_energy+image_fit_log_energy_err) - pow(10.,image_fit_log_energy-image_fit_log_energy_err)}')
             print (f'truth_fit_impact = {pow(impact_x*impact_x+impact_y*impact_y,0.5)}')
             print (f'image_fit_impact = {image_fit_impact}')
+            print (f'image_fit_impact_err = {image_fit_impact_err}')
             print (f'image_method_error = {image_method_error:0.3f} deg')
             print (f'image_method_unc = {image_method_unc:0.3f} deg')
 
@@ -601,7 +634,7 @@ def run_monotel_analysis(training_sample_path, telescope_type, min_energy=0.1, m
             evt_header = [training_sample_path,event_id,tel_id]
             evt_geometry = [image_size,lightcone,focal_length,image_direction,time_direction,angle_err]
             evt_truth = [truth_energy,truth_alt,truth_az,star_cam_x,star_cam_y,truth_projection]
-            evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y,image_fit_chi2]
+            evt_model = [pow(10.,fit_log_energy),fit_alt,fit_az,fit_cam_x,fit_cam_y,image_fit_chi2,image_method_unc]
 
             single_analysis_result = [evt_header,evt_geometry,evt_truth,evt_model]
             analysis_result += [single_analysis_result]

@@ -40,18 +40,18 @@ max_nfiles = 1e10
 nfiles = 0
 
 image_dir_cut = 0.7
-fit_chi2_cut = 1.2
+arrival_unc_cut = 0.2
 
-def pass_quality(lightcone,image_direction,fit_chi2,image_size):
+def pass_quality(lightcone,image_direction,arrival_unc,image_size):
 
-    #return True
+    return True
 
     if abs(image_direction)<image_dir_cut: 
         return False
 
     #return True
 
-    if fit_chi2/image_size>fit_chi2_cut:
+    if arrival_unc>arrival_unc_cut:
         return False
 
     return True
@@ -72,8 +72,10 @@ def plot_monotel_analysis():
     list_fit_chi2 = []
     list_image_direction = []
     list_time_direction = []
+    list_combine_direction = []
     list_angle_err = []
-    list_bad_fit_chi2 = []
+    list_arrival_unc = []
+    list_bad_arrival_unc = []
     list_bad_image_size = []
     list_bad_image_direction = []
     list_lightcone = []
@@ -129,11 +131,12 @@ def plot_monotel_analysis():
             fit_camx = img_model[3]/focal_length*180./np.pi
             fit_camy = img_model[4]/focal_length*180./np.pi
             fit_chi2 = img_model[5]
+            arrival_unc = img_model[6]
 
             total_images += 1
 
             #if image_size<200.: continue
-            if not pass_quality(lightcone,image_direction,fit_chi2,image_size): continue
+            if not pass_quality(lightcone,image_direction,arrival_unc,image_size): continue
             #if truth_projection<0.: continue
 
             pass_images += 1
@@ -160,7 +163,9 @@ def plot_monotel_analysis():
             list_fit_chi2 += [fit_chi2/image_size]
             list_image_direction += [abs(image_direction)]
             list_time_direction += [abs(time_direction)]
+            list_combine_direction += [abs(time_direction+image_direction)]
             list_angle_err += [abs(angle_err)]
+            list_arrival_unc += [abs(arrival_unc)]
             list_lightcone += [lightcone]
             list_truth_projection += [truth_projection]
             list_delta_arrival += [pow(delta_alt*delta_alt+delta_az*delta_az,0.5)]
@@ -170,7 +175,7 @@ def plot_monotel_analysis():
             list_delta_camr_weight += [1./pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
 
             if delta_camr>0.5:
-                list_bad_fit_chi2 += [fit_chi2/image_size]
+                list_bad_arrival_unc += [arrival_unc]
                 list_bad_image_size += [image_size]
                 list_bad_image_direction += [abs(image_direction)]
 
@@ -222,23 +227,22 @@ def plot_monotel_analysis():
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
     axbig.scatter(list_fit_chi2, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    axbig.axvline(x=fit_chi2_cut)
     fig.savefig(f'{ctapipe_output}/output_plots/fit_chi2_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
     axbig = fig.add_subplot()
     label_x = 'Image direction'
-    label_y = 'Fit chi square'
+    label_y = 'Arrival uncertainty'
     axbig.set_xlabel(label_x)
     axbig.set_ylabel(label_y)
-    axbig.scatter(list_image_direction, list_fit_chi2, s=90, c='b', marker='+', alpha=0.3)
-    axbig.scatter(list_bad_image_direction, list_bad_fit_chi2, s=90, c='r', marker='+', alpha=0.3)
+    axbig.scatter(list_image_direction, list_arrival_unc, s=90, c='b', marker='+', alpha=0.3)
+    axbig.scatter(list_bad_image_direction, list_bad_arrival_unc, s=90, c='r', marker='+', alpha=0.3)
     axbig.axvline(x=image_dir_cut)
-    axbig.axhline(y=fit_chi2_cut)
+    axbig.axhline(y=arrival_unc_cut)
     axbig.set_xscale('log')
     axbig.set_yscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_chi2_{ana_tag}.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_arrival_unc_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -274,7 +278,29 @@ def plot_monotel_analysis():
     axbig.set_ylabel(label_y)
     axbig.scatter(list_image_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
     axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_projection_{ana_tag}.png',bbox_inches='tight')
+    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_image_dir_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Time direction'
+    label_y = 'Truth projection'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_time_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_time_dir_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Time direction'
+    label_y = 'Truth projection'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_combine_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_combine_dir_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
@@ -309,6 +335,18 @@ def plot_monotel_analysis():
     axbig.scatter(list_angle_err, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
     axbig.set_xscale('log')
     fig.savefig(f'{ctapipe_output}/output_plots/angle_err_vs_camr_{ana_tag}.png',bbox_inches='tight')
+    axbig.remove()
+
+    fig.clf()
+    axbig = fig.add_subplot()
+    label_x = 'Arrival uncertainty [deg]'
+    label_y = 'Cam delta r'
+    axbig.set_xlabel(label_x)
+    axbig.set_ylabel(label_y)
+    axbig.scatter(list_arrival_unc, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
+    axbig.axvline(x=arrival_unc_cut)
+    axbig.set_xscale('log')
+    fig.savefig(f'{ctapipe_output}/output_plots/arrival_unc_vs_camr_{ana_tag}.png',bbox_inches='tight')
     axbig.remove()
 
     fig.clf()
