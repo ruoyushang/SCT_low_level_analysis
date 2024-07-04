@@ -30,9 +30,8 @@ cleaning_level = {
     "SCTCam": (2, 5, 2),
 }
 
-# image_size_cut = 30.0
 image_size_cut = 100.0
-plot_image_size_cut = 200.0
+plot_image_size_cut = 5000.0
 
 n_bins_arrival = 20
 arrival_lower = 0.0
@@ -1339,7 +1338,7 @@ def MakeLookupTable(
                     n_empty_cells += 1.0
                 else:
                     n_filled_cells += 1.0
-                n_training_images += count
+                n_training_images += float(count)
     avg_images_per_cell = n_training_images / n_filled_cells
     print(
         f"n_empty_cells = {n_empty_cells}, n_filled_cells = {n_filled_cells}, n_training_images = {n_training_images}, avg_images_per_cell = {avg_images_per_cell:0.1f}"
@@ -2007,7 +2006,7 @@ def camxy_to_altaz(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
 
     star_cam = SkyCoord(
         x=star_cam_x * u.m,
-        y=-star_cam_y * u.m,
+        y=star_cam_y * u.m,
         frame=camera_frame,
     )
 
@@ -2196,6 +2195,7 @@ def plot_monotel_reconstruction(
     star_cam_y,
     fit_cam_x,
     fit_cam_y,
+    fit_cam_err,
     tag,
 ):
     event_id = event.index["event_id"]
@@ -2263,25 +2263,30 @@ def plot_monotel_reconstruction(
     display.cmap = "Reds"
     display.add_colorbar(ax=ax)
     ax.scatter(star_cam_x, star_cam_y, s=90, facecolors="none", c="r", marker="+")
-    ax.scatter(
-        fit_cam_x, fit_cam_y, s=90, facecolors="none", edgecolors="r", marker="o"
-    )
+    mycircle = plt.Circle( (fit_cam_x, fit_cam_y), fit_cam_err, fill = False, color='blue')
+    ax.add_patch(mycircle)
     if np.cos(angle * u.rad) > 0.0:
         line_x = np.linspace(image_center_x, xmax, 100)
         line_y = line_a * line_x + line_b
         ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="dashed")
-        line_y = (line_a + line_a_err) * line_x + line_b - line_a_err * image_center_x
-        ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="solid")
-        line_y = (line_a - line_a_err) * line_x + line_b + line_a_err * image_center_x
-        ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="solid")
+        line_yup = (
+           (line_a + line_a_err) * line_x + line_b - line_a_err * image_center_x
+        )
+        line_ylow = (
+           (line_a - line_a_err) * line_x + line_b + line_a_err * image_center_x
+        )
+        ax.fill_between(line_x,line_ylow,line_yup,alpha=0.1,color='b')
     else:
         line_x = np.linspace(xmin, image_center_x, 100)
         line_y = line_a * line_x + line_b
         ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="dashed")
-        line_y = (line_a + line_a_err) * line_x + line_b - line_a_err * image_center_x
-        ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="solid")
-        line_y = (line_a - line_a_err) * line_x + line_b + line_a_err * image_center_x
-        ax.plot(line_x, line_y, color="k", alpha=0.3, linestyle="solid")
+        line_yup = (
+           (line_a + line_a_err) * line_x + line_b - line_a_err * image_center_x
+        )
+        line_ylow = (
+           (line_a - line_a_err) * line_x + line_b + line_a_err * image_center_x
+        )
+        ax.fill_between(line_x,line_ylow,line_yup,alpha=0.1,color='b')
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
     fig.savefig(
@@ -2403,15 +2408,25 @@ def make_a_gif(
         extent=(xmin, xmax, ymin, ymax),
         vmin=0.0,
         vmax=2.0 * image_max / float(n_windows),
+        cmap="Reds",
     )
     cbar = fig.colorbar(im)
+    font = {
+        "family": "serif",
+        "color": "black",
+        "weight": "normal",
+        "size": 10,
+        "rotation": 0.0,
+    }
+    plt.text(0.8*xmin, 0.8*ymax, 'input data', fontdict=font)
+    plt.text(0.8*xmin, 0.8*ymax-0.5*(ymax-ymin), 'reconstruction', fontdict=font)
 
     def animate(i):
         im.set_array(movie_2d[i])
         return (im,)
 
     ani = animation.FuncAnimation(
-        fig, animate, repeat=True, frames=len(movie_2d), interval=200
+        fig, animate, repeat=True, frames=len(movie_2d), interval=1000
     )
     ani.save(
         f"{ctapipe_output}/output_plots/run{run_id}_evt{event_id}_tel{tel_id}_movie.gif",
@@ -2689,10 +2704,10 @@ def run_monoscopic_analysis(
         list_image_feature += [image_feature_array]
 
         if (
-            # image_size > plot_image_size_cut
-            image_size > image_size_cut
-            and image_method_error > 0.6
-            and image_method_unc * 180.0 / np.pi < 0.5
+            image_size > plot_image_size_cut
+            #image_size > image_size_cut
+            #and image_method_error > 0.6
+            #and image_method_unc * 180.0 / np.pi < 0.5
         ):
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             print(f"image_size = {image_size}")
@@ -2710,6 +2725,7 @@ def run_monoscopic_analysis(
                 star_cam_y,
                 image_fit_cam_x,
                 image_fit_cam_y,
+                image_method_unc*focal_length,
                 "movie",
             )
             sim_movie = movie_simulation(
@@ -2878,7 +2894,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         line_b_err = image_feature_array[12]
 
         image_center_alt, image_center_az = camxy_to_altaz(
-            source, source.subarray, run_id, tel_id, image_center_x, image_center_y
+            source, source.subarray, run_id, tel_id, image_center_x, -image_center_y
         )
 
         image_tail_alt, image_tail_az = camxy_to_altaz(
@@ -2887,7 +2903,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             run_id,
             tel_id,
             image_center_x + 0.01,
-            line_a * (image_center_x + 0.01) + line_b,
+            -1.*(line_a * (image_center_x + 0.01) + line_b),
         )
 
         line_altaz_a = (image_tail_az - image_center_az) / (
@@ -2910,6 +2926,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
     xing_alt = 0.0
     xing_az = 0.0
     xing_weight = 0.0
+    n_tel = len(list_line_a)
     if len(list_line_a) > 1:
         (
             xing_alt,
@@ -2943,8 +2960,8 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
 
         if len(list_tel_id)<4 or is_bad_result:
             print("plot xing reconstruction.")
-            print (f"xing_off_angle = {xing_off_angle*180./np.pi} deg")
-            print (f"xing_err = {xing_err*180./np.pi} deg")
+            #print (f"xing_off_angle = {xing_off_angle*180./np.pi} deg")
+            #print (f"xing_err = {xing_err*180./np.pi} deg")
             #print (f"truth_alt = {truth_alt:0.3f}, xing_alt = {xing_alt:0.3f}")
             #print (f"truth_az = {truth_az:0.3f}, xing_az = {xing_az:0.3f}")
             plot_xing_reconstruction(
@@ -2978,10 +2995,10 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         #if is_bad_result:
         #    exit()
 
-    return xing_alt, xing_az, xing_weight
+    return xing_alt, xing_az, xing_weight, n_tel
 
 
-def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
+def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_output=True):
     analysis_result = []
     lookup_table_type = "box3d"
 
@@ -3075,8 +3092,13 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
         #if n_tels!=2: 
         #    continue
 
+        average_intensity = reco_result.average_intensity
+        if not save_output:
+            if average_intensity<0.5*plot_image_size_cut: continue
+
         truth_alt = float(event.simulation.shower.alt / u.rad)
         truth_az = float(event.simulation.shower.az / u.rad)
+        truth_energy = event.simulation.shower.energy / u.TeV
 
         hillas_alt = 0.0
         hillas_az = 0.0
@@ -3103,6 +3125,8 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             )
             sum_hillas_result += [
                 [
+                    truth_energy,
+                    n_tels,
                     hillas_off_angle.to(u.deg).value,
                     hillas_err * 180.0 / np.pi,
                     reco_result.alt.to(u.deg).value,
@@ -3113,7 +3137,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             print("hillas reconstruction is not valid.")
 
         tic_xing = time.perf_counter()
-        xing_alt, xing_az, xing_weight = run_multiscopic_analysis(
+        xing_alt, xing_az, xing_weight, xing_n_tel = run_multiscopic_analysis(
             ctapipe_output, telescope_type, run_id, source, event
         )
         toc_xing = time.perf_counter()
@@ -3129,6 +3153,8 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             )
             sum_xing_result += [
                 [
+                    truth_energy,
+                    xing_n_tel,
                     xing_off_angle.to(u.deg).value,
                     xing_err * 180.0 / np.pi,
                     xing_alt * 180.0 / np.pi,
@@ -3190,6 +3216,8 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             print(
                 f"tmp_off_angle = {tmp_off_angle.to(u.deg).value:0.3f} +/- {tmp_err*180./np.pi:0.3f} deg ({toc_template-tic_template:0.1f} sec)"
             )
+            print (f"truth_alt = {truth_alt:0.3f}, avg_tmp_alt = {avg_tmp_alt:0.3f}")
+            print (f"truth_az = {truth_az:0.3f}, avg_tmp_az = {avg_tmp_az:0.3f}")
             print(
                 f"truth_log_energy = {pow(10.,truth_log_energy):0.2f} TeV, tmp_log_energy = {pow(10.,avg_tmp_log_energy):0.2f} TeV"
             )
@@ -3197,6 +3225,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             list_tmp_az = np.array(list_tmp_az) * 180.0 / np.pi
             sum_template_result += [
                 [
+                    truth_energy,
                     tmp_off_angle.to(u.deg).value,
                     tmp_err * 180.0 / np.pi,
                     avg_tmp_alt * 180.0 / np.pi,
@@ -3264,10 +3293,11 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type):
             sum_template_result,
             sum_combine_result,
         ]
-        output_filename = f"{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}_{telescope_type}.pkl"
-        print(f"writing file to {output_filename}")
-        with open(output_filename, "wb") as file:
-            pickle.dump(analysis_result, file)
+        if save_output:
+            output_filename = f"{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}_{telescope_type}.pkl"
+            print(f"writing file to {output_filename}")
+            with open(output_filename, "wb") as file:
+                pickle.dump(analysis_result, file)
 
         print(
             "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
