@@ -1289,6 +1289,8 @@ def MakeLookupTable(
         image_angle_err = feature_matrix[img][13]
         image_qual = abs(image_direction + time_direction)
 
+        if image_angle_err==0.: continue
+
         truth_energy = float(truth_matrix[img][0] / u.TeV)
         truth_height = float(truth_matrix[img][5] / u.m)
         truth_x_max = float(truth_matrix[img][6] / (u.g / (u.cm * u.cm)))
@@ -1480,6 +1482,7 @@ def MakeFastConversionImage(
     list_latent_space = []
 
     for img in range(0, len(big_image_matrix)):
+
         image_size = feature_matrix[img][0]
         image_center_x = feature_matrix[img][1]
         image_center_y = feature_matrix[img][2]
@@ -1487,6 +1490,8 @@ def MakeFastConversionImage(
         image_direction = feature_matrix[img][7]
         image_angle_err = feature_matrix[img][13]
         image_qual = abs(image_direction + time_direction)
+
+        if image_angle_err==0.: continue
 
         truth_energy = float(truth_matrix[img][0] / u.TeV)
         truth_height = float(truth_matrix[img][5] / u.m)
