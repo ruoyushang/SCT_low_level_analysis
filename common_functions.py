@@ -811,13 +811,24 @@ def find_image_moments(geometry, input_image_1d, input_time_1d, star_cam_xy=None
 
     #if (direction_of_time+direction_of_image)>0.:
 
-    if image_center_r<0.25:
-        if (direction_of_image)>0.:
+    #if image_center_r<0.25:
+    #    if (direction_of_image)>0.:
+    #        angle = angle+np.pi
+    #        #print (f'change direction.')
+    #else:
+    #    if (direction_of_time)>0.:
+    #        angle = angle+np.pi
+
+    if (direction_of_time*direction_of_image)>0.:
+        if (direction_of_time)>0. and (direction_of_image)>0.:
             angle = angle+np.pi
-            #print (f'change direction.')
     else:
-        if (direction_of_time)>0.:
-            angle = angle+np.pi
+        if abs(direction_of_image)>abs(direction_of_time):
+            if (direction_of_image)>0.:
+                angle = angle+np.pi
+        else:
+            if (direction_of_time)>0.:
+                angle = angle+np.pi
 
     truth_angle = np.arctan2(-image_center_y,-image_center_x)
     if not star_cam_xy==None:
@@ -1460,7 +1471,6 @@ def display_a_movie(fig, subarray, run_id, tel_id, event, eco_image_size, eco_mo
         axbig.set_xlabel(label_x)
         axbig.set_ylabel(label_y)
         im = axbig.imshow(image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax),vmin=0.,vmax=2.*image_max/float(n_windows))
-        #im = axbig.imshow(image_2d,origin='lower',extent=(xmin,xmax,ymin,ymax), norm=colors.LogNorm())
         cbar = fig.colorbar(im)
         line_x = np.linspace(xmin, xmax, 100)
         line_y = -(0.*line_x + 0.05)
