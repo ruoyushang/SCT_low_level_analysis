@@ -9,6 +9,7 @@ from astropy import units as u
 from matplotlib import pyplot as plt
 from matplotlib import colors
 import pickle
+import math
 
 from ctapipe.utils import Histogram
 from ctapipe.utils.datasets import get_dataset_path
@@ -24,80 +25,153 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-ana_tag = 'movie_box3d'
-#ana_tag = 'image_box3d_fast'
+ana_tag = 'veritas'
 
-telescope_type = 'MST_SCT_SCTCam'
+#telescope_type = 'MST_SCT_SCTCam'
+telescope_type = 'MST_MST_NectarCam'
+#telescope_type = 'MST_MST_FlashCam'
+#telescope_type = 'SST_1M_DigiCam'
+#telescope_type = 'SST_ASTRI_ASTRICam'
+#telescope_type = 'SST_GCT_CHEC'
+#telescope_type = 'LST_LST_LSTCam'
 
-sim_files = 'sim_files.txt'
-#sim_files = 'sim_files_diffuse_gamma.txt'
+#sim_files = 'sct_onaxis_train.txt'
+#sim_files = 'sct_onaxis_test.txt'
+#sim_files = 'sct_diffuse_all.txt'
+#sim_files = 'mst_onaxis_train.txt'
+sim_files = 'mst_onaxis_test.txt'
+#sim_files = 'mst_diffuse_all.txt'
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
 training_sample_path = []
-particle_type = []
 max_nfiles = 1e10
 nfiles = 0
 
-image_dir_cut = 0.7
-arrival_unc_cut = 0.2
+unc_cut = 0.2
+#unc_cut = 1e10
+hist_edge = 0.04
+#list_edge = 1e10
+list_edge = 0.04
 
-def pass_quality(lightcone,image_direction,arrival_unc,image_size):
+energy_cut = 0.001
+#energy_cut = 1.0
 
-    return True
+ref_name = []
+ref_name += ['template']
+ref_name += ['least square']
+ref_name += ['least square + template']
 
-    if abs(image_direction)<image_dir_cut: 
-        return False
+list_ref_chi2 = []
+list_ref_unc = []
+list_ref_off_angle = []
+list_ref_off_angle_pass = []
+list_ref_off_angle_fail = []
+for ref in range(0,len(ref_name)):
+    list_ref_chi2 += [None]
+    list_ref_unc += [None]
+    list_ref_off_angle += [None]
+    list_ref_off_angle_pass += [None]
+    list_ref_off_angle_fail += [None]
 
-    #return True
+hist_template_norm = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_template_off_angle = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_template_off_angle_err = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_template_energy_resolution = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_template_energy_resolution_err = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_template_reco_time = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_hillas_norm = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_hillas_off_angle = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_hillas_off_angle_err = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_xing_norm = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_xing_off_angle = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_xing_off_angle_err = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_combine_norm = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_combine_off_angle = Histogram(nbins=(4), ranges=[[-1,1]])
+hist_combine_off_angle_err = Histogram(nbins=(4), ranges=[[-1,1]])
 
-    if arrival_unc>arrival_unc_cut:
-        return False
-
-    return True
+list_hist_norm = []
+list_hist_off_angle = []
+list_hist_off_angle_err = []
+for ref in range(0,len(ref_name)):
+    if ref_name[ref] == 'least square':
+        list_hist_norm += [hist_xing_norm]
+        list_hist_off_angle += [hist_xing_off_angle]
+        list_hist_off_angle_err += [hist_xing_off_angle_err]
+    if ref_name[ref] == 'least square + template':
+        list_hist_norm += [hist_combine_norm]
+        list_hist_off_angle += [hist_combine_off_angle]
+        list_hist_off_angle_err += [hist_combine_off_angle_err]
+    if ref_name[ref] == 'template':
+        list_hist_norm += [hist_template_norm]
+        list_hist_off_angle += [hist_template_off_angle]
+        list_hist_off_angle_err += [hist_template_off_angle_err]
 
 with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
-        training_sample_path += [get_dataset_path(line.strip('\n'))]
-        particle_type += [0]
+        #training_sample_path += [get_dataset_path(line.strip('\n'))]
+        training_sample_path += [line.strip('\n')]
         nfiles += 1
         if nfiles >= max_nfiles: break
 
 def gauss_func(x,A,sigma):
     return A * np.exp(-((x-0.)**2)/(2*sigma*sigma))
 
-def plot_monotel_analysis():
+def plot_analysis_result():
 
-    list_image_size = []
-    list_fit_chi2 = []
-    list_image_direction = []
-    list_time_direction = []
-    list_combine_direction = []
-    list_angle_err = []
-    list_arrival_unc = []
-    list_bad_arrival_unc = []
-    list_bad_image_size = []
-    list_bad_image_direction = []
-    list_lightcone = []
-    list_truth_projection = []
-    list_delta_energy = []
-    list_truth_energy = []
-    list_model_energy = []
-    list_delta_arrival = []
-    list_delta_camx = []
-    list_delta_camy = []
-    list_delta_camr = []
-    list_delta_camr_weight = []
-
-    total_images = 0
-    pass_images = 0
+    list_hillas_off_angle = []
+    list_hillas_off_angle_pass = []
+    list_hillas_off_angle_fail = []
+    list_hillas_unc = []
+    list_hillas_unc_pass = []
+    list_hillas_unc_fail = []
+    list_xing_off_angle = []
+    list_xing_off_angle_pass = []
+    list_xing_off_angle_fail = []
+    list_xing_unc = []
+    list_xing_unc_pass = []
+    list_xing_unc_fail = []
+    list_template_energy_resolution = []
+    list_template_energy_resolution_pass = []
+    list_template_energy_resolution_fail = []
+    list_template_off_angle = []
+    list_template_off_angle_pass = []
+    list_template_off_angle_fail = []
+    list_template_unc = []
+    list_template_unc_pass = []
+    list_template_unc_fail = []
+    list_combine_off_angle = []
+    list_combine_off_angle_pass = []
+    list_combine_off_angle_fail = []
+    list_combine_unc = []
+    list_combine_unc_pass = []
+    list_combine_unc_fail = []
+    list_tmp_alt = []
+    list_tmp_az = []
+    list_hillas_truth_log_energy = []
+    list_xing_truth_log_energy = []
+    list_combine_truth_log_energy = []
+    list_template_truth_log_energy = []
+    list_template_reco_log_energy = []
+    list_template_reco_time = []
+    list_hillas_truth_log_energy_pass = []
+    list_xing_truth_log_energy_pass = []
+    list_combine_truth_log_energy_pass = []
+    list_template_truth_log_energy_pass = []
+    list_hillas_truth_log_energy_fail = []
+    list_xing_truth_log_energy_fail = []
+    list_combine_truth_log_energy_fail = []
+    list_template_truth_log_energy_fail = []
 
     for path in range(0,len(training_sample_path)):
     
-        source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
-        subarray = source.subarray
-        ob_keys = source.observation_blocks.keys()
-        run_id = list(ob_keys)[0]
+        #source = SimTelEventSource(training_sample_path[path], focal_length_choice='EQUIVALENT')
+        #subarray = source.subarray
+        #ob_keys = source.observation_blocks.keys()
+        #run_id = list(ob_keys)[0]
+
+        run_id = training_sample_path[path].split("_")[3].strip("run")
+        print (f"run_id = {run_id}")
     
         input_filename = f'{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}_{telescope_type}.pkl'
         print (f'loading pickle analysis data: {input_filename}')
@@ -105,325 +179,349 @@ def plot_monotel_analysis():
             print (f'file does not exist.')
             continue
         analysis_result = pickle.load(open(input_filename, "rb"))
+
+        hillas_result = analysis_result[0]
+        xing_result = analysis_result[1]
+        template_result = analysis_result[2]
+        combine_result = analysis_result[3]
+
+        for evt in range(0,len(hillas_result)):
+            truth_energy = hillas_result[evt][0].value
+            if truth_energy<energy_cut: continue
+            off_angle = hillas_result[evt][2]
+            if math.isnan(off_angle): continue
+            unc = hillas_result[evt][3]
+            if unc==0.:
+                unc = 0.00001
+            list_hillas_off_angle += [min(off_angle*off_angle,list_edge-0.001)]
+            list_hillas_unc += [unc]
+            list_hillas_truth_log_energy += [np.log10(truth_energy)]
+            if unc<unc_cut:
+                list_hillas_off_angle_pass += [min(off_angle*off_angle,list_edge-0.001)]
+                list_hillas_unc_pass += [unc]
+                list_hillas_truth_log_energy_pass += [np.log10(truth_energy)]
+            else:
+                list_hillas_off_angle_fail += [min(off_angle*off_angle,list_edge-0.001)]
+                list_hillas_unc_fail += [unc]
+                list_hillas_truth_log_energy_fail += [np.log10(truth_energy)]
+        for evt in range(0,len(xing_result)):
+            truth_energy = xing_result[evt][0].value
+            if truth_energy<energy_cut: continue
+            off_angle = xing_result[evt][2]
+            if math.isnan(off_angle): continue
+            unc = xing_result[evt][3]
+            list_xing_off_angle += [min(off_angle*off_angle,list_edge-0.001)]
+            list_xing_unc += [unc]
+            list_xing_truth_log_energy += [np.log10(truth_energy)]
+            if unc<unc_cut:
+                list_xing_off_angle_pass += [min(off_angle*off_angle,list_edge-0.001)]
+                list_xing_unc_pass += [unc]
+                list_xing_truth_log_energy_pass += [np.log10(truth_energy)]
+            else:
+                list_xing_off_angle_fail += [min(off_angle*off_angle,list_edge-0.001)]
+                list_xing_unc_fail += [unc]
+                list_xing_truth_log_energy_fail += [np.log10(truth_energy)]
+        for evt in range(0,len(template_result)):
+            truth_energy = template_result[evt][0].value
+            if truth_energy<energy_cut: continue
+            for img in range(0,len(template_result[evt][7])):
+                list_tmp_alt += [template_result[evt][7][img]]
+                list_tmp_az += [template_result[evt][8][img]]
+            off_angle = template_result[evt][1]
+            if math.isnan(off_angle): continue
+            unc = template_result[evt][2]
+            truth_log_energy = template_result[evt][5].value
+            tmp_log_energy = template_result[evt][6].value
+            tmp_reco_time = template_result[evt][10]
+            list_template_energy_resolution += [abs(pow(10.,tmp_log_energy)-pow(10.,truth_log_energy))/pow(10.,truth_log_energy)]
+            list_template_off_angle += [min(off_angle*off_angle,list_edge-0.001)]
+            list_template_unc += [unc]
+            list_template_truth_log_energy += [np.log10(truth_energy)]
+            list_template_reco_log_energy += [tmp_log_energy]
+            list_template_reco_time += [tmp_reco_time]
+            if unc<unc_cut:
+                list_template_off_angle_pass += [min(off_angle*off_angle,list_edge-0.001)]
+                list_template_unc_pass += [unc]
+                list_template_truth_log_energy_pass += [np.log10(truth_energy)]
+                list_template_energy_resolution_pass += [abs(pow(10.,tmp_log_energy)-pow(10.,truth_log_energy))/pow(10.,truth_log_energy)]
+            else:
+                list_template_off_angle_fail += [min(off_angle*off_angle,list_edge-0.001)]
+                list_template_unc_fail += [unc]
+                list_template_truth_log_energy_fail += [np.log10(truth_energy)]
+                list_template_energy_resolution_fail += [abs(pow(10.,tmp_log_energy)-pow(10.,truth_log_energy))/pow(10.,truth_log_energy)]
+        for evt in range(0,len(combine_result)):
+            truth_energy = combine_result[evt][0].value
+            off_angle = combine_result[evt][1]
+            if math.isnan(off_angle): continue
+            unc = combine_result[evt][2]
+            list_combine_off_angle += [min(off_angle*off_angle,list_edge-0.001)]
+            list_combine_unc += [unc]
+            list_combine_truth_log_energy += [np.log10(truth_energy)]
+            if unc<unc_cut:
+                list_combine_off_angle_pass += [min(off_angle*off_angle,list_edge-0.001)]
+                list_combine_unc_pass += [unc]
+                list_combine_truth_log_energy_pass += [np.log10(truth_energy)]
+            else:
+                list_combine_off_angle_fail += [min(off_angle*off_angle,list_edge-0.001)]
+                list_combine_unc_fail += [unc]
+                list_combine_truth_log_energy_fail += [np.log10(truth_energy)]
     
-        for img in range(0,len(analysis_result)):
+    list_hillas_chi2 = np.array(list_hillas_off_angle_pass)/np.square(np.array(list_hillas_unc_pass))
 
-            img_header = analysis_result[img][0]
-            img_geometry = analysis_result[img][1]
-            img_truth = analysis_result[img][2]
-            img_model = analysis_result[img][3]
+    for ref in range(0,len(ref_name)):
+        if ref_name[ref] == 'least square':
+            list_ref_chi2[ref]= np.array(list_xing_off_angle_pass)/np.square(np.array(list_xing_unc_pass))
+            list_ref_off_angle[ref] = list_xing_off_angle
+            list_ref_unc[ref] = list_xing_unc
+            list_ref_off_angle_pass[ref] = list_xing_off_angle_pass
+            list_ref_off_angle_fail[ref] = list_xing_off_angle_fail
+        if ref_name[ref] == 'least square + template':
+            list_ref_chi2[ref] = np.array(list_combine_off_angle_pass)/np.square(np.array(list_combine_unc_pass))
+            list_ref_off_angle[ref] = list_combine_off_angle
+            list_ref_unc[ref] = list_combine_unc
+            list_ref_off_angle_pass[ref] = list_combine_off_angle_pass
+            list_ref_off_angle_fail[ref] = list_combine_off_angle_fail
+        if ref_name[ref] == 'template':
+            list_ref_chi2[ref] = np.array(list_template_off_angle_pass)/np.square(np.array(list_template_unc_pass))
+            list_ref_off_angle[ref] = list_template_off_angle
+            list_ref_unc[ref] = list_template_unc
+            list_ref_off_angle_pass[ref] = list_template_off_angle_pass
+            list_ref_off_angle_fail[ref] = list_template_off_angle_fail
 
-            image_size = img_geometry[0]
-            lightcone = img_geometry[1]
-            focal_length = img_geometry[2]
-            image_direction = img_geometry[3]
-            time_direction = img_geometry[4]
-            angle_err = img_geometry[5]
-            truth_energy = img_truth[0]
-            truth_alt = img_truth[1]
-            truth_az = img_truth[2]
-            truth_camx = img_truth[3]/focal_length*180./np.pi
-            truth_camy = img_truth[4]/focal_length*180./np.pi
-            truth_projection = img_truth[5]
-            fit_energy = img_model[0]
-            fit_alt = img_model[1]
-            fit_az = img_model[2]
-            fit_camx = img_model[3]/focal_length*180./np.pi
-            fit_camy = img_model[4]/focal_length*180./np.pi
-            fit_chi2 = img_model[5]
-            arrival_unc = img_model[6]
+    hist_hillas_norm.fill(list_hillas_truth_log_energy_pass)
+    hist_hillas_off_angle.fill(list_hillas_truth_log_energy_pass,weights=list_hillas_off_angle_pass)
+    hist_hillas_off_angle.data = np.sqrt(hist_hillas_off_angle.data / hist_hillas_norm.data)
+    hist_hillas_off_angle_err.data = hist_hillas_off_angle.data / np.sqrt(hist_hillas_norm.data)
 
-            total_images += 1
+    hist_xing_norm.fill(list_xing_truth_log_energy_pass)
+    hist_xing_off_angle.fill(list_xing_truth_log_energy_pass,weights=list_xing_off_angle_pass)
+    hist_xing_off_angle.data = np.sqrt(hist_xing_off_angle.data / hist_xing_norm.data)
+    hist_xing_off_angle_err.data = hist_xing_off_angle.data / np.sqrt(hist_xing_norm.data)
 
-            #if image_size<200.: continue
-            if not pass_quality(lightcone,image_direction,arrival_unc,image_size): continue
-            #if truth_projection<0.: continue
+    hist_combine_norm.fill(list_combine_truth_log_energy_pass)
+    hist_combine_off_angle.fill(list_combine_truth_log_energy_pass,weights=list_combine_off_angle_pass)
+    hist_combine_off_angle.data = np.sqrt(hist_combine_off_angle.data / hist_combine_norm.data)
+    hist_combine_off_angle_err.data = hist_combine_off_angle.data / np.sqrt(hist_combine_norm.data)
 
-            pass_images += 1
+    hist_template_norm.fill(list_template_truth_log_energy_pass)
+    hist_template_off_angle.fill(list_template_truth_log_energy_pass,weights=list_template_off_angle_pass)
+    hist_template_off_angle.data = np.sqrt(hist_template_off_angle.data / hist_template_norm.data)
+    hist_template_off_angle_err.data = hist_template_off_angle.data / np.sqrt(hist_template_norm.data)
+    hist_template_energy_resolution.fill(list_template_truth_log_energy_pass,weights=list_template_energy_resolution_pass)
+    hist_template_energy_resolution.data = hist_template_energy_resolution.data / hist_template_norm.data
+    hist_template_energy_resolution_err.data = hist_template_energy_resolution.data / np.sqrt(hist_template_norm.data)
 
-            delta_energy = abs(fit_energy - truth_energy) / truth_energy
-            delta_alt = (fit_alt - truth_alt)*180./np.pi
-            delta_az = (fit_az - truth_az)*180./np.pi
-            if delta_az>180.:
-                delta_az = delta_az - 360.
-            if delta_az<-180.:
-                delta_az = delta_az + 360.
+    hist_template_reco_time.fill(list_template_truth_log_energy,weights=list_template_reco_time)
+    hist_template_reco_time.data = hist_template_reco_time.data / hist_template_norm.data
 
-            delta_camx = float((fit_camx-truth_camx))
-            delta_camy = float((fit_camy-truth_camy))
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "log10 energy [TeV]"
+    label_y = "reconstruction time [sec]"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.plot(hist_template_norm.bin_centers(0),hist_template_reco_time.data)
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/template_reco_time_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-            delta_camr = pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)
-            if delta_camr>4.0 and image_size>5000.:
-            #if delta_camr<0.05 and image_size>5000. and lightcone>0.:
-                print (f'file {img_header[0]}, evt_id {img_header[1]}, tel_id {img_header[2]}')
-                print (f'delta_camr = {delta_camr:0.2f}, image_size = {image_size:0.1f}, lightcone = {lightcone:0.2f}, image_direction = {image_direction:0.2f}')
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "log10 energy [TeV]"
+    label_y = "68% containment [deg]"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.errorbar(hist_hillas_norm.bin_centers(0),hist_hillas_off_angle.data,hist_hillas_off_angle_err.data,label='Hillas')
+    for ref in range(0,len(ref_name)):
+        ax.errorbar(list_hist_norm[ref].bin_centers(0),list_hist_off_angle[ref].data,list_hist_off_angle_err[ref].data,label=ref_name[ref])
+    ax.legend(loc='best')
+    ax.set_yscale('log')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/analysis_off_angle_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "log10 energy [TeV]"
+    label_y = "68% containment [deg]"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.errorbar(hist_template_norm.bin_centers(0),hist_template_energy_resolution.data,hist_template_energy_resolution_err.data,label='template')
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/analysis_energy_resolution_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-            list_image_size += [image_size]
-            list_fit_chi2 += [fit_chi2/image_size]
-            list_image_direction += [abs(image_direction)]
-            list_time_direction += [abs(time_direction)]
-            list_combine_direction += [abs(time_direction+image_direction)]
-            list_angle_err += [abs(angle_err)]
-            list_arrival_unc += [abs(arrival_unc)]
-            list_lightcone += [lightcone]
-            list_truth_projection += [truth_projection]
-            list_delta_arrival += [pow(delta_alt*delta_alt+delta_az*delta_az,0.5)]
-            list_delta_camx += [delta_camx]
-            list_delta_camy += [delta_camy]
-            list_delta_camr += [pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
-            list_delta_camr_weight += [1./pow(delta_camx*delta_camx+delta_camy*delta_camy,0.5)]
-
-            if delta_camr>0.5:
-                list_bad_arrival_unc += [arrival_unc]
-                list_bad_image_size += [image_size]
-                list_bad_image_direction += [abs(image_direction)]
-
-            list_truth_energy += [np.log10(truth_energy)]
-            list_model_energy += [np.log10(fit_energy)]
-            list_delta_energy += [delta_energy]
-
-    hist_delta_camx = Histogram(nbins=(80), ranges=[[-4,4]])
-    hist_delta_camx.fill(list_delta_camx)
-    hist_delta_camy = Histogram(nbins=(80), ranges=[[-4,4]])
-    hist_delta_camy.fill(list_delta_camy)
-    hist_delta_camr = Histogram(nbins=(20), ranges=[[0,1]])
-    hist_delta_camr.fill(list_delta_camr,weights=list_delta_camr_weight)
-
-    hist_truth_energy = Histogram(nbins=(6), ranges=[[-1,2]])
-    hist_truth_energy.fill(list_truth_energy)
-    hist_delta_energy = Histogram(nbins=(6), ranges=[[-1,2]])
-    hist_delta_energy.fill(list_truth_energy,weights=list_delta_energy)
-    for e in range(0,len(hist_delta_energy.hist)):
-        weighted_count = hist_delta_energy.hist[e]
-        count = hist_truth_energy.hist[e]
-        profile = 0.
-        if count>0.:
-            profile = weighted_count/count
-        hist_delta_energy.hist[e] = profile
-
-    init_A = 1000.
-    init_sigma = 0.1
-    start = (init_A,init_sigma)
-    popt, pcov = curve_fit(gauss_func,hist_delta_camr.bin_centers(0),hist_delta_camr.hist,p0=start,bounds=((0, 0.),(np.inf, np.inf)))
-    profile_fit = gauss_func(hist_delta_camr.bin_centers(0), *popt)
-    residual = hist_delta_camr.hist - profile_fit
-    print ('gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'log10 truth Energy [TeV]'
-    label_y = 'log10 model Energy [TeV]'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_truth_energy, list_model_energy, s=90, c='b', marker='+', alpha=0.1)
-    fig.savefig(f'{ctapipe_output}/output_plots/truth_vs_model_log_energy_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Fit chi square'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_fit_chi2, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    fig.savefig(f'{ctapipe_output}/output_plots/fit_chi2_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Image direction'
-    label_y = 'Arrival uncertainty'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_image_direction, list_arrival_unc, s=90, c='b', marker='+', alpha=0.3)
-    axbig.scatter(list_bad_image_direction, list_bad_arrival_unc, s=90, c='r', marker='+', alpha=0.3)
-    axbig.axvline(x=image_dir_cut)
-    axbig.axhline(y=arrival_unc_cut)
-    axbig.set_xscale('log')
-    axbig.set_yscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_arrival_unc_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Image direction'
-    label_y = 'Image size'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_image_direction, list_image_size, s=90, c='b', marker='+', alpha=0.3)
-    axbig.scatter(list_bad_image_direction, list_bad_image_size, s=90, c='r', marker='+', alpha=0.3)
-    axbig.axvline(x=image_dir_cut)
-    axbig.set_xscale('log')
-    axbig.set_yscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_size_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    hillas_mean = np.sqrt(np.mean(np.array(list_hillas_off_angle_pass)))
+    hillas_chi2_mean = np.mean(np.array(list_hillas_chi2))
+    print (f"hillas_mean = {hillas_mean}")
+    print (f"hillas_chi2_mean = {hillas_chi2_mean}")
+    for ref in range(0,len(ref_name)):
+        ref_mean = np.sqrt(np.mean(np.array(list_ref_off_angle_pass[ref])))
+        ref_chi2_mean = np.mean(np.array(list_ref_chi2[ref]))
+        print ("============================================")
+        print (f"ref_name = {ref_name[ref]}")
+        print (f"ref_mean = {ref_mean}")
+        print (f"ref_chi2_mean = {ref_chi2_mean}")
 
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Lightcone'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_lightcone, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    fig.savefig(f'{ctapipe_output}/output_plots/lightcone_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "sqaured angular distance [$\mathrm{degree}^{2}$]"
+    label_y = "count"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.hist(list_hillas_off_angle,histtype='step',bins=25,range=(0.,hist_edge),label='Hillas')
+    for ref in range(0,len(ref_name)):
+        ax.hist(list_ref_off_angle[ref],histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref])
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/reconstruction_off_angle_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Image direction'
-    label_y = 'Truth projection'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_image_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_image_dir_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "sqaured angular distance [$\mathrm{degree}^{2}$]"
+    label_y = "count"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.hist(list_hillas_off_angle_pass,histtype='step',bins=25,range=(0.,hist_edge),label='Hillas')
+    for ref in range(0,len(ref_name)):
+        ax.hist(list_ref_off_angle_pass[ref],histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref])
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/reconstruction_off_angle_pass_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Time direction'
-    label_y = 'Truth projection'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_time_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_time_dir_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "sqaured angular distance [$\mathrm{degree}^{2}$]"
+    label_y = "count"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.hist(list_hillas_off_angle_fail,histtype='step',bins=25,range=(0.,hist_edge),label='Hillas')
+    for ref in range(0,len(ref_name)):
+        ax.hist(list_ref_off_angle_fail[ref],histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref])
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/reconstruction_off_angle_fail_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Time direction'
-    label_y = 'Truth projection'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_combine_direction, list_truth_projection, s=90, c='b', marker='+', alpha=0.3)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/projection_vs_combine_dir_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "chi square"
+    label_y = "count"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.hist(list_hillas_chi2,histtype='step',bins=20,range=(0.,5.),label='Hillas')
+    for ref in range(0,len(ref_name)):
+        ax.hist(list_ref_chi2[ref],histtype='step',bins=20,range=(0.,5.),label=ref_name[ref])
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/reconstruction_chi2_{telescope_type}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Image direction'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_image_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    axbig.axvline(x=image_dir_cut)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/image_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "X"
+    label_y = "Y"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.scatter(
+        list_tmp_alt,
+        list_tmp_az,
+        s=90,
+        facecolors="none",
+        c="r",
+        alpha=0.3,
+        marker="+",
+    )
+    #ax.set_xlim(70.-0.25, 70.+0.25)
+    #ax.set_ylim(0.-0.25, 0.+0.25)
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/template_altaz.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Time direction'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_time_direction, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/time_dir_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "truth log10 energy (TeV)"
+    label_y = "reconstructed log10 energy (TeV)"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.scatter(
+        list_template_truth_log_energy,
+        list_template_reco_log_energy,
+        s=90,
+        facecolors="none",
+        c="r",
+        alpha=0.3,
+        marker="+",
+    )
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/template_log_energy.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
 
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Angle error'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_angle_err, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/angle_err_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Arrival uncertainty [deg]'
-    label_y = 'Cam delta r'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.scatter(list_arrival_unc, list_delta_camr, s=90, c='b', marker='+', alpha=0.3)
-    axbig.axvline(x=arrival_unc_cut)
-    axbig.set_xscale('log')
-    fig.savefig(f'{ctapipe_output}/output_plots/arrival_unc_vs_camr_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'log10 truth energy [TeV]'
-    label_y = 'relative error'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.plot(hist_delta_energy.bin_centers(0), hist_delta_energy.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_energy_error_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Cam X error [deg]'
-    label_y = 'count'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.plot(hist_delta_camx.bin_centers(0), hist_delta_camx.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camx_error_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Cam Y error [deg]'
-    label_y = 'count'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.plot(hist_delta_camy.bin_centers(0), hist_delta_camy.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camy_error_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'Cam R error [deg]'
-    label_y = 'Surface brightness'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.plot(hist_delta_camr.bin_centers(0), hist_delta_camr.hist)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_error_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    delta_camr_per_energy = []
-    for e in range(0,len(hist_delta_energy.bin_lower_edges[0])-1):
-        energy_lo = hist_delta_energy.bin_lower_edges[0][e]
-        energy_up = hist_delta_energy.bin_lower_edges[0][e+1]
-        new_list_delta_camr = []
-        new_list_delta_camr_weight = []
-        for entry in range(0,len(list_truth_energy)):
-            truth_energy = list_truth_energy[entry]
-            if truth_energy<energy_lo: continue
-            if truth_energy>energy_up: continue
-            new_list_delta_camr += [list_delta_camr[entry]]
-            new_list_delta_camr_weight += [list_delta_camr_weight[entry]]
-        hist_delta_camr = Histogram(nbins=(20), ranges=[[0,1]])
-        hist_delta_camr.fill(new_list_delta_camr,weights=new_list_delta_camr_weight)
-        init_A = 1000.
-        init_sigma = 0.1
-        start = (init_A,init_sigma)
-        popt, pcov = curve_fit(gauss_func,hist_delta_camr.bin_centers(0),hist_delta_camr.hist,p0=start,bounds=((0, 0.),(np.inf, np.inf)))
-        profile_fit = gauss_func(hist_delta_camr.bin_centers(0), *popt)
-        residual = hist_delta_camr.hist - profile_fit
-        low_energy = pow(10.,hist_delta_energy.bin_lower_edges[0][e])
-        high_energy = pow(10.,hist_delta_energy.bin_lower_edges[0][e+1])
-        print (f'E = {low_energy:0.2f}-{high_energy:0.2f} TeV, gaussian radius = %0.3f +/- %0.3f deg'%(popt[1],pow(pcov[1][1],0.5)))
-        delta_camr_per_energy += [popt[1]]
-
-    fig.clf()
-    axbig = fig.add_subplot()
-    label_x = 'log10 truth energy [TeV]'
-    label_y = 'Gaussian radius'
-    axbig.set_xlabel(label_x)
-    axbig.set_ylabel(label_y)
-    axbig.plot(hist_delta_energy.bin_centers(0), delta_camr_per_energy)
-    fig.savefig(f'{ctapipe_output}/output_plots/monotel_camr_per_energy_error_{ana_tag}.png',bbox_inches='tight')
-    axbig.remove()
-
-    print (f'total_images = {total_images} / pass_images = {pass_images}')
-
-plot_monotel_analysis()
+plot_analysis_result()
