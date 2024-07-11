@@ -10,7 +10,7 @@ from astropy.time import Time
 from matplotlib import pyplot as plt
 
 from ctapipe.calib import CameraCalibrator
-from ctapipe.coordinates import CameraFrame
+from ctapipe.coordinates import CameraFrame, NominalFrame
 from ctapipe.image import ImageProcessor, tailcuts_clean
 from ctapipe.io import SimTelEventSource
 from ctapipe.reco import ShowerProcessor
@@ -25,12 +25,13 @@ cleaning_level = {
     "CHEC": (2, 4, 2),
     "LSTCam": (3.5, 7, 2),
     "FlashCam": (3.5, 7, 2),
-    "NectarCam": (3.5, 7, 2),
+    "NectarCam": (3, 5, 2),
     "SCTCam": (2, 5, 2),
 }
 
 image_size_cut = 100.0
-mask_size_cut = 5.0
+#mask_size_cut = 5.0
+mask_size_cut = 4.0
 frac_leakage_intensity_cut = 0.02
 
 n_bins_arrival = 20
@@ -49,8 +50,8 @@ select_samples = 16
 
 select_run_id = 0
 select_event_id = 0
-#select_run_id = 813
-#select_event_id = 50007
+#select_run_id = 410
+#select_event_id = 64403
 
 run_diagnosis = False
 plot_image_size_cut = 5000.0
@@ -59,8 +60,8 @@ n_tel_min = 1
 n_tel_max = 10000
 
 
-use_template = True
-#use_template = False
+#use_template = True
+use_template = False
 
 def image_translation_and_rotation(
     geometry, list_input_image_1d, shift_x, shift_y, angle_rad, reposition=True,
@@ -227,15 +228,12 @@ def least_square_fit(power, input_data, target_data, weight):
     # Compute the weighted SVD
     U, S, Vt = np.linalg.svd(x.T @ w @ x, full_matrices=False)
     # Calculate the weighted pseudo-inverse
-    S_pseudo_inv = np.diag(1 / S)
-    for entry in range(0, len(S)):
-        if S[entry] / S[0] < 1e-5:
-            S_pseudo_inv[entry, entry] = 0.0
-    x_pseudo_inv = (Vt.T @ S_pseudo_inv @ U.T) @ x.T
+    S_inv = np.diag(1 / S)
+    x_pseudo_inv = (Vt.T @ S_inv @ U.T) @ x.T
     # Compute the weighted least-squares solution
     A_svd = x_pseudo_inv @ (w @ y)
     # Compute parameter error
-    A_cov = Vt.T @ S_pseudo_inv @ U.T
+    A_cov = Vt.T @ S_inv @ U.T
     A_err = np.sqrt(np.diag(A_cov))
 
     # Compute chi
@@ -379,9 +377,9 @@ def find_intersection_multiple_lines(
 
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
-            pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi
-            pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi
-            pair_fit_err = pow(pair_fit_err,0.5) / pow(np.sin(open_angle),2)
+            pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + pixel_width[i1]*pixel_width[i1]/np.pi
+            pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + pixel_width[i2]*pixel_width[i2]/np.pi
+            pair_fit_err = pow(pair_fit_err / pow(np.tan(open_angle),2) ,0.5)
             #print (f"np.sin(open_angle) = {np.sin(open_angle)}")
             #print (f"pair_fit_x = {pair_fit_x}, pair_fit_y = {pair_fit_y}")
             pair_x += [pair_fit_x]
@@ -399,7 +397,7 @@ def find_intersection_multiple_lines(
             max_pixel_width = max(pixel_width[i1],pixel_width[i2])
             pair_err += [max(max_pixel_width,max(pair_fit_err,ambiguity_err))]
             #pair_weight += [ intensity[i1] * intensity[i2] * length[i1]/width[i1] * length[i2]/width[i2] ]
-            pair_weight += [ pow(intensity[i1] * intensity[i2],1.0) ]
+            pair_weight += [ pow(intensity[i1] * intensity[i2],0.5) ]
 
     pair_x = np.array(pair_x)
     pair_y = np.array(pair_y)
@@ -422,6 +420,7 @@ def find_intersection_multiple_lines(
     fit_x = fit_x / fit_weight
     fit_y = fit_y / fit_weight
     fit_err = pow(fit_err / fit_weight, 0.5)
+    #print (f"fit_x = {fit_x:0.3f}, fit_y = {fit_y:0.3f}")
     #print (f"fit_err = {fit_err*180./np.pi} deg")
 
     fit_rms = 0.0
@@ -529,7 +528,7 @@ def find_image_features(
         else:
             tail_intensity += pix_intensity
 
-    if tail_intensity > 0. and core_intensity/tail_intensity < 0.3:
+    if tail_intensity > 0. and core_intensity/tail_intensity < 1.0:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     truth_a = image_center_y / image_center_x
@@ -566,14 +565,15 @@ def find_image_features(
     angle_err = abs(np.arctan(a + a_err) - np.arctan(a - a_err))
     #print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
 
-    #print (f"orinal a = {a:0.3f}, a_err = {a_err:0.3f}")
     #print (f"eigenvectors = {eigenvectors}")
     #vx, vy = eigenvectors[1, 0], eigenvectors[1, 1]
     #angle = np.pi/2.
     #if vx!=0.:
     #    a = -vy / vx
     #    angle = np.arctan(a)
-    #print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
+    #b = image_center_y - a * image_center_x
+    #print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
+    #exit()
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -802,7 +802,8 @@ def make_standard_movie(
         if frac_leakage_intensity > frac_leakage_intensity_cut:
            is_edge_image = True
 
-    #is_edge_image = False
+    #for pix in range(0, len(image_mask)):
+    #    clean_image_1d[pix] = 0.0
     #for win in range(0, n_windows):
     #    image_sum = np.sum(clean_movie_1d[win])
     #    if image_sum == 0.0:
@@ -811,19 +812,15 @@ def make_standard_movie(
     #    mask_sum = np.sum(movie_mask)
     #    if mask_sum == 0.0:
     #        continue
-    #    # image_leakage = leakage_parameters(geometry,clean_movie_1d[win],movie_mask) # this function has memory problem
-    #    # if image_leakage.pixels_width_1>0.:
-    #    #    is_edge_image = True
-    #    #    for pix in range(0,len(movie_mask)):
-    #    #        clean_movie_1d[win][pix] = 0.
     #    border_pixels = geometry.get_border_pixel_mask(1)
     #    border_mask = border_pixels & movie_mask
     #    leakage_intensity = np.sum(clean_movie_1d[win][border_mask])
     #    n_pe_cleaning = np.sum(clean_movie_1d[win])
     #    if n_pe_cleaning>0.:
     #        frac_leakage_intensity = leakage_intensity / n_pe_cleaning
-    #        if frac_leakage_intensity > frac_leakage_intensity_cut:
-    #            is_edge_image = True
+    #        if frac_leakage_intensity < frac_leakage_intensity_cut:
+    #            for pix in range(0, len(image_mask)):
+    #                clean_image_1d[pix] += clean_movie_1d[win][pix]
 
     # clean_image_2d = geometry.image_to_cartesian_representation(clean_image_1d)
     # remove_nan_pixels(clean_image_2d)
@@ -2089,6 +2086,9 @@ def altaz_to_camxy(source, subarray, run_id, tel_id, star_alt, star_az):
     location = EarthLocation.of_site("Roque de los Muchachos")
     altaz = AltAz(location=location, obstime=obstime)
 
+    if star_alt>np.pi/2.*u.rad:
+        star_alt = np.pi*u.rad - star_alt
+
     star_altaz = SkyCoord(
         alt=star_alt,
         az=star_az,
@@ -2111,11 +2111,83 @@ def altaz_to_camxy(source, subarray, run_id, tel_id, star_alt, star_az):
         focal_length=focal_length,
     )
 
+
     star_cam = star_altaz.transform_to(camera_frame)
     star_cam_x = star_cam.x.to_value(u.m)
     star_cam_y = star_cam.y.to_value(u.m)
 
     return star_cam_x, star_cam_y
+
+def camxy_to_nominal(source, subarray, run_id, tel_id, star_cam_x, star_cam_y):
+    obstime = Time("2013-11-01T03:00")
+    location = EarthLocation.of_site("Roque de los Muchachos")
+    altaz = AltAz(location=location, obstime=obstime)
+
+    tel_pointing_alt = source.observation_blocks[run_id].subarray_pointing_lat
+    tel_pointing_az = source.observation_blocks[run_id].subarray_pointing_lon
+
+    focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length
+
+    tel_pointing = SkyCoord(
+        alt=tel_pointing_alt,
+        az=tel_pointing_az,
+        frame=altaz,
+    )
+
+    nominal_frame = NominalFrame(origin=tel_pointing)
+
+    camera_frame = CameraFrame(
+        telescope_pointing=tel_pointing,
+        focal_length=focal_length,
+    )
+
+    star_cam = SkyCoord(
+        x=star_cam_x * u.m,
+        y=star_cam_y * u.m,
+        frame=camera_frame,
+    )
+
+    star_nom_xy = star_cam.transform_to(nominal_frame)
+    star_nom_x = star_nom_xy.fov_lon.to(u.rad).value
+    star_nom_y = star_nom_xy.fov_lat.to(u.rad).value
+
+
+    return star_nom_x, star_nom_y
+
+def nominal_to_altaz(source, subarray, run_id, tel_id, star_nom_x, star_nom_y):
+    obstime = Time("2013-11-01T03:00")
+    location = EarthLocation.of_site("Roque de los Muchachos")
+
+    altaz = AltAz(location=location, obstime=obstime)
+
+    tel_pointing_alt = source.observation_blocks[run_id].subarray_pointing_lat
+    tel_pointing_az = source.observation_blocks[run_id].subarray_pointing_lon
+
+    focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length
+
+    tel_pointing = SkyCoord(
+        alt=tel_pointing_alt,
+        az=tel_pointing_az,
+        frame=altaz,
+    )
+
+    nominal_frame = NominalFrame(origin=tel_pointing)
+
+    star_nom_xy = SkyCoord(
+        fov_lon=star_nom_x,
+        fov_lat=star_nom_y,
+        frame=nominal_frame,
+    )
+
+    star_altaz = star_nom_xy.transform_to(altaz)
+    star_alt = star_altaz.alt.to_value(u.rad)
+    star_az = star_altaz.az.to_value(u.rad)
+
+    star_az_2pi = star_az - 2.0 * np.pi
+    if abs(star_az_2pi - 0.0) < abs(star_az - 0.0):
+        star_az = star_az_2pi
+
+    return star_alt, star_az
 
 
 def plot_xing_reconstruction(
@@ -2143,7 +2215,7 @@ def plot_xing_reconstruction(
         star_alt * u.rad,
         star_az * u.rad,
     )
-    #print (f"star_cam_x = {star_cam_x}, star_cam_y = {star_cam_y}")
+    print (f"In plot, star_cam_x = {star_cam_x}, star_cam_y = {star_cam_y}")
 
     xing_cam_x, xing_cam_y = altaz_to_camxy(
         source,
@@ -2155,7 +2227,7 @@ def plot_xing_reconstruction(
     )
     focal_length = source.subarray.tel[list_tel_id[0]].optics.equivalent_focal_length / u.m
     xing_cam_err = focal_length * xing_err
-    #print (f"xing_cam_x = {xing_cam_x}, xing_cam_y = {xing_cam_y}")
+    print (f"In plot, xing_cam_x = {xing_cam_x}, xing_cam_y = {xing_cam_y}")
 
     xmax = max(geometry.pix_x) / u.m
     xmin = min(geometry.pix_x) / u.m
@@ -2728,14 +2800,6 @@ def run_monoscopic_analysis(
                 image_fit_log_energy_err = image_fit_log_energy_err_flip
                 image_fit_chi2 = image_fit_chi2_flip
                 image_feature_array = image_feature_array_flip
-            #image_fit_arrival = image_fit_arrival_flip
-            #image_fit_impact = image_fit_impact_flip
-            #image_fit_log_energy = image_fit_log_energy_flip
-            #image_fit_arrival_err = image_fit_arrival_err_flip
-            #image_fit_impact_err = image_fit_impact_err_flip
-            #image_fit_log_energy_err = image_fit_log_energy_err_flip
-            #image_fit_chi2 = image_fit_chi2_flip
-            #image_feature_array = image_feature_array_flip
 
         image_center_x = image_feature_array[1]
         image_center_y = image_feature_array[2]
@@ -2751,17 +2815,17 @@ def run_monoscopic_analysis(
 
         image_fit_cam_x = image_center_x + image_fit_arrival * np.cos(angle * u.rad)
         image_fit_cam_y = image_center_y + image_fit_arrival * np.sin(angle * u.rad)
-        image_fit_alt, image_fit_az = camxy_to_altaz(
+        image_fit_nom_x, image_fit_nom_y = camxy_to_nominal(
             source, source.subarray, run_id, tel_id, image_fit_cam_x, 1.*image_fit_cam_y
         )
-        image_center_alt, image_center_az = camxy_to_altaz(
+        image_center_nom_x, image_center_nom_y = camxy_to_nominal(
             source, source.subarray, run_id, tel_id, image_center_x, 1.*image_center_y
         )
 
-        line_altaz_a = (image_fit_az - image_center_az) / (
-            image_fit_alt - image_center_alt
+        line_nom_a = (image_fit_nom_y - image_center_nom_y) / (
+            image_fit_nom_x - image_center_nom_x
         )
-        line_altaz_b = image_center_az - line_altaz_a * image_center_alt
+        line_nom_b = image_center_nom_y - line_nom_a * image_center_nom_x
 
         xing_arrival = pow(
             pow(xing_cam_x - image_center_x, 2) + pow(xing_cam_y - image_center_y, 2),
@@ -3015,11 +3079,11 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         line_a_err = image_feature_array[11]
         line_b_err = image_feature_array[12]
 
-        image_center_alt, image_center_az = camxy_to_altaz(
+        image_center_nom_x, image_center_nom_y = camxy_to_nominal(
             source, source.subarray, run_id, tel_id, image_center_x, 1.*image_center_y
         )
 
-        image_head_alt, image_head_az = camxy_to_altaz(
+        image_head_nom_x, image_head_nom_y = camxy_to_nominal(
             source,
             source.subarray,
             run_id,
@@ -3028,7 +3092,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             1.*(line_a * (image_center_x - 0.01) + line_b),
         )
 
-        image_tail_alt, image_tail_az = camxy_to_altaz(
+        image_tail_nom_x, image_tail_nom_y = camxy_to_nominal(
             source,
             source.subarray,
             run_id,
@@ -3037,36 +3101,36 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             1.*(line_a * (image_center_x + 0.01) + line_b),
         )
 
-        line_altaz_a = (image_tail_az - image_head_az) / (
-            image_tail_alt - image_head_alt
+        line_nom_a = (image_tail_nom_y - image_head_nom_y) / (
+            image_tail_nom_x - image_head_nom_x
         )
-        line_altaz_b = image_center_az - line_altaz_a * image_center_alt
-        line_altaz_a_err = line_a_err
-        line_altaz_b_err = line_b_err / focal_length
+        line_nom_b = image_center_nom_y - line_nom_a * image_center_nom_x
+        line_nom_a_err = line_a_err
+        line_nom_b_err = line_b_err / focal_length
 
-        #list_line_x += [image_center_alt]
-        #list_line_y += [image_center_az]
-        #list_line_a += [line_altaz_a]
-        #list_line_b += [line_altaz_b]
-        #list_line_a_err += [line_altaz_a_err]
-        #list_line_b_err += [line_altaz_b_err]
-        #list_line_intensity += [image_size]
-        #list_line_angle_err += [angle_err]
-        #list_line_length += [length]
-        #list_line_width += [width]
-        #list_pixel_width += [pixel_width/focal_length]
-
-        list_line_x += [image_center_x]
-        list_line_y += [image_center_y]
-        list_line_a += [line_a]
-        list_line_b += [line_b]
-        list_line_a_err += [line_a_err]
-        list_line_b_err += [line_b_err]
+        list_line_x += [image_center_nom_x]
+        list_line_y += [image_center_nom_y]
+        list_line_a += [line_nom_a]
+        list_line_b += [line_nom_b]
+        list_line_a_err += [line_nom_a_err]
+        list_line_b_err += [line_nom_b_err]
         list_line_intensity += [image_size]
         list_line_angle_err += [angle_err]
         list_line_length += [length]
         list_line_width += [width]
-        list_pixel_width += [pixel_width]
+        list_pixel_width += [pixel_width/focal_length]
+
+        #list_line_x += [image_center_x]
+        #list_line_y += [image_center_y]
+        #list_line_a += [line_a]
+        #list_line_b += [line_b]
+        #list_line_a_err += [line_a_err]
+        #list_line_b_err += [line_b_err]
+        #list_line_intensity += [image_size]
+        #list_line_angle_err += [angle_err]
+        #list_line_length += [length]
+        #list_line_width += [width]
+        #list_pixel_width += [pixel_width]
 
     xing_alt = 0.0
     xing_az = 0.0
@@ -3075,27 +3139,9 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
     if len(list_line_a) < 2:
         print (f'Less than 2 images for xing method.')
     else:
-        #(
-        #    xing_alt,
-        #    xing_az,
-        #    xing_err,
-        #) = find_intersection_multiple_lines(
-        #    list_line_x,
-        #    list_line_y,
-        #    list_line_a,
-        #    list_line_b,
-        #    list_line_a_err,
-        #    list_line_b_err,
-        #    list_line_intensity,
-        #    list_line_angle_err,
-        #    list_line_length,
-        #    list_line_width,
-        #    list_pixel_width,
-        #)
-
         (
-            xing_x,
-            xing_y,
+            xing_nom_x,
+            xing_nom_y,
             xing_err,
         ) = find_intersection_multiple_lines(
             list_line_x,
@@ -3110,17 +3156,54 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             list_line_width,
             list_pixel_width,
         )
-        print (f"xing_x = {xing_x}, xing_y = {xing_y}")
-        xing_alt, xing_az = camxy_to_altaz(
+        xing_alt, xing_az = nominal_to_altaz(
             source,
             source.subarray,
             run_id,
-            tel_id,
-            xing_x,
-            xing_y,
+            list_tel_id[0],
+            xing_nom_x * u.rad,
+            xing_nom_y * u.rad,
         )
-        xing_err = xing_err/focal_length
         print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
+
+        #(
+        #    xing_x,
+        #    xing_y,
+        #    xing_err,
+        #) = find_intersection_multiple_lines(
+        #    list_line_x,
+        #    list_line_y,
+        #    list_line_a,
+        #    list_line_b,
+        #    list_line_a_err,
+        #    list_line_b_err,
+        #    list_line_intensity,
+        #    list_line_angle_err,
+        #    list_line_length,
+        #    list_line_width,
+        #    list_pixel_width,
+        #)
+        #print (f"xing_x = {xing_x}, xing_y = {xing_y}")
+        #print (f"xing_off_angle = {pow(xing_x*xing_x+xing_y*xing_y,0.5)/focal_length*180./np.pi} deg")
+        #xing_alt, xing_az = camxy_to_altaz(
+        #    source,
+        #    source.subarray,
+        #    run_id,
+        #    list_tel_id[0],
+        #    xing_x,
+        #    xing_y,
+        #)
+        #xing_err = xing_err/focal_length
+        #print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
+        #xing_x, xing_y = altaz_to_camxy(
+        #    source,
+        #    source.subarray,
+        #    run_id,
+        #    list_tel_id[0],
+        #    xing_alt * u.rad,
+        #    xing_az * u.rad,
+        #)
+        #print (f"xing_x = {xing_x}, xing_y = {xing_y}")
 
         xing_weight = 1.0 / (xing_err * xing_err)
 
@@ -3143,8 +3226,8 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             print("plot xing reconstruction.")
             print (f"xing_off_angle = {xing_off_angle*180./np.pi} deg")
             print (f"xing_err = {xing_err*180./np.pi} deg")
-            #print (f"truth_alt = {truth_alt:0.3f}, xing_alt = {xing_alt:0.3f}")
-            #print (f"truth_az = {truth_az:0.3f}, xing_az = {xing_az:0.3f}")
+            print (f"truth_alt = {truth_alt:0.3f}, xing_alt = {xing_alt:0.3f}")
+            print (f"truth_az = {truth_az:0.3f}, xing_az = {xing_az:0.3f}")
             plot_xing_reconstruction(
                 ctapipe_output,
                 source,
@@ -3174,7 +3257,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
 
     if not save_output:
         run_diagnosis = True
-        plot_image_size_cut = 4000.
+        plot_image_size_cut = 10.
         truth_energy_cut = 0.
         n_tel_min = 1
         n_tel_max = 1000
@@ -3286,7 +3369,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
         average_intensity = reco_result.average_intensity
         if run_diagnosis:
             if average_intensity<plot_image_size_cut: continue
-            if average_intensity>2.*plot_image_size_cut: continue
+            #if average_intensity>2.*plot_image_size_cut: continue
         if run_diagnosis:
             if n_tels>n_tel_max: continue
             if n_tels<n_tel_min: continue
@@ -3343,7 +3426,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
             ).to(u.deg).value
             xing_err = pow(1.0 / xing_weight, 0.5)
             print(
-                f"xing_off_angle = {xing_off_angle:0.3f} +/- {xing_err*180./np.pi:0.3f} deg ({toc_xing-tic_xing:0.1f} sec)"
+                f"xing_n_tel = {xing_n_tel}, xing_off_angle = {xing_off_angle:0.3f} +/- {xing_err*180./np.pi:0.3f} deg ({toc_xing-tic_xing:0.1f} sec)"
             )
             sum_xing_result += [
                 [
@@ -3511,7 +3594,9 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
             bad_xing = False
             if run_diagnosis:
                 make_xing_plot = True
-            if xing_off_angle/hillas_off_angle>5. and xing_off_angle/(hillas_err*180./np.pi)>3.0:
+            #if xing_off_angle/hillas_off_angle>5. and xing_off_angle/(hillas_err*180./np.pi)>3.0:
+            #if xing_off_angle/hillas_off_angle>5.:
+            if xing_off_angle>0.5 and xing_off_angle/(xing_err*180./np.pi)>5.0:
                 make_xing_plot = True
                 bad_xing = True
             if select_event_id != 0:
