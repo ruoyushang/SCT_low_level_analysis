@@ -1,3 +1,5 @@
+
+import os
 import math
 import pickle
 import time
@@ -22,15 +24,15 @@ __all__ = [
 
 # unoptimized cleaning levels
 cleaning_level = {
+    "ASTRICam": (2, 4, 2),
     "CHEC": (2, 4, 2),
     "LSTCam": (3.5, 7, 2),
-    "FlashCam": (3.5, 7, 2),
+    "FlashCam": (4, 8, 2),
     "NectarCam": (3, 5, 2),
     "SCTCam": (2, 5, 2),
 }
 
 image_size_cut = 100.0
-#mask_size_cut = 5.0
 mask_size_cut = 4.0
 frac_leakage_intensity_cut = 0.02
 
@@ -51,7 +53,7 @@ select_samples = 16
 select_run_id = 0
 select_event_id = 0
 #select_run_id = 410
-#select_event_id = 64403
+#select_event_id = 39705
 
 run_diagnosis = False
 plot_image_size_cut = 5000.0
@@ -324,6 +326,7 @@ def fit_image_to_line(geometry, image_input_1d, transpose=False):
 
     if transpose and fit_a!=0.:
         fit_b = -fit_b/fit_a
+        fit_b_err = fit_b_err/fit_a
         fit_a = 1.0/fit_a
 
     #return fit_a, fit_b, fit_a_err, fit_b_err, chi2
@@ -377,6 +380,7 @@ def find_intersection_multiple_lines(
 
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
+            pair_dist_sq = pow(x[i2] - x[i1],2) + pow(y[i2] - y[i1],2)
             pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + pixel_width[i1]*pixel_width[i1]/np.pi
             pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + pixel_width[i2]*pixel_width[i2]/np.pi
             pair_fit_err = pow(pair_fit_err / pow(np.tan(open_angle),2) ,0.5)
@@ -384,8 +388,12 @@ def find_intersection_multiple_lines(
             #print (f"pair_fit_x = {pair_fit_x}, pair_fit_y = {pair_fit_y}")
             pair_x += [pair_fit_x]
             pair_y += [pair_fit_y]
-            ambiguity = 1.-((length[i1]-width[i1])/(length[i1]+width[i1]) * (length[i2]-width[i2])/(length[i2]+width[i2]))
-            #print (f"ambiguity = {ambiguity}")
+            #ambiguity = 1.-((length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2])) * (pair_dist_sq/(width[i1]*width[i2]))
+            ambiguity = 1.-((length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]))
+            #print (f"pair_dist_sq = {pair_dist_sq}")
+            #print (f"width[i1] = {width[i1]}")
+            #print (f"width[i2] = {width[i2]}")
+            #print (f"ambiguity = {ambiguity}, (pair_dist_sq/(width[i1]*width[i2])) = {(pair_dist_sq/(width[i1]*width[i2]))}")
             if ambiguity>0.8:
                 ambiguity = 1.0
             else:
@@ -396,7 +404,6 @@ def find_intersection_multiple_lines(
             #print (f"ambiguity_err = {ambiguity_err*180./np.pi} deg")
             max_pixel_width = max(pixel_width[i1],pixel_width[i2])
             pair_err += [max(max_pixel_width,max(pair_fit_err,ambiguity_err))]
-            #pair_weight += [ intensity[i1] * intensity[i2] * length[i1]/width[i1] * length[i2]/width[i2] ]
             pair_weight += [ pow(intensity[i1] * intensity[i2],0.5) ]
 
     pair_x = np.array(pair_x)
@@ -523,12 +530,12 @@ def find_image_features(
         diff_y = float(geometry.pix_y[pix] / u.m) - image_center_y
         pix_intensity = input_image_1d[pix]
         pix_dist_sq = diff_x*diff_x + diff_y*diff_y
-        if pix_dist_sq<semi_major_sq:
+        if pix_dist_sq<0.25*semi_major_sq:
             core_intensity += pix_intensity
         else:
             tail_intensity += pix_intensity
 
-    if tail_intensity > 0. and core_intensity/tail_intensity < 1.0:
+    if tail_intensity > 0. and core_intensity/tail_intensity < 0.2:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     truth_a = image_center_y / image_center_x
@@ -538,13 +545,14 @@ def find_image_features(
         geometry, input_image_1d, transpose=True
     )
 
-    #print (f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-    #print (f"tel_id = {tel_id}")
-    #print (f"image_center_x = {image_center_x:0.3f}, image_center_y = {image_center_y:0.3f}")
-    #print (f"semi_minor/semi_major = {pow(semi_minor_sq/semi_major_sq,0.5)}")
-    #print (f"core_intensity/tail_intensity = {core_intensity/tail_intensity}")
-    #print (f"a = {a}, a_err = {a_err}, chi2 = {chi2:0.3f}")
-    #print (f"aT = {aT}, aT_err = {aT_err}, chi2T = {chi2T:0.3f}")
+    if run_diagnosis and select_event_id != 0:
+        print (f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+        print (f"tel_id = {tel_id}")
+        print (f"image_center_x = {image_center_x:0.3f}, image_center_y = {image_center_y:0.3f}")
+        print (f"semi_minor/semi_major = {pow(semi_minor_sq/semi_major_sq,0.5)}")
+        print (f"core_intensity/tail_intensity = {core_intensity/tail_intensity}")
+        print (f"a = {a}, a_err = {a_err}, chi2 = {chi2:0.3f}")
+        print (f"aT = {aT}, aT_err = {aT_err}, chi2T = {chi2T:0.3f}")
 
     axis_ratio = pow(semi_minor_sq/semi_major_sq,0.5)
     if a_err/axis_ratio<1e-5:
@@ -563,17 +571,18 @@ def find_image_features(
 
     angle = np.arctan(a)
     angle_err = abs(np.arctan(a + a_err) - np.arctan(a - a_err))
-    #print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
 
-    #print (f"eigenvectors = {eigenvectors}")
+    if run_diagnosis and select_event_id != 0:
+        print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
+
     #vx, vy = eigenvectors[1, 0], eigenvectors[1, 1]
     #angle = np.pi/2.
     #if vx!=0.:
     #    a = -vy / vx
     #    angle = np.arctan(a)
     #b = image_center_y - a * image_center_x
-    #print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
-    #exit()
+    #if run_diagnosis and select_event_id != 0:
+    #    print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -1868,17 +1877,25 @@ def analyze_short_list(
 
 
 def single_movie_reconstruction(
+    telescope_type,
     input_image_1d,
-    image_lookup_table,
-    image_eigen_vectors,
+    dict_image_lookup_table,
+    dict_image_eigen_vectors,
     input_time_1d,
-    time_lookup_table,
-    time_eigen_vectors,
+    dict_time_lookup_table,
+    dict_time_eigen_vectors,
     input_movie_1d,
-    movie_lookup_table,
-    movie_eigen_vectors,
-    #fast_conversion_poly,
+    dict_movie_lookup_table,
+    dict_movie_eigen_vectors,
 ):
+
+    image_lookup_table = dict_image_lookup_table[telescope_type]
+    image_eigen_vectors = dict_image_eigen_vectors[telescope_type]
+    time_lookup_table = dict_time_lookup_table[telescope_type]
+    time_eigen_vectors = dict_time_eigen_vectors[telescope_type]
+    movie_lookup_table = dict_movie_lookup_table[telescope_type]
+    movie_eigen_vectors = dict_movie_eigen_vectors[telescope_type]
+
     arrival_step_size = (arrival_upper - arrival_lower) / float(n_bins_arrival)
     impact_step_size = (impact_upper - impact_lower) / float(n_bins_impact)
     log_energy_step_size = (log_energy_upper - log_energy_lower) / float(n_bins_energy)
@@ -2462,10 +2479,14 @@ def movie_simulation(
     tel_id,
     event,
     init_params,
-    movie_lookup_table,
-    movie_eigen_vectors,
+    dict_movie_lookup_table,
+    dict_movie_eigen_vectors,
     eco_image_1d,
 ):
+
+    movie_lookup_table = dict_movie_lookup_table[telescope_type]
+    movie_eigen_vectors = dict_movie_eigen_vectors[telescope_type]
+
     event_id = event.index["event_id"]
     geometry = subarray.tel[tel_id].camera.geometry
 
@@ -2601,17 +2622,16 @@ def make_a_gif(
 
 def run_monoscopic_analysis(
     ctapipe_output,
-    telescope_type,
+    list_telescope_type,
     run_id,
     source,
     event,
-    #fast_conversion_poly_pkl,
-    movie_lookup_table_pkl,
-    movie_eigen_vectors_pkl,
-    image_lookup_table_pkl,
-    image_eigen_vectors_pkl,
-    time_lookup_table_pkl,
-    time_eigen_vectors_pkl,
+    dict_movie_lookup_table,
+    dict_movie_eigen_vectors,
+    dict_image_lookup_table,
+    dict_image_eigen_vectors,
+    dict_time_lookup_table,
+    dict_time_eigen_vectors,
     xing_alt,
     xing_az,
     xing_weight,
@@ -2648,8 +2668,9 @@ def run_monoscopic_analysis(
 
         if not use_template:
             continue
-
-        if str(telescope_type) != str(source.subarray.tel[tel_id]):
+   
+        telescope_type = str(source.subarray.tel[tel_id])
+        if not telescope_type in list_telescope_type:
             continue
         ref_tel_id = tel_id
 
@@ -2725,16 +2746,16 @@ def run_monoscopic_analysis(
             image_fit_log_energy_err,
             image_fit_chi2,
         ) = single_movie_reconstruction(
+            telescope_type,
             eco_image_1d,
-            image_lookup_table_pkl,
-            image_eigen_vectors_pkl,
+            dict_image_lookup_table,
+            dict_image_eigen_vectors,
             eco_time_1d,
-            time_lookup_table_pkl,
-            time_eigen_vectors_pkl,
+            dict_time_lookup_table,
+            dict_time_eigen_vectors,
             eco_movie_1d,
-            movie_lookup_table_pkl,
-            movie_eigen_vectors_pkl,
-            #fast_conversion_poly_pkl,
+            dict_movie_lookup_table,
+            dict_movie_eigen_vectors,
         )
         toc_reco = time.perf_counter()
         #print(f"reco time: {toc_reco-tic_reco:0.1f} sec")
@@ -2769,16 +2790,16 @@ def run_monoscopic_analysis(
                 image_fit_log_energy_err_flip,
                 image_fit_chi2_flip,
             ) = single_movie_reconstruction(
+                telescope_type,
                 eco_image_1d_flip,
-                image_lookup_table_pkl,
-                image_eigen_vectors_pkl,
+                dict_image_lookup_table,
+                dict_image_eigen_vectors,
                 eco_time_1d_flip,
-                time_lookup_table_pkl,
-                time_eigen_vectors_pkl,
+                dict_time_lookup_table,
+                dict_time_eigen_vectors,
                 eco_movie_1d_flip,
-                movie_lookup_table_pkl,
-                movie_eigen_vectors_pkl,
-                #fast_conversion_poly_pkl,
+                dict_movie_lookup_table,
+                dict_movie_eigen_vectors,
             )
 
             print (f"abs(image_direction) = {abs(image_direction)}")
@@ -2841,9 +2862,6 @@ def run_monoscopic_analysis(
         pixel_width = float(source.subarray.tel[tel_id].camera.geometry.pixel_width[0] / u.m)
         image_method_unc = max(image_method_unc,pixel_width/focal_length)
 
-        #print (f"angle_err * xing_arrival = {angle_err * xing_arrival}")
-        #print (f"image_fit_arrival_err = {image_fit_arrival_err}")
-        #print (f"line_b_err = {line_b_err}")
         print (f"image_method_unc = {image_method_unc}")
         print (f"add_ambiguity_unc = {add_ambiguity_unc}")
         image_method_unc = pow(
@@ -2868,8 +2886,16 @@ def run_monoscopic_analysis(
         # print(f"image_method_error = {image_method_error:0.3f} deg")
         # print(f"image_method_unc = {image_method_unc:0.3f} deg")
 
-        # if image_method_unc < 1.*xing_err:
-        # if image_method_unc < 0.5:
+
+        image_fit_alt, image_fit_az = nominal_to_altaz(
+            source,
+            source.subarray,
+            run_id,
+            tel_id,
+            image_fit_nom_x * u.rad,
+            image_fit_nom_y * u.rad,
+        )
+
         list_tel_alt += [image_fit_alt]
         list_tel_az += [image_fit_az]
         list_tel_log_energy += [image_fit_log_energy]
@@ -2887,6 +2913,8 @@ def run_monoscopic_analysis(
 
         make_a_plot = False
         if select_run_id != 0:
+            make_a_plot = True
+        elif run_diagnosis:
             make_a_plot = True
         else:
             if image_size>plot_image_size_cut:
@@ -2920,8 +2948,8 @@ def run_monoscopic_analysis(
                 tel_id,
                 event,
                 fit_params,
-                movie_lookup_table_pkl,
-                movie_eigen_vectors_pkl,
+                dict_movie_lookup_table,
+                dict_movie_eigen_vectors,
                 eco_image_1d,
             )
             data_image, data_movie = display_a_movie(
@@ -3116,8 +3144,8 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         list_line_b_err += [line_nom_b_err]
         list_line_intensity += [image_size]
         list_line_angle_err += [angle_err]
-        list_line_length += [length]
-        list_line_width += [width]
+        list_line_length += [length/focal_length]
+        list_line_width += [width/focal_length]
         list_pixel_width += [pixel_width/focal_length]
 
         #list_line_x += [image_center_x]
@@ -3247,7 +3275,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
     return xing_alt, xing_az, xing_weight, n_tel
 
 
-def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_output=True):
+def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope_type, save_output=True):
     analysis_result = []
     lookup_table_type = "box3d"
 
@@ -3264,35 +3292,64 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
 
     print("loading svd pickle data... ")
 
-    #fast_conversion_type = "image"
-    #fast_conversion_poly_pkl = []
-    #output_filename = f"{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_arrival_{telescope_type}.pkl"
-    #fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    #output_filename = f"{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_impact_{telescope_type}.pkl"
-    #fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
-    #output_filename = f"{ctapipe_output}/output_machines/{fast_conversion_type}_fast_conversion_log_energy_{telescope_type}.pkl"
-    #fast_conversion_poly_pkl += [pickle.load(open(output_filename, "rb"))]
+    dict_movie_eigen_vectors = {}
+    dict_image_eigen_vectors = {}
+    dict_time_eigen_vectors = {}
+    dict_movie_lookup_table = {}
+    dict_image_lookup_table = {}
+    dict_time_lookup_table = {}
+    for telescope_type in list_telescope_type:
 
-    output_filename = f"{ctapipe_output}/output_machines/movie_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
-    movie_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-    output_filename = (
-        f"{ctapipe_output}/output_machines/movie_eigen_vectors_{telescope_type}.pkl"
-    )
-    movie_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+        output_filename = f"{ctapipe_output}/output_machines/movie_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_movie_lookup_table[f'{telescope_type}'] = None
+        else:
+            movie_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+            dict_movie_lookup_table[f'{telescope_type}'] = movie_lookup_table_pkl
+        output_filename = (
+            f"{ctapipe_output}/output_machines/movie_eigen_vectors_{telescope_type}.pkl"
+        )
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_movie_eigen_vectors[f'{telescope_type}'] = None
+        else:
+            movie_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+            dict_movie_eigen_vectors[f'{telescope_type}'] = movie_eigen_vectors_pkl
 
-    output_filename = f"{ctapipe_output}/output_machines/image_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
-    image_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-    output_filename = (
-        f"{ctapipe_output}/output_machines/image_eigen_vectors_{telescope_type}.pkl"
-    )
-    image_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+        output_filename = f"{ctapipe_output}/output_machines/image_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_image_lookup_table[f'{telescope_type}'] = None
+        else:
+            image_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+            dict_image_lookup_table[f'{telescope_type}'] = image_lookup_table_pkl
+        output_filename = (
+            f"{ctapipe_output}/output_machines/image_eigen_vectors_{telescope_type}.pkl"
+        )
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_image_eigen_vectors[f'{telescope_type}'] = None
+        else:
+            image_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+            dict_image_eigen_vectors[f'{telescope_type}'] = image_eigen_vectors_pkl
 
-    output_filename = f"{ctapipe_output}/output_machines/time_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
-    time_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
-    output_filename = (
-        f"{ctapipe_output}/output_machines/time_eigen_vectors_{telescope_type}.pkl"
-    )
-    time_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+        output_filename = f"{ctapipe_output}/output_machines/time_{lookup_table_type}_lookup_table_{telescope_type}.pkl"
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_time_lookup_table[f'{telescope_type}'] = None
+        else:
+            time_lookup_table_pkl = pickle.load(open(output_filename, "rb"))
+            dict_time_lookup_table[f'{telescope_type}'] = time_lookup_table_pkl
+        output_filename = (
+            f"{ctapipe_output}/output_machines/time_eigen_vectors_{telescope_type}.pkl"
+        )
+        if not os.path.exists(output_filename):
+            print (f"{output_filename} does not exist.")
+            dict_time_eigen_vectors[f'{telescope_type}'] = None
+        else:
+            time_eigen_vectors_pkl = pickle.load(open(output_filename, "rb"))
+            dict_time_eigen_vectors[f'{telescope_type}'] = time_eigen_vectors_pkl
 
     print(f"loading file: {training_sample_path}")
     source = SimTelEventSource(training_sample_path, focal_length_choice="EQUIVALENT")
@@ -3466,17 +3523,16 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
             list_tmp_az,
         ) = run_monoscopic_analysis(
             ctapipe_output,
-            telescope_type,
+            list_telescope_type,
             run_id,
             source,
             event,
-            #fast_conversion_poly_pkl,
-            movie_lookup_table_pkl,
-            movie_eigen_vectors_pkl,
-            image_lookup_table_pkl,
-            image_eigen_vectors_pkl,
-            time_lookup_table_pkl,
-            time_eigen_vectors_pkl,
+            dict_movie_lookup_table,
+            dict_movie_eigen_vectors,
+            dict_image_lookup_table,
+            dict_image_eigen_vectors,
+            dict_time_lookup_table,
+            dict_time_eigen_vectors,
             seed_alt,
             seed_az,
             seed_weight,
@@ -3568,7 +3624,7 @@ def loop_all_events(training_sample_path, ctapipe_output, telescope_type, save_o
                 ]
             ]
 
-        ana_tag = "veritas"
+        #ana_tag = "veritas"
         analysis_result = [
             sum_hillas_result,
             sum_xing_result,
