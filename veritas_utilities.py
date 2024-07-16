@@ -65,7 +65,7 @@ n_tel_max = 10000
 use_template = False
 
 def image_translation_and_rotation(
-    geometry, list_input_image_1d, shift_x, shift_y, angle_rad, reposition=True,
+    geometry, list_input_image_1d, shift_x, shift_y, angle_rad, reposition=True, return_pix_coord=False,
 ):
     """
     Function to perform rotation and translation of a list of images.
@@ -110,6 +110,9 @@ def image_translation_and_rotation(
         all_coord_y += [y]
 
     list_output_image_1d = []
+    list_pix_coord_x = []
+    list_pix_coord_y = []
+    list_pix_intensity = []
     for img in range(0, len(list_input_image_1d)):
         old_coord_x = []
         old_coord_y = []
@@ -123,27 +126,39 @@ def image_translation_and_rotation(
             old_coord_y += [y]
             old_image += [list_input_image_1d[img][pix]]
 
-        trans_x = []
-        trans_y = []
-        for pix in range(0, len(old_coord_x)):
-            x = old_coord_x[pix]
-            y = old_coord_y[pix]
-            new_x = x - shift_x
-            new_y = y - shift_y
-            trans_x += [new_x]
-            trans_y += [new_y]
+        #trans_x = []
+        #trans_y = []
+        #for pix in range(0, len(old_coord_x)):
+        #    x = old_coord_x[pix]
+        #    y = old_coord_y[pix]
+        #    new_x = x - shift_x
+        #    new_y = y - shift_y
+        #    trans_x += [new_x]
+        #    trans_y += [new_y]
 
-        rotat_x = []
-        rotat_y = []
-        for pix in range(0, len(old_coord_x)):
-            x = trans_x[pix]
-            y = trans_y[pix]
-            initi_coord = np.array([y, x])
-            rotat_coord = rotation_matrix @ initi_coord
-            new_x = float(rotat_coord[0])
-            new_y = float(rotat_coord[1])
-            rotat_x += [new_x]
-            rotat_y += [-new_y]
+        #rotat_x = []
+        #rotat_y = []
+        #for pix in range(0, len(old_coord_x)):
+        #    x = trans_x[pix]
+        #    y = trans_y[pix]
+        #    initi_coord = np.array([y, x])
+        #    rotat_coord = rotation_matrix @ initi_coord
+        #    new_x = float(rotat_coord[0])
+        #    new_y = float(rotat_coord[1])
+        #    rotat_x += [new_x]
+        #    rotat_y += [-new_y]
+
+        trans_x = np.array(old_coord_x) - shift_x
+        trans_y = np.array(old_coord_y) - shift_y
+
+        initi_coord = np.array([trans_y,trans_x])
+        rotat_coord = rotation_matrix @ initi_coord
+        rotat_x = rotat_coord[0]
+        rotat_y = -1. * rotat_coord[1]
+
+        list_pix_coord_x += [rotat_x]
+        list_pix_coord_y += [rotat_y]
+        list_pix_intensity += [old_image]
 
         output_image_1d = np.zeros_like(list_input_image_1d[img])
         for pix1 in range(0, len(old_coord_x)):
@@ -165,6 +180,8 @@ def image_translation_and_rotation(
             output_image_1d[nearest_pix] += old_image[pix1]
         list_output_image_1d += [output_image_1d]
 
+    if return_pix_coord:
+        return list_pix_coord_x, list_pix_coord_y, list_pix_intensity
     return list_output_image_1d
 
 
@@ -387,14 +404,16 @@ def find_intersection_multiple_lines(
             pair_fit_err = pow(pair_fit_err / pow(np.sin(open_angle),2) ,0.5)
             pair_x += [pair_fit_x]
             pair_y += [pair_fit_y]
-            separation = 0.1*pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
-            ambiguity = 1.- (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]) * separation
-            #if run_diagnosis and select_event_id!=0:
-            #    print (f"pair_dist = {pow(pair_dist_sq,0.5)}")
-            #    print (f"width[i1] = {width[i1]}")
-            #    print (f"width[i2] = {width[i2]}")
-            #    print (f"ambiguity = {ambiguity}, separation = {separation}")
-            if ambiguity>0.8:
+            separation = pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
+            #ambiguity = 1.- (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]) * separation
+            #ambiguity = 1. - separation
+            if run_diagnosis and select_event_id!=0:
+                print (f"pair_dist = {pow(pair_dist_sq,0.5)}")
+                print (f"width[i1] = {width[i1]}")
+                print (f"width[i2] = {width[i2]}")
+                print (f"separation = {separation}")
+            ambiguity = 1.
+            if separation<3.0:
                 ambiguity = 1.0
             else:
                 ambiguity = 0.
@@ -526,76 +545,47 @@ def find_image_features(
     if pow(semi_major_sq/semi_minor_sq,0.5) < 2.0:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    #core_pixel = 0.
-    #tail_pixel = 0.
-    #core_intensity = 0.
-    #tail_intensity = 0.
-    #for pix in range(0,len(input_image_1d)):
-    #    if input_image_1d[pix] == 0.0:
-    #        continue
-    #    diff_x = float(geometry.pix_x[pix] / u.m) - image_center_x
-    #    diff_y = float(geometry.pix_y[pix] / u.m) - image_center_y
-    #    pix_intensity = input_image_1d[pix]
-    #    pix_dist_sq = diff_x*diff_x + diff_y*diff_y
-    #    if pix_dist_sq<0.25*semi_major_sq:
-    #        core_pixel += 1.
-    #        core_intensity += pix_intensity
-    #    else:
-    #        tail_pixel += 1.
-    #        tail_intensity += pix_intensity
-    #if tail_intensity > 0. and core_intensity/tail_intensity < 0.3:
-    #    return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     truth_a = image_center_y / image_center_x
-
-    a, b, a_err, b_err, chi2 = fit_image_to_line(geometry, input_image_1d)
-    aT, bT, aT_err, bT_err, chi2T = fit_image_to_line(
-        geometry, input_image_1d, transpose=True
-    )
-
-    if run_diagnosis and select_event_id != 0:
-        print (f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-        print (f"tel_id = {tel_id}")
-        print (f"image_center_x = {image_center_x:0.3f}, image_center_y = {image_center_y:0.3f}")
-        print (f"semi_minor/semi_major = {pow(semi_minor_sq/semi_major_sq,0.5)}")
-        #print (f"core_pixel/tail_pixel = {core_pixel/tail_pixel}")
-        #print (f"core_intensity/tail_intensity = {core_intensity/tail_intensity}")
-        print (f"a = {a}, a_err = {a_err}, chi2 = {chi2:0.3f}")
-        print (f"aT = {aT}, aT_err = {aT_err}, chi2T = {chi2T:0.3f}")
-
-    axis_ratio = pow(semi_minor_sq/semi_major_sq,0.5)
-    if a_err/axis_ratio<1e-5:
-        chi2 = 1e10
-    if aT_err/axis_ratio<1e-5:
-        chi2T = 1e10
-
-    if aT != 0.0 and chi2!=0. and chi2T!=0.:
-        weight = 1.0 / chi2 + 1.0 / chi2T
-        a = (a * 1.0 / chi2 + aT * 1.0 / chi2T) / weight
-        b = (b * 1.0 / chi2 + bT * 1.0 / chi2T) / weight
-        a_err = (a_err * 1.0 / chi2 + aT_err * 1.0 / chi2T) / weight
-        b_err = (b_err * 1.0 / chi2 + bT_err * 1.0 / chi2T) / weight
-    else:
-        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
-    angle = np.arctan(a)
-    angle_err = abs(np.arctan(a + a_err) - np.arctan(a - a_err))
-
-    if run_diagnosis and select_event_id != 0:
-        print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
 
     index_primary = 0
     if eigenvalues[1]>eigenvalues[0]:
         index_primary = 1
     vx, vy = eigenvectors[index_primary, 0], eigenvectors[index_primary, 1]
     angle = np.pi/2.
+    a = 0.
+    b = 0.
     if vx!=0.:
         a = -vy / vx
         angle = np.arctan(a)
-    b = image_center_y - a * image_center_x
-    if run_diagnosis and select_event_id != 0:
+        b = image_center_y - a * image_center_x
+
+    pix_width = float(geometry.pixel_width[0] / u.m)
+    list_pix_coord_x, list_pix_coord_y, list_pix_intensity = image_translation_and_rotation(
+        geometry,
+        [input_image_1d],
+        image_center_x,
+        image_center_y,
+        (angle + 0.5 * np.pi) * u.rad,
+        #(angle) * u.rad,
+        reposition=True,
+        return_pix_coord=True,
+    )
+    pix_coord_x = np.array(list_pix_coord_x[0])
+    pix_coord_y = np.array(list_pix_coord_y[0])
+    pix_weight = np.array(list_pix_intensity[0])/(pix_width*pix_width)
+
+    a_mtx, a_mtx_err, chi2 = least_square_fit(2, pix_coord_x, pix_coord_y, pix_weight)
+    a_derot = a_mtx[1]
+    a_err = 1.0 * a_mtx_err[1]
+    b_derot = a_mtx[0]
+    b_err = 1.0 * a_mtx_err[0]
+
+    angle_err = abs(np.arctan(a_err) - np.arctan(-a_err))
+
+    if run_diagnosis:
         print (f"eigenvalues = {eigenvalues}")
-        print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
+        print (f"PCA a = {a:0.3f}, a_derot = {a_derot:0.3f}, a_err = {a_err:0.3f}")
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -2253,6 +2243,7 @@ def plot_xing_reconstruction(
 ):
     event_id = event.index["event_id"]
 
+    focal_length = source.subarray.tel[list_tel_id[0]].optics.equivalent_focal_length / u.m
     star_cam_x, star_cam_y = altaz_to_camxy(
         source,
         source.subarray,
@@ -2261,7 +2252,8 @@ def plot_xing_reconstruction(
         star_alt * u.rad,
         star_az * u.rad,
     )
-    print (f"In plot, star_cam_x = {star_cam_x}, star_cam_y = {star_cam_y}")
+    star_cam_x = star_cam_x / focal_length * 180./np.pi
+    star_cam_y = star_cam_y / focal_length * 180./np.pi
 
     xing_cam_x, xing_cam_y = altaz_to_camxy(
         source,
@@ -2271,23 +2263,20 @@ def plot_xing_reconstruction(
         xing_alt * u.rad,
         xing_az * u.rad,
     )
-    focal_length = source.subarray.tel[list_tel_id[0]].optics.equivalent_focal_length / u.m
-    xing_cam_err = focal_length * xing_err
-    print (f"In plot, xing_cam_x = {xing_cam_x}, xing_cam_y = {xing_cam_y}")
+    xing_cam_x = xing_cam_x / focal_length * 180./np.pi
+    xing_cam_y = xing_cam_y / focal_length * 180./np.pi
+    xing_cam_err = xing_err * 180./np.pi
 
-    geometry = source.subarray.tel[list_tel_id[0]].camera.geometry
-    xmax = max(geometry.pix_x) / u.m
-    xmin = min(geometry.pix_x) / u.m
-    ymax = max(geometry.pix_y) / u.m
-    ymin = min(geometry.pix_y) / u.m
+    xmax = 4.0
+    xmin = -4.0
+    ymax = 4.0
+    ymin = -4.0
 
     fig, ax = plt.subplots()
-    figsize_x = 8.6
+    figsize_x = 6.4
     figsize_y = 6.4
     fig.set_figheight(figsize_y)
     fig.set_figwidth(figsize_x)
-    display = CameraDisplay(geometry, ax=ax)
-
 
     list_cen_x = []
     list_cen_y = []
@@ -2296,38 +2285,44 @@ def plot_xing_reconstruction(
     list_b = []
     list_a_err = []
     list_b_err = []
-    list_hillas = []
+    list_pix_x = []
+    list_pix_y = []
+    list_pix_w = []
+    list_pix_s = []
+
+
     for img in range(0, len(list_tel_id)):
+
         tel_id = list_tel_id[img]
+        geometry = source.subarray.tel[tel_id].camera.geometry
+        focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length / u.m
+
         clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
-        current_geometry = source.subarray.tel[list_tel_id[img]].camera.geometry
-        boundary, picture, min_neighbors = cleaning_level[current_geometry.name]
+        boundary, picture, min_neighbors = cleaning_level[geometry.name]
         image_mask = tailcuts_clean(
-            current_geometry,
+            geometry,
             event.dl1.tel[tel_id].image,
             boundary_thresh=boundary,
             picture_thresh=picture,
             min_number_picture_neighbors=min_neighbors,
         )
-        keep_main_island(current_geometry,image_mask)
-        #image_mask = event.dl1.tel[tel_id].image_mask
+        keep_main_island(geometry,image_mask)
 
+        pix_width = float(geometry.pixel_width[0] / u.m)
         for pix in range(0, len(image_mask)):
-            if not image_mask[pix]:
-                clean_image_1d[pix] = 0.0
-            else:
-                clean_image_1d[pix] = event.dl1.tel[tel_id].image[pix]
+            if image_mask[pix]:
+                list_pix_w += [event.dl1.tel[tel_id].image[pix]]
+                list_pix_x += [float(geometry.pix_x[pix] / u.m)/focal_length*180./np.pi]
+                list_pix_y += [float(geometry.pix_y[pix] / u.m)/focal_length*180./np.pi]
+                list_pix_s += [pix_width/focal_length*180./np.pi/2.]
 
         line_a = list_image_feature[img][8]
-        line_b = list_image_feature[img][9]
+        line_b = list_image_feature[img][9] / focal_length * 180./np.pi
         line_a_err = list_image_feature[img][11]
-        line_b_err = list_image_feature[img][12]
+        line_b_err = list_image_feature[img][12] / focal_length * 180./np.pi
         angle = list_image_feature[img][3]
-        image_center_x = list_image_feature[img][1]
-        image_center_y = list_image_feature[img][2]
-
-        if current_geometry.name==geometry.name:
-            display.image += clean_image_1d
+        image_center_x = list_image_feature[img][1] / focal_length * 180./np.pi
+        image_center_y = list_image_feature[img][2] / focal_length * 180./np.pi
 
         list_a += [line_a]
         list_b += [line_b]
@@ -2337,19 +2332,13 @@ def plot_xing_reconstruction(
         list_cen_x += [image_center_x]
         list_cen_y += [image_center_y]
 
-        current_hillas = hillas_parameters(current_geometry,clean_image_1d)
-        list_hillas += [current_hillas]
-
-        #current_display = CameraDisplay(current_geometry, ax=ax)
-        #current_display.highlight_pixels(image_mask, alpha=0.1, linewidth=3, color="green")
-        #display.overlay_moments(current_hillas, color="red", alpha=0.2, linewidth=3, with_label=False)
-
-    display.cmap = "Reds"
-    display.add_colorbar(ax=ax)
-
+    for pix in range(0,len(list_pix_w)):
+        #ax.scatter(list_pix_x[pix], list_pix_y[pix], s=list_pix_s[pix], alpha=0.2, c="g", marker="o")
+        #ax.scatter(list_pix_x[pix], list_pix_y[pix], s=1, alpha=0.2, c="g", marker="o")
+        mycircle = plt.Circle( (list_pix_x[pix], list_pix_y[pix]), list_pix_s[pix], fill=True, color='green', alpha=0.2)
+        ax.add_patch(mycircle)
 
     for img in range(0, len(list_a)):
-        #display.overlay_moments(list_hillas[img], color="g", alpha=0.2, linewidth=3, with_label=False)
         line_a = list_a[img]
         line_b = list_b[img]
         line_a_err = list_a_err[img]
@@ -2357,7 +2346,7 @@ def plot_xing_reconstruction(
         angle = list_angle[img]
         image_center_x = list_cen_x[img]
         image_center_y = list_cen_y[img]
-        if np.cos(angle * u.rad) > 0.0:
+        if xing_cam_x > image_center_x:
             line_x = np.linspace(image_center_x, xmax, 100)
             line_y = line_a * line_x + line_b
             ax.plot(line_x, line_y, color="k", alpha=0.1, linestyle="dashed")
