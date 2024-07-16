@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 
 from ctapipe.calib import CameraCalibrator
 from ctapipe.coordinates import CameraFrame, NominalFrame
-from ctapipe.image import ImageProcessor, tailcuts_clean
+from ctapipe.image import ImageProcessor, tailcuts_clean, hillas_parameters, number_of_islands
 from ctapipe.io import SimTelEventSource
 from ctapipe.reco import ShowerProcessor
 from ctapipe.visualization import CameraDisplay
@@ -24,17 +24,18 @@ __all__ = [
 
 # unoptimized cleaning levels
 cleaning_level = {
+    "DigiCam": (2, 4, 2),
     "ASTRICam": (2, 4, 2),
     "CHEC": (2, 4, 2),
-    "LSTCam": (3.5, 7, 2),
+    "LSTCam": (4, 8, 2),
     "FlashCam": (4, 8, 2),
     "NectarCam": (3, 5, 2),
-    "SCTCam": (2, 5, 2),
+    "SCTCam": (3, 6, 2),
 }
 
 image_size_cut = 100.0
-mask_size_cut = 4.0
-frac_leakage_intensity_cut = 0.02
+mask_size_cut = 5.0
+frac_leakage_intensity_cut = 0.05
 
 n_bins_arrival = 20
 arrival_lower = 0.0
@@ -52,15 +53,13 @@ select_samples = 16
 
 select_run_id = 0
 select_event_id = 0
-#select_run_id = 410
-#select_event_id = 39705
 
 run_diagnosis = False
-plot_image_size_cut = 5000.0
+plot_image_size_cut_upper = 5000.0
+plot_image_size_cut_lower = 1000.0
 truth_energy_cut = 0.
 n_tel_min = 1
 n_tel_max = 10000
-
 
 #use_template = True
 use_template = False
@@ -330,7 +329,7 @@ def fit_image_to_line(geometry, image_input_1d, transpose=False):
         fit_a = 1.0/fit_a
 
     #return fit_a, fit_b, fit_a_err, fit_b_err, chi2
-    return fit_a, fit_b, fit_a_err, fit_b_err, chi2 * projection
+    return fit_a, fit_b, fit_a_err, fit_b_err, chi2*chi2 * projection
 
 
 def find_intersection_multiple_lines(
@@ -345,6 +344,7 @@ def find_intersection_multiple_lines(
     list_length,
     list_width,
     list_pixel_width,
+    list_frac_leakage_intensity,
 ):
     # y = a*x + b, weight = 1./b_err
 
@@ -359,6 +359,7 @@ def find_intersection_multiple_lines(
     length = np.array(list_length)
     width = np.array(list_width)
     pixel_width = np.array(list_pixel_width)
+    frac_leakage_intensity = np.array(list_frac_leakage_intensity)
     w = intensity*length/width
 
     pair_weight = []
@@ -381,30 +382,34 @@ def find_intersection_multiple_lines(
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
             pair_dist_sq = pow(x[i2] - x[i1],2) + pow(y[i2] - y[i1],2)
-            pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + pixel_width[i1]*pixel_width[i1]/np.pi
-            pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + pixel_width[i2]*pixel_width[i2]/np.pi
-            pair_fit_err = pow(pair_fit_err / pow(np.tan(open_angle),2) ,0.5)
-            #print (f"np.sin(open_angle) = {np.sin(open_angle)}")
-            #print (f"pair_fit_x = {pair_fit_x}, pair_fit_y = {pair_fit_y}")
+            pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
+            pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
+            pair_fit_err = pow(pair_fit_err / pow(np.sin(open_angle),2) ,0.5)
             pair_x += [pair_fit_x]
             pair_y += [pair_fit_y]
-            #ambiguity = 1.-((length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2])) * (pair_dist_sq/(width[i1]*width[i2]))
-            ambiguity = 1.-((length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]))
-            #print (f"pair_dist_sq = {pair_dist_sq}")
-            #print (f"width[i1] = {width[i1]}")
-            #print (f"width[i2] = {width[i2]}")
-            #print (f"ambiguity = {ambiguity}, (pair_dist_sq/(width[i1]*width[i2])) = {(pair_dist_sq/(width[i1]*width[i2]))}")
+            separation = 0.1*pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
+            ambiguity = 1.- (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]) * separation
+            #if run_diagnosis and select_event_id!=0:
+            #    print (f"pair_dist = {pow(pair_dist_sq,0.5)}")
+            #    print (f"width[i1] = {width[i1]}")
+            #    print (f"width[i2] = {width[i2]}")
+            #    print (f"ambiguity = {ambiguity}, separation = {separation}")
             if ambiguity>0.8:
                 ambiguity = 1.0
             else:
                 ambiguity = 0.
             fov = pow(4.0*np.pi/180.,2)
             ambiguity_err = pow(fov*ambiguity,0.5)
-            #print (f"pair_fit_err = {pair_fit_err*180./np.pi} deg")
-            #print (f"ambiguity_err = {ambiguity_err*180./np.pi} deg")
             max_pixel_width = max(pixel_width[i1],pixel_width[i2])
-            pair_err += [max(max_pixel_width,max(pair_fit_err,ambiguity_err))]
-            pair_weight += [ pow(intensity[i1] * intensity[i2],0.5) ]
+            pair_err += [max(pair_fit_err,ambiguity_err)]
+            leakage_weight_1 = 1.
+            leakage_weight_2 = 1.
+            if frac_leakage_intensity[i1]>frac_leakage_intensity_cut:
+                leakage_weight_1 = 0.
+            if frac_leakage_intensity[i2]>frac_leakage_intensity_cut:
+                leakage_weight_2 = 0.
+            pair_weight += [1.*leakage_weight_1*leakage_weight_2]
+            #pair_weight += [ pow(intensity[i1] * intensity[i2],1.0) * leakage_weight_1*leakage_weight_2 ]
 
     pair_x = np.array(pair_x)
     pair_y = np.array(pair_y)
@@ -521,22 +526,25 @@ def find_image_features(
     if pow(semi_major_sq/semi_minor_sq,0.5) < 2.0:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    core_intensity = 0.
-    tail_intensity = 0.
-    for pix in range(0,len(input_image_1d)):
-        if input_image_1d[pix] == 0.0:
-            continue
-        diff_x = float(geometry.pix_x[pix] / u.m) - image_center_x
-        diff_y = float(geometry.pix_y[pix] / u.m) - image_center_y
-        pix_intensity = input_image_1d[pix]
-        pix_dist_sq = diff_x*diff_x + diff_y*diff_y
-        if pix_dist_sq<0.25*semi_major_sq:
-            core_intensity += pix_intensity
-        else:
-            tail_intensity += pix_intensity
-
-    if tail_intensity > 0. and core_intensity/tail_intensity < 0.2:
-        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    #core_pixel = 0.
+    #tail_pixel = 0.
+    #core_intensity = 0.
+    #tail_intensity = 0.
+    #for pix in range(0,len(input_image_1d)):
+    #    if input_image_1d[pix] == 0.0:
+    #        continue
+    #    diff_x = float(geometry.pix_x[pix] / u.m) - image_center_x
+    #    diff_y = float(geometry.pix_y[pix] / u.m) - image_center_y
+    #    pix_intensity = input_image_1d[pix]
+    #    pix_dist_sq = diff_x*diff_x + diff_y*diff_y
+    #    if pix_dist_sq<0.25*semi_major_sq:
+    #        core_pixel += 1.
+    #        core_intensity += pix_intensity
+    #    else:
+    #        tail_pixel += 1.
+    #        tail_intensity += pix_intensity
+    #if tail_intensity > 0. and core_intensity/tail_intensity < 0.3:
+    #    return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     truth_a = image_center_y / image_center_x
 
@@ -550,7 +558,8 @@ def find_image_features(
         print (f"tel_id = {tel_id}")
         print (f"image_center_x = {image_center_x:0.3f}, image_center_y = {image_center_y:0.3f}")
         print (f"semi_minor/semi_major = {pow(semi_minor_sq/semi_major_sq,0.5)}")
-        print (f"core_intensity/tail_intensity = {core_intensity/tail_intensity}")
+        #print (f"core_pixel/tail_pixel = {core_pixel/tail_pixel}")
+        #print (f"core_intensity/tail_intensity = {core_intensity/tail_intensity}")
         print (f"a = {a}, a_err = {a_err}, chi2 = {chi2:0.3f}")
         print (f"aT = {aT}, aT_err = {aT_err}, chi2T = {chi2T:0.3f}")
 
@@ -575,14 +584,18 @@ def find_image_features(
     if run_diagnosis and select_event_id != 0:
         print (f"final a = {a:0.3f}, a_err = {a_err:0.3f}")
 
-    #vx, vy = eigenvectors[1, 0], eigenvectors[1, 1]
-    #angle = np.pi/2.
-    #if vx!=0.:
-    #    a = -vy / vx
-    #    angle = np.arctan(a)
-    #b = image_center_y - a * image_center_x
-    #if run_diagnosis and select_event_id != 0:
-    #    print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
+    index_primary = 0
+    if eigenvalues[1]>eigenvalues[0]:
+        index_primary = 1
+    vx, vy = eigenvectors[index_primary, 0], eigenvectors[index_primary, 1]
+    angle = np.pi/2.
+    if vx!=0.:
+        a = -vy / vx
+        angle = np.arctan(a)
+    b = image_center_y - a * image_center_x
+    if run_diagnosis and select_event_id != 0:
+        print (f"eigenvalues = {eigenvalues}")
+        print (f"PCA a = {a:0.3f}, a_err = {a_err:0.3f}")
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -652,9 +665,9 @@ def find_image_features(
         a,
         b,
         truth_projection,
-        a_err,
-        b_err,
-        angle_err,
+        2.*a_err,
+        2.*b_err,
+        2.*angle_err,
         image_size,
     ]
 
@@ -739,6 +752,14 @@ def find_image_truth(source, subarray, run_id, tel_id, event):
 
     return truth_info_array
 
+def keep_main_island(geometry,image_mask):
+
+    n_islands = number_of_islands(geometry,image_mask)
+    for pix in range(0,len(n_islands[1])):
+        if n_islands[1][pix]==1:
+            image_mask[pix] = True
+        else:
+            image_mask[pix] = False
 
 def make_standard_movie(
     ctapipe_output,
@@ -764,6 +785,8 @@ def make_standard_movie(
         picture_thresh=picture,
         min_number_picture_neighbors=min_neighbors,
     )
+    keep_main_island(geometry,image_mask)
+    #image_mask = event.dl1.tel[tel_id].image_mask
 
     for pix in range(0, len(image_mask)):
         if not image_mask[pix]:
@@ -806,6 +829,7 @@ def make_standard_movie(
     border_mask = border_pixels & image_mask
     leakage_intensity = np.sum(clean_image_1d[border_mask])
     n_pe_cleaning = np.sum(clean_image_1d)
+    frac_leakage_intensity = 1.
     if n_pe_cleaning>0.:
         frac_leakage_intensity = leakage_intensity / n_pe_cleaning
         if frac_leakage_intensity > frac_leakage_intensity_cut:
@@ -844,6 +868,9 @@ def make_standard_movie(
     image_feature_array = find_image_features(
         tel_id, geometry, clean_image_1d, clean_time_1d, flip=flip, star_cam_xy=star_cam_xy
     )
+    if run_diagnosis and select_event_id != 0:
+        print (f"frac_leakage_intensity = {frac_leakage_intensity}")
+    image_feature_array += [frac_leakage_intensity]
     toc_feature = time.perf_counter()
     #print(f"find image feature time: {toc_feature-tic_feature:0.1f} sec")
 
@@ -879,6 +906,7 @@ def make_standard_movie(
         center_time_window = round(center_time_window / total_weight)
     # print(f"center_time_window = {center_time_window}")
 
+    #print (f"len(clean_movie_1d) = {len(clean_movie_1d)}")
     n_windows_slim = int(select_samples / n_samples_per_window)
     slim_movie_1d = []
     for win in range(0, n_windows_slim):
@@ -888,6 +916,8 @@ def make_standard_movie(
         for win in range(0, n_windows_slim):
             old_win = int(center_time_window - n_windows_slim / 2 + win)
             if old_win < 0:
+                continue
+            if old_win >= len(clean_movie_1d):
                 continue
             slim_movie_1d[win][pix] = clean_movie_1d[old_win][pix]
 
@@ -2222,7 +2252,6 @@ def plot_xing_reconstruction(
     tag,
 ):
     event_id = event.index["event_id"]
-    geometry = source.subarray.tel[list_tel_id[0]].camera.geometry
 
     star_cam_x, star_cam_y = altaz_to_camxy(
         source,
@@ -2246,6 +2275,7 @@ def plot_xing_reconstruction(
     xing_cam_err = focal_length * xing_err
     print (f"In plot, xing_cam_x = {xing_cam_x}, xing_cam_y = {xing_cam_y}")
 
+    geometry = source.subarray.tel[list_tel_id[0]].camera.geometry
     xmax = max(geometry.pix_x) / u.m
     xmin = min(geometry.pix_x) / u.m
     ymax = max(geometry.pix_y) / u.m
@@ -2258,6 +2288,7 @@ def plot_xing_reconstruction(
     fig.set_figwidth(figsize_x)
     display = CameraDisplay(geometry, ax=ax)
 
+
     list_cen_x = []
     list_cen_y = []
     list_angle = []
@@ -2265,22 +2296,21 @@ def plot_xing_reconstruction(
     list_b = []
     list_a_err = []
     list_b_err = []
+    list_hillas = []
     for img in range(0, len(list_tel_id)):
         tel_id = list_tel_id[img]
         clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
-        boundary, picture, min_neighbors = cleaning_level[geometry.name]
+        current_geometry = source.subarray.tel[list_tel_id[img]].camera.geometry
+        boundary, picture, min_neighbors = cleaning_level[current_geometry.name]
         image_mask = tailcuts_clean(
-            geometry,
+            current_geometry,
             event.dl1.tel[tel_id].image,
             boundary_thresh=boundary,
             picture_thresh=picture,
             min_number_picture_neighbors=min_neighbors,
         )
-        # for pix in range(0, len(image_mask)):
-        #    if event.dl1.tel[tel_id].image[pix]==0.:
-        #        image_mask[pix] = False
-        #    else:
-        #        image_mask[pix] = True
+        keep_main_island(current_geometry,image_mask)
+        #image_mask = event.dl1.tel[tel_id].image_mask
 
         for pix in range(0, len(image_mask)):
             if not image_mask[pix]:
@@ -2296,7 +2326,9 @@ def plot_xing_reconstruction(
         image_center_x = list_image_feature[img][1]
         image_center_y = list_image_feature[img][2]
 
-        display.image += clean_image_1d
+        if current_geometry.name==geometry.name:
+            display.image += clean_image_1d
+
         list_a += [line_a]
         list_b += [line_b]
         list_a_err += [line_a_err]
@@ -2305,10 +2337,19 @@ def plot_xing_reconstruction(
         list_cen_x += [image_center_x]
         list_cen_y += [image_center_y]
 
+        current_hillas = hillas_parameters(current_geometry,clean_image_1d)
+        list_hillas += [current_hillas]
+
+        #current_display = CameraDisplay(current_geometry, ax=ax)
+        #current_display.highlight_pixels(image_mask, alpha=0.1, linewidth=3, color="green")
+        #display.overlay_moments(current_hillas, color="red", alpha=0.2, linewidth=3, with_label=False)
+
     display.cmap = "Reds"
     display.add_colorbar(ax=ax)
 
-    for img in range(0, len(list_tel_id)):
+
+    for img in range(0, len(list_a)):
+        #display.overlay_moments(list_hillas[img], color="g", alpha=0.2, linewidth=3, with_label=False)
         line_a = list_a[img]
         line_b = list_b[img]
         line_a_err = list_a_err[img]
@@ -2385,11 +2426,8 @@ def plot_monotel_reconstruction(
         picture_thresh=picture,
         min_number_picture_neighbors=min_neighbors,
     )
-    # for pix in range(0, len(image_mask)):
-    #    if event.dl1.tel[tel_id].image[pix]==0.:
-    #        image_mask[pix] = False
-    #    else:
-    #        image_mask[pix] = True
+    keep_main_island(geometry,image_mask)
+    #image_mask = event.dl1.tel[tel_id].image_mask
 
     mask_size = 0
     for pix in range(0, len(image_mask)):
@@ -2828,6 +2866,7 @@ def run_monoscopic_analysis(
         image_semi_minor = image_feature_array[5]
         angle = image_feature_array[3]
         angle_err = image_feature_array[13]
+        frac_leakage_intensity = image_feature_array[15]
 
         line_a = image_feature_array[8]
         line_b = image_feature_array[9]
@@ -2899,7 +2938,10 @@ def run_monoscopic_analysis(
         list_tel_alt += [image_fit_alt]
         list_tel_az += [image_fit_az]
         list_tel_log_energy += [image_fit_log_energy]
-        list_tel_weight += [pow(1.0 / image_method_unc, 2)]
+        leakage_weight = 1.
+        if frac_leakage_intensity>frac_leakage_intensity_cut:
+            leakage_weight = 0.
+        list_tel_weight += [pow(1.0 / image_method_unc, 2)*pow(leakage_weight,2)]
         print(
                 f"mask_size = {mask_size}, image_size = {image_size:0.1f}, image_method_unc = {image_method_unc*180./np.pi:0.3f}, image_method_off_angle = {image_method_error:0.3f}"
         )
@@ -2917,7 +2959,7 @@ def run_monoscopic_analysis(
         elif run_diagnosis:
             make_a_plot = True
         else:
-            if image_size>plot_image_size_cut:
+            if image_size>plot_image_size_cut_lower:
                 make_a_plot = True
 
         if make_a_plot or is_bad_result:
@@ -3019,7 +3061,7 @@ def run_monoscopic_analysis(
     )
 
 
-def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, event, make_a_plot=False):
+def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source, event, make_a_plot=False):
     event_id = event.index["event_id"]
     ntel = len(event.r0.tel)
 
@@ -3040,11 +3082,13 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
     list_tel_id = []
     list_image_feature = []
     list_pixel_width = []
+    list_frac_leakage_intensity = []
 
     for tel_idx in range(0, len(list(event.dl0.tel.keys()))):
         tel_id = list(event.dl0.tel.keys())[tel_idx]
 
-        if str(telescope_type) != str(source.subarray.tel[tel_id]):
+        telescope_type = str(source.subarray.tel[tel_id])
+        if not telescope_type in list_telescope_type:
             continue
 
         pixel_width = float(source.subarray.tel[tel_id].camera.geometry.pixel_width[0] / u.m)
@@ -3091,6 +3135,22 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         #    print (f"image_size = {image_size:0.1f}, failed image_size cut")
         #    continue
 
+        if make_a_plot:
+            plot_monotel_reconstruction(
+                ctapipe_output,
+                source.subarray,
+                run_id,
+                tel_id,
+                event,
+                image_feature_array,
+                star_cam_x,
+                star_cam_y,
+                0.,
+                0.,
+                100.,
+                "mono",
+            )
+
         list_tel_id += [tel_id]
         list_image_feature += [image_feature_array]
 
@@ -3101,6 +3161,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         width = image_feature_array[5]
         angle_err = image_feature_array[13]
         image_size = image_feature_array[14]
+        frac_leakage_intensity = image_feature_array[15]
 
         line_a = image_feature_array[8]
         line_b = image_feature_array[9]
@@ -3147,6 +3208,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
         list_line_length += [length/focal_length]
         list_line_width += [width/focal_length]
         list_pixel_width += [pixel_width/focal_length]
+        list_frac_leakage_intensity += [frac_leakage_intensity]
 
         #list_line_x += [image_center_x]
         #list_line_y += [image_center_y]
@@ -3183,6 +3245,7 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
             list_line_length,
             list_line_width,
             list_pixel_width,
+            list_frac_leakage_intensity,
         )
         xing_alt, xing_az = nominal_to_altaz(
             source,
@@ -3270,25 +3333,54 @@ def run_multiscopic_analysis(ctapipe_output, telescope_type, run_id, source, eve
                 xing_err,
                 "xing",
             )
-            #exit()
 
     return xing_alt, xing_az, xing_weight, n_tel
 
+def event_selection(event,ana_tag):
 
-def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope_type, save_output=True):
+    n_good_images = 0
+    for tel in range(0,len(event.dl1.tel)):
+        if not event.dl1.tel[tel].is_valid:
+            continue
+        #print (f"event.dl1.tel[{tel}] = {event.dl1.tel[tel]}")
+        #print (f"event.dl1.tel[{tel}].parameters = {event.dl1.tel[tel].parameters}")
+        #exit()
+        if event.dl1.tel[tel].parameters['hillas']['intensity']<50.:
+            continue
+        fov_lat_deg = event.dl1.tel[tel].parameters['hillas']['fov_lat'].to(u.deg).value
+        fov_lon_deg = event.dl1.tel[tel].parameters['hillas']['fov_lon'].to(u.deg).value
+        fov_rad_deg = pow(fov_lat_deg*fov_lat_deg+fov_lon_deg*fov_lon_deg,0.5)
+        if 'freepact' in ana_tag:
+            if fov_rad_deg>3.0:
+                continue
+        n_good_images += 1
+
+    print (f"n_good_images = {n_good_images}")
+    if n_good_images<2: 
+        return False
+    return True
+
+def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope_type, select_evt=None, save_output=True):
     analysis_result = []
     lookup_table_type = "box3d"
 
     global run_diagnosis
-    global plot_image_size_cut
+    global plot_image_size_cut_lower
+    global plot_image_size_cut_upper
     global truth_energy_cut
+    global select_run_id
+    global select_event_id
 
     if not save_output:
         run_diagnosis = True
-        plot_image_size_cut = 10.
+        plot_image_size_cut_lower = 20.
+        plot_image_size_cut_upper = 10000000.
         truth_energy_cut = 0.
         n_tel_min = 1
         n_tel_max = 1000
+        if not select_evt==None:
+            select_run_id = select_evt[0]
+            select_event_id = select_evt[1]
 
     print("loading svd pickle data... ")
 
@@ -3378,9 +3470,11 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
     sum_hillas_result = []
     sum_xing_result = []
     sum_template_result = []
+    sum_truth_result = []
 
     hillas_score = 0
     xing_score = 0
+    n_truth_events = 0
 
     for event in source:
 
@@ -3399,7 +3493,6 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
             if event_id != select_event_id:
                 continue
 
-        print(f"Select telescope type: {telescope_type}")
         print(f"run_id = {run_id}")
         print(f"event_id = {event_id}")
 
@@ -3414,8 +3507,17 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         calib(event)  # fills in r1, dl0, and dl1
         image_processor(event)
         shower_processor(event)
-        # print(f"event = {event}")
-        # exit()
+
+        sum_truth_result += [
+            [
+                truth_energy,
+                truth_alt * 180.0 / np.pi,
+                truth_az * 180.0 / np.pi,
+            ]
+        ]
+        n_truth_events += 1
+
+        is_good_event = event_selection(event,ana_tag)
 
         reco_result = event.dl2.stereo.geometry["HillasReconstructor"]
         n_tels = len(reco_result.telescopes)
@@ -3425,8 +3527,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
 
         average_intensity = reco_result.average_intensity
         if run_diagnosis:
-            if average_intensity<plot_image_size_cut: continue
-            #if average_intensity>2.*plot_image_size_cut: continue
+            if average_intensity<plot_image_size_cut_lower: continue
+            if average_intensity>plot_image_size_cut_upper: continue
         if run_diagnosis:
             if n_tels>n_tel_max: continue
             if n_tels<n_tel_min: continue
@@ -3436,7 +3538,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         hillas_err = 0.0
         hillas_weight = 0.0
         hillas_off_angle = 1e10
-        if reco_result.is_valid:
+        if reco_result.is_valid and is_good_event:
             hillas_alt = reco_result.alt.to(u.rad).value
             hillas_az = reco_result.az.to(u.rad).value
             hillas_az_2pi = hillas_az - 2.0 * np.pi
@@ -3463,6 +3565,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                     hillas_err * 180.0 / np.pi,
                     reco_result.alt.to(u.deg).value,
                     reco_result.az.to(u.deg).value,
+                    run_id,
+                    event_id,
                 ]
             ]
         else:
@@ -3471,7 +3575,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
 
         tic_xing = time.perf_counter()
         xing_alt, xing_az, xing_weight, xing_n_tel = run_multiscopic_analysis(
-            ctapipe_output, telescope_type, run_id, source, event
+            ctapipe_output, list_telescope_type, run_id, source, event
         )
         toc_xing = time.perf_counter()
         xing_err = 0.0
@@ -3493,6 +3597,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                     xing_err * 180.0 / np.pi,
                     xing_alt * 180.0 / np.pi,
                     xing_az * 180.0 / np.pi,
+                    run_id,
+                    event_id,
                 ]
             ]
 
@@ -3570,6 +3676,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                     list_tmp_az,
                     list_tmp_log_energy,
                     toc_template - tic_template,
+                    run_id,
+                    event_id,
                 ]
             ]
 
@@ -3621,6 +3729,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                     truth_energy,
                     combine_off_angle.to(u.deg).value, 
                     combine_err * 180.0 / np.pi,
+                    run_id,
+                    event_id,
                 ]
             ]
 
@@ -3630,9 +3740,10 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
             sum_xing_result,
             sum_template_result,
             sum_combine_result,
+            sum_truth_result,
         ]
         if save_output:
-            output_filename = f"{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}_{telescope_type}.pkl"
+            output_filename = f"{ctapipe_output}/output_analysis/{ana_tag}_run{run_id}.pkl"
             print(f"writing file to {output_filename}")
             with open(output_filename, "wb") as file:
                 pickle.dump(analysis_result, file)
@@ -3644,6 +3755,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                 xing_score += 1
         print (f"hillas_score = {hillas_score}")
         print (f"xing_score = {xing_score}")
+        print (f"n_truth_events = {n_truth_events}")
 
         if xing_weight > 0.0:
             make_xing_plot = False
@@ -3659,7 +3771,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                 make_xing_plot = True
             if make_xing_plot:
                 xing_alt, xing_az, xing_weight, xing_n_tel = run_multiscopic_analysis(
-                    ctapipe_output, telescope_type, run_id, source, event, make_a_plot=True,
+                    ctapipe_output, list_telescope_type, run_id, source, event, make_a_plot=True,
                 )
             if run_diagnosis and bad_xing:
                 exit()
