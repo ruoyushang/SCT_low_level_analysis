@@ -1,5 +1,6 @@
 
 import os
+import sys
 import math
 import pickle
 import time
@@ -61,8 +62,8 @@ truth_energy_cut = 0.
 n_tel_min = 1
 n_tel_max = 10000
 
-#use_template = True
-use_template = False
+use_template = True
+#use_template = False
 
 def image_translation_and_rotation(
     geometry, list_input_image_1d, shift_x, shift_y, angle_rad, reposition=True, return_pix_coord=False,
@@ -399,36 +400,43 @@ def find_intersection_multiple_lines(
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
             pair_dist_sq = pow(x[i2] - x[i1],2) + pow(y[i2] - y[i1],2)
-            pair_fit_err = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
-            pair_fit_err += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
-            pair_fit_err = pow(pair_fit_err / pow(np.sin(open_angle),2) ,0.5)
+            pair_fit_err_sq = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
+            pair_fit_err_sq += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
+            pair_fit_err = pow(pair_fit_err_sq / pow(np.sin(open_angle),2) ,0.5)
             pair_x += [pair_fit_x]
             pair_y += [pair_fit_y]
+            asymmetry = (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2])
             separation = pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
-            #ambiguity = 1.- (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2]) * separation
-            #ambiguity = 1. - separation
-            if run_diagnosis and select_event_id!=0:
-                print (f"pair_dist = {pow(pair_dist_sq,0.5)}")
-                print (f"width[i1] = {width[i1]}")
-                print (f"width[i2] = {width[i2]}")
-                print (f"separation = {separation}")
             ambiguity = 1.
-            if separation<3.0:
+            if separation<5.0:
+                ambiguity = 1.0
+            elif asymmetry<0.2:
                 ambiguity = 1.0
             else:
                 ambiguity = 0.
-            fov = pow(4.0*np.pi/180.,2)
+            fov = pow(45.*np.pi/180.,2)
             ambiguity_err = pow(fov*ambiguity,0.5)
-            max_pixel_width = max(pixel_width[i1],pixel_width[i2])
-            pair_err += [max(pair_fit_err,ambiguity_err)]
+            pair_fit_err = max(pair_fit_err,ambiguity_err)
+            pair_err += [pair_fit_err]
             leakage_weight_1 = 1.
             leakage_weight_2 = 1.
             if frac_leakage_intensity[i1]>frac_leakage_intensity_cut:
                 leakage_weight_1 = 0.
             if frac_leakage_intensity[i2]>frac_leakage_intensity_cut:
                 leakage_weight_2 = 0.
-            pair_weight += [1.*leakage_weight_1*leakage_weight_2]
-            #pair_weight += [ pow(intensity[i1] * intensity[i2],1.0) * leakage_weight_1*leakage_weight_2 ]
+            pair_fit_weight = pow(intensity[i1] * intensity[i2],1.0) * leakage_weight_1*leakage_weight_2
+            pair_weight += [ pair_fit_weight ]
+            #if run_diagnosis and select_event_id!=0:
+            if run_diagnosis:
+                print ("=============================================================================================")
+                print (f"pair_fit_x = {pair_fit_x*180./np.pi:0.3f} deg, pair_fit_y = {pair_fit_y*180./np.pi:0.3f} deg")
+                print (f"pair_weight = {pair_fit_weight / (pair_fit_err*pair_fit_err)}")
+                print (f"pair_fit_err = {pair_fit_err}")
+                print (f"np.sin(open_angle) = {np.sin(open_angle)}")
+                print (f"separation = {separation}")
+                print (f"asymmetry = {asymmetry}")
+                print (f"intensity[i1] = {intensity[i1]}")
+                print (f"intensity[i2] = {intensity[i2]}")
 
     pair_x = np.array(pair_x)
     pair_y = np.array(pair_y)
@@ -1695,36 +1703,38 @@ def box_search(
                     try_params = [try_arrival, try_impact, try_log_energy]
 
                     try_chi2 = 0.0
-                    try_chi2_image = (
-                        sqaure_difference_between_1d_images(
-                            try_params,
-                            image_latent_space,
-                            image_lookup_table,
-                            image_eigen_vectors,
-                        )
-                        / image_norm
-                    )
-                    try_chi2 += try_chi2_image
-                    try_chi2_time = (
-                        sqaure_difference_between_1d_images(
-                            try_params,
-                            time_latent_space,
-                            time_lookup_table,
-                            time_eigen_vectors,
-                        )
-                        / time_norm
-                    )
-                    try_chi2 += try_chi2_time
-                    #try_chi2_movie = (
-                    #   sqaure_difference_between_1d_images(
-                    #       try_params,
-                    #       movie_latent_space,
-                    #       movie_lookup_table,
-                    #       movie_eigen_vectors,
-                    #   )
-                    #   / movie_norm
+
+                    #try_chi2_image = (
+                    #    sqaure_difference_between_1d_images(
+                    #        try_params,
+                    #        image_latent_space,
+                    #        image_lookup_table,
+                    #        image_eigen_vectors,
+                    #    )
+                    #    / image_norm
                     #)
-                    #try_chi2 += try_chi2_movie
+                    #try_chi2 += try_chi2_image
+                    #try_chi2_time = (
+                    #    sqaure_difference_between_1d_images(
+                    #        try_params,
+                    #        time_latent_space,
+                    #        time_lookup_table,
+                    #        time_eigen_vectors,
+                    #    )
+                    #    / time_norm
+                    #)
+                    #try_chi2 += try_chi2_time
+
+                    try_chi2_movie = (
+                       sqaure_difference_between_1d_images(
+                           try_params,
+                           movie_latent_space,
+                           movie_lookup_table,
+                           movie_eigen_vectors,
+                       )
+                       / movie_norm
+                    )
+                    try_chi2 += try_chi2_movie
 
                     short_list += [(try_chi2, try_arrival, try_impact, try_log_energy)]
 
@@ -2375,6 +2385,11 @@ def plot_xing_reconstruction(
 
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
+    label_x = "X [deg]"
+    label_y = "Y [deg]"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+
     fig.savefig(
         f"{ctapipe_output}/output_plots/run{run_id}_evt{event_id}_xing_{tag}.png",
         bbox_inches="tight",
@@ -2834,10 +2849,11 @@ def run_monoscopic_analysis(
             print (f"image_fit_chi2_flip = {image_fit_chi2_flip}")
             image_ambiguity = 1.0 / (
                 # abs(image_direction) * abs(image_fit_chi2 - image_fit_chi2_flip) / abs(image_fit_chi2 + image_fit_chi2_flip)
-                abs(image_direction) * abs(image_fit_chi2 - image_fit_chi2_flip) / 100.0
+                #abs(image_direction) * abs(image_fit_chi2 - image_fit_chi2_flip) / 25.0
+                abs(image_fit_chi2 - image_fit_chi2_flip) / 25.0
             )
             print (f"image_ambiguity = {image_ambiguity}")
-            add_ambiguity_unc = max(0.0, image_ambiguity - 1.0)
+            add_ambiguity_unc = image_ambiguity * image_fit_arrival / focal_length
 
             if image_fit_chi2_flip < image_fit_chi2 and abs(image_direction) < 0.5:
                 image_fit_arrival = image_fit_arrival_flip
@@ -2888,13 +2904,14 @@ def run_monoscopic_analysis(
             / focal_length
         )
         pixel_width = float(source.subarray.tel[tel_id].camera.geometry.pixel_width[0] / u.m)
-        image_method_unc = max(image_method_unc,pixel_width/focal_length)
+        #image_method_unc = max(image_method_unc,pixel_width/focal_length)
 
         print (f"image_method_unc = {image_method_unc}")
-        print (f"add_ambiguity_unc = {add_ambiguity_unc}")
-        image_method_unc = pow(
-            pow(add_ambiguity_unc, 2) + pow(image_method_unc, 2), 0.5
-        )
+        if not use_seed:
+            print (f"add_ambiguity_unc = {add_ambiguity_unc}")
+            image_method_unc = pow(
+                pow(add_ambiguity_unc, 2) + pow(image_method_unc, 2), 0.5
+            )
 
         image_method_error = (
             pow(
@@ -2915,14 +2932,17 @@ def run_monoscopic_analysis(
         # print(f"image_method_unc = {image_method_unc:0.3f} deg")
 
 
-        image_fit_alt, image_fit_az = nominal_to_altaz(
-            source,
-            source.subarray,
-            run_id,
-            tel_id,
-            image_fit_nom_x * u.rad,
-            image_fit_nom_y * u.rad,
-        )
+        image_fit_alt = 0.
+        image_fit_az = 0.
+        if abs(image_fit_nom_x)<np.pi/2. and abs(image_fit_nom_y)<np.pi/2.:
+            image_fit_alt, image_fit_az = nominal_to_altaz(
+                source,
+                source.subarray,
+                run_id,
+                tel_id,
+                image_fit_nom_x * u.rad,
+                image_fit_nom_y * u.rad,
+            )
 
         list_tel_alt += [image_fit_alt]
         list_tel_az += [image_fit_az]
@@ -3236,15 +3256,17 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
             list_pixel_width,
             list_frac_leakage_intensity,
         )
-        xing_alt, xing_az = nominal_to_altaz(
-            source,
-            source.subarray,
-            run_id,
-            list_tel_id[0],
-            xing_nom_x * u.rad,
-            xing_nom_y * u.rad,
-        )
-        print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
+        print (f"xing_nom_x = {xing_nom_x}, xing_nom_y = {xing_nom_y}")
+        if abs(xing_nom_x)<np.pi/2. and abs(xing_nom_y)<np.pi/2.:
+            xing_alt, xing_az = nominal_to_altaz(
+                source,
+                source.subarray,
+                run_id,
+                list_tel_id[0],
+                xing_nom_x * u.rad,
+                xing_nom_y * u.rad,
+            )
+            print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
 
         #(
         #    xing_x,
@@ -3363,10 +3385,11 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
     if not save_output:
         run_diagnosis = True
         plot_image_size_cut_lower = 20.
-        plot_image_size_cut_upper = 10000000.
-        truth_energy_cut = 0.
+        plot_image_size_cut_upper = 1000000000.
+        #truth_energy_cut = 0.
+        truth_energy_cut = 1.0
         n_tel_min = 1
-        n_tel_max = 1000
+        n_tel_max = 10000
         if not select_evt==None:
             select_run_id = select_evt[0]
             select_event_id = select_evt[1]
@@ -3437,7 +3460,10 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
 
     # Explore the instrument description
     subarray = source.subarray
-    print(subarray.to_table())
+    subarray_table = subarray.to_table()
+    nlines = len(subarray_table) + 10
+    subarray_table.pprint(nlines)
+    #print(subarray.to_table())
 
     calib = CameraCalibrator(subarray=subarray)
     image_processor = ImageProcessor(subarray=subarray)

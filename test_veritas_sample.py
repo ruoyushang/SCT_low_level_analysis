@@ -13,18 +13,18 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 
 list_telescope_type = []
-#list_telescope_type += ['MST_SCT_SCTCam']
-list_telescope_type += ['MST_MST_NectarCam']
-list_telescope_type += ['MST_MST_FlashCam']
-list_telescope_type += ['SST_1M_DigiCam']
-list_telescope_type += ['SST_ASTRI_ASTRICam']
-list_telescope_type += ['SST_GCT_CHEC']
-list_telescope_type += ['LST_LST_LSTCam']
+list_telescope_type += ['MST_SCT_SCTCam']
+#list_telescope_type += ['MST_MST_NectarCam']
+#list_telescope_type += ['MST_MST_FlashCam']
+#list_telescope_type += ['SST_1M_DigiCam']
+#list_telescope_type += ['SST_ASTRI_ASTRICam']
+#list_telescope_type += ['SST_GCT_CHEC']
+#list_telescope_type += ['LST_LST_LSTCam']
 
-#sim_files = 'sct_onaxis_train.txt'
+sim_files = 'sct_onaxis_train.txt'
 #sim_files = 'sct_onaxis_test.txt'
 #sim_files = 'sct_diffuse_all.txt'
-sim_files = 'mst_onaxis_train.txt'
+#sim_files = 'mst_onaxis_train.txt'
 #sim_files = 'mst_onaxis_test.txt'
 #sim_files = 'mst_diffuse_all.txt'
 

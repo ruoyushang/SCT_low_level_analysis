@@ -27,7 +27,7 @@ fig.set_figwidth(figsize_x)
 
 #ana_tag = 'SCT_freepact_selection'
 #ana_tag = 'SCT_loose_selection'
-ana_tag = 'MIX_loose_selection'
+#ana_tag = 'MIX_loose_selection'
 
 #sim_files = 'sct_onaxis_train.txt'
 #sim_files = 'sct_onaxis_test.txt'
@@ -35,8 +35,24 @@ ana_tag = 'MIX_loose_selection'
 #sim_files = 'sct_diffuse_all.txt'
 #sim_files = 'mst_onaxis_train.txt'
 #sim_files = 'mst_onaxis_test.txt'
-sim_files = 'mst_onaxis_all.txt'
+#sim_files = 'mst_onaxis_all.txt'
 #sim_files = 'mst_diffuse_all.txt'
+
+ana_tag = 'SCT_loose_onaxis'
+#ana_tag = 'SCT_loose_diffuse'
+sim_files = None
+if 'SCT' in ana_tag:
+    if 'onaxis' in ana_tag:
+        sim_files = 'sct_onaxis_all.txt'
+        #sim_files = 'sct_onaxis_test.txt'
+    else:
+        sim_files = 'sct_diffuse_all.txt'
+else:
+    if 'onaxis' in ana_tag:
+        sim_files = 'mst_onaxis_all.txt'
+    else:
+        sim_files = 'mst_diffuse_all.txt'
+
 
 font = {'family': 'serif', 'color':  'black', 'weight': 'normal', 'size': 10, 'rotation': 0.,}
 
@@ -57,14 +73,36 @@ energy_cut = 0.001
 
 ref_name = []
 list_ref_unc_cut = []
-#ref_name += ['default ($\sigma<1.0^{\circ}$)']
-#list_ref_unc_cut += [1.0]
-ref_name += ['least square ($\sigma<0.4^{\circ}$)']
-list_ref_unc_cut += [0.4]
+#ref_name += ['default ($\sigma<0.8^{\circ}$)']
+#list_ref_unc_cut += [0.8]
+#ref_name += ['default ($\sigma<0.4^{\circ}$)']
+#list_ref_unc_cut += [0.4]
+#ref_name += ['default ($\sigma<0.2^{\circ}$)']
+#list_ref_unc_cut += [0.2]
+#ref_name += ['default ($\sigma<0.1^{\circ}$)']
+#list_ref_unc_cut += [0.1]
+#ref_name += ['least square ($\sigma<0.8^{\circ}$)']
+#list_ref_unc_cut += [0.8]
+#ref_name += ['least square ($\sigma<0.4^{\circ}$)']
+#list_ref_unc_cut += [0.4]
 ref_name += ['least square ($\sigma<0.2^{\circ}$)']
 list_ref_unc_cut += [0.2]
-ref_name += ['least square ($\sigma<0.1^{\circ}$)']
-list_ref_unc_cut += [0.1]
+#ref_name += ['least square ($\sigma<0.1^{\circ}$)']
+#list_ref_unc_cut += [0.1]
+#ref_name += ['least square ($\sigma<0.05^{\circ}$)']
+#list_ref_unc_cut += [0.05]
+#ref_name += ['template result ($\sigma<0.8^{\circ}$)']
+#list_ref_unc_cut += [0.8]
+#ref_name += ['template result ($\sigma<0.4^{\circ}$)']
+#list_ref_unc_cut += [0.4]
+#ref_name += ['template result ($\sigma<0.2^{\circ}$)']
+#list_ref_unc_cut += [0.2]
+#ref_name += ['combined result ($\sigma<0.8^{\circ}$)']
+#list_ref_unc_cut += [0.8]
+#ref_name += ['combined result ($\sigma<0.4^{\circ}$)']
+#list_ref_unc_cut += [0.4]
+#ref_name += ['combined result ($\sigma<0.2^{\circ}$)']
+#list_ref_unc_cut += [0.2]
 
 hist_truth_norm = Histogram(nbins=(4), ranges=[[-1,1]])
 hist_ref_norm = []
@@ -90,7 +128,6 @@ def gauss_func(x,A,sigma):
 
 def plot_analysis_result():
 
-    list_xing_outlier = []
     list_all_truth_log_energy = []
     list_ref_truth_log_energy = []
     list_ref_truth_log_energy_pass = []
@@ -101,6 +138,7 @@ def plot_analysis_result():
     list_ref_off_angle = []
     list_ref_off_angle_pass = []
     list_ref_off_angle_fail = []
+    list_ref_xing_outlier = []
     for ref in range(0,len(ref_name)):
         list_ref_truth_log_energy += [[]]
         list_ref_truth_log_energy_pass += [[]]
@@ -111,6 +149,7 @@ def plot_analysis_result():
         list_ref_off_angle += [[]]
         list_ref_off_angle_pass += [[]]
         list_ref_off_angle_fail += [[]]
+        list_ref_xing_outlier += [[]]
 
     for path in range(0,len(training_sample_path)):
     
@@ -179,8 +218,50 @@ def plot_analysis_result():
                         list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
                     run_id = xing_result[evt][6]
                     event_id = xing_result[evt][7]
-                    if off_angle/unc>5. and off_angle>0.4:
-                        list_xing_outlier += [[run_id,event_id]]
+                    if off_angle/unc>4.:
+                        list_ref_xing_outlier[ref] += [[run_id,event_id]]
+            if 'template' in ref_name[ref]:
+                for evt in range(0,len(template_result)):
+                    truth_energy = template_result[evt][0].value
+                    if truth_energy<energy_cut: continue
+                    off_angle = template_result[evt][1]
+                    if math.isnan(off_angle): continue
+                    if off_angle>off_angle_cut: continue
+                    unc = template_result[evt][2]
+                    if unc==0.:
+                        unc = 0.00001
+                    list_ref_off_angle[ref] += [off_angle*off_angle]
+                    list_ref_unc[ref] += [unc]
+                    list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
+                    if unc<list_ref_unc_cut[ref]:
+                        list_ref_off_angle_pass[ref] += [off_angle*off_angle]
+                        list_ref_unc_pass[ref] += [unc]
+                        list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
+                    else:
+                        list_ref_off_angle_fail[ref] += [off_angle*off_angle]
+                        list_ref_unc_fail[ref] += [unc]
+                        list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
+            if 'combined' in ref_name[ref]:
+                for evt in range(0,len(combine_result)):
+                    truth_energy = combine_result[evt][0].value
+                    if truth_energy<energy_cut: continue
+                    off_angle = combine_result[evt][1]
+                    if math.isnan(off_angle): continue
+                    if off_angle>off_angle_cut: continue
+                    unc = combine_result[evt][2]
+                    if unc==0.:
+                        unc = 0.00001
+                    list_ref_off_angle[ref] += [off_angle*off_angle]
+                    list_ref_unc[ref] += [unc]
+                    list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
+                    if unc<list_ref_unc_cut[ref]:
+                        list_ref_off_angle_pass[ref] += [off_angle*off_angle]
+                        list_ref_unc_pass[ref] += [unc]
+                        list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
+                    else:
+                        list_ref_off_angle_fail[ref] += [off_angle*off_angle]
+                        list_ref_unc_fail[ref] += [unc]
+                        list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
 
     
 
@@ -193,7 +274,8 @@ def plot_analysis_result():
         hist_ref_off_angle_err[ref].data =  hist_ref_off_angle[ref].data / np.sqrt(hist_ref_norm[ref].data)
         hist_ref_efficiency[ref].data = hist_ref_norm[ref].data / hist_truth_norm.data
 
-    print (f"list_xing_outlier = {list_xing_outlier}")
+    for ref in range(0,len(ref_name)):
+        print (f"list_ref_xing_outlier = {list_ref_xing_outlier[ref]}")
 
     fig, ax = plt.subplots()
     figsize_x = 6.4
@@ -256,9 +338,32 @@ def plot_analysis_result():
     ax.set_ylabel(label_y)
     for ref in range(0,len(ref_name)):
         list_with_limit = []
+        for entry in range(0,len(list_ref_off_angle[ref])):
+            list_with_limit += [min(np.sqrt(list_ref_off_angle[ref][entry]),hist_edge-0.001)]
+        ax.hist(list_with_limit,histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref].split('(')[0])
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/reconstruction_off_angle_incl_{ana_tag}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
+
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 4.6
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "angular distance [deg]"
+    label_y = "count"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    for ref in range(0,len(ref_name)):
+        list_with_limit = []
         for entry in range(0,len(list_ref_off_angle_pass[ref])):
             list_with_limit += [min(np.sqrt(list_ref_off_angle_pass[ref][entry]),hist_edge-0.001)]
-        ax.hist(list_with_limit,histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref])
+        ax.hist(list_with_limit,histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref].split('(')[0])
     ax.legend(loc='best')
     fig.savefig(
         f"{ctapipe_output}/output_plots/reconstruction_off_angle_pass_{ana_tag}.png",
@@ -281,7 +386,7 @@ def plot_analysis_result():
         list_with_limit = []
         for entry in range(0,len(list_ref_off_angle_fail[ref])):
             list_with_limit += [min(np.sqrt(list_ref_off_angle_fail[ref][entry]),hist_edge-0.001)]
-        ax.hist(list_with_limit,histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref])
+        ax.hist(list_with_limit,histtype='step',bins=25,range=(0.,hist_edge),label=ref_name[ref].split('(')[0])
     ax.legend(loc='best')
     fig.savefig(
         f"{ctapipe_output}/output_plots/reconstruction_off_angle_fail_{ana_tag}.png",
@@ -302,7 +407,10 @@ def plot_analysis_result():
         label_y = "uncertainty [deg]"
         ax.set_xlabel(label_x)
         ax.set_ylabel(label_y)
-        lowest_unc = np.min(list_ref_unc_pass[ref])
+        #max_unc = np.max(list_ref_unc_pass[ref])
+        #min_unc = np.min(list_ref_unc_pass[ref])
+        max_unc = list_ref_unc_cut[ref]
+        min_unc = 0.
         ax.scatter(
             np.sqrt(list_ref_off_angle_pass[ref]),
             list_ref_unc_pass[ref],
@@ -313,14 +421,14 @@ def plot_analysis_result():
             marker="+",
             label=ref_name[ref],
         )
-        unc_axis = []
-        off_angle_mean = []
         n_intervals = 5
         for u in range(0,n_intervals):
+            unc_axis = []
+            off_angle_mean = []
             new_list_off_angle = []
             delta_unc = list_ref_unc_cut[ref]/float(n_intervals)
-            lower_unc = float(u)*delta_unc + lowest_unc
-            upper_unc = float(u+1)*delta_unc + lowest_unc
+            lower_unc = float(u)*delta_unc + min_unc
+            upper_unc = float(u+1)*delta_unc + min_unc
             for evt in range(0,len(list_ref_unc_pass[ref])):
                 unc = list_ref_unc_pass[ref][evt]
                 off_angle = list_ref_off_angle_pass[ref][evt]
@@ -328,10 +436,12 @@ def plot_analysis_result():
                 new_list_off_angle += [off_angle]
             mean = np.sqrt(np.mean(new_list_off_angle))
             unc_axis += [0.5*(lower_unc+upper_unc)]
-            off_angle_mean += [mean]
-        print (f"unc_axis = {unc_axis}")
-        print (f"off_angle_mean = {off_angle_mean}")
-        ax.errorbar(off_angle_mean,unc_axis,xerr=off_angle_mean,linestyle='none')
+            off_angle_mean += [0.]
+            unc_axis += [0.5*(lower_unc+upper_unc)]
+            off_angle_mean += [1.4*mean]
+            ax.plot(off_angle_mean,unc_axis,color='k',marker='|')
+        ax.set_xlim(0., max_unc)
+        ax.set_ylim(0., max_unc)
         ax.legend(loc='best')
         fig.savefig(
             f"{ctapipe_output}/output_plots/off_angle_vs_unc_ref{ref}_{ana_tag}.png",
