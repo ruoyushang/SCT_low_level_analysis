@@ -18,6 +18,7 @@ from ctapipe.image import ImageProcessor, tailcuts_clean, hillas_parameters, num
 from ctapipe.io import SimTelEventSource
 from ctapipe.reco import ShowerProcessor
 from ctapipe.visualization import CameraDisplay
+from ctapipe.visualization import ArrayDisplay
 
 __all__ = [
     "image_translation_and_rotation",
@@ -56,14 +57,16 @@ select_run_id = 0
 select_event_id = 0
 
 run_diagnosis = False
-plot_image_size_cut_upper = 5000.0
-plot_image_size_cut_lower = 1000.0
-truth_energy_cut = 0.
+plot_image_size_cut_lower = 3000.0
+plot_image_size_cut_upper = 1e10
+truth_energy_cut_lower = 0.
+truth_energy_cut_upper = 1e10
 n_tel_min = 1
 n_tel_max = 10000
 
-use_template = True
-#use_template = False
+use_template = False
+
+weighting_mode = 0
 
 def image_translation_and_rotation(
     geometry, list_input_image_1d, shift_x, shift_y, angle_rad, reposition=True, return_pix_coord=False,
@@ -351,6 +354,7 @@ def fit_image_to_line(geometry, image_input_1d, transpose=False):
 
 
 def find_intersection_multiple_lines(
+    list_tel_id,
     list_x,
     list_y,
     list_a,
@@ -396,15 +400,16 @@ def find_intersection_multiple_lines(
             #pair_fit_y = -x_mtx[0]
             pair_fit_x = (b[i2]-b[i1]) / (a[i1]-a[i2])
             pair_fit_y = a[i1]*pair_fit_x + b[i1]
+            pair_x += [pair_fit_x]
+            pair_y += [pair_fit_y]
 
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
             pair_dist_sq = pow(x[i2] - x[i1],2) + pow(y[i2] - y[i1],2)
             pair_fit_err_sq = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
             pair_fit_err_sq += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
-            pair_fit_err = pow(pair_fit_err_sq / pow(np.sin(open_angle),2) ,0.5)
-            pair_x += [pair_fit_x]
-            pair_y += [pair_fit_y]
+            pair_fit_err = pow(pair_fit_err_sq/pow(np.sin(open_angle),1),0.5)
+
             asymmetry = (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2])
             separation = pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
             ambiguity = 1.
@@ -417,18 +422,21 @@ def find_intersection_multiple_lines(
             fov = pow(45.*np.pi/180.,2)
             ambiguity_err = pow(fov*ambiguity,0.5)
             pair_fit_err = max(pair_fit_err,ambiguity_err)
+
             pair_err += [pair_fit_err]
-            leakage_weight_1 = 1.
-            leakage_weight_2 = 1.
-            if frac_leakage_intensity[i1]>frac_leakage_intensity_cut:
-                leakage_weight_1 = 0.
-            if frac_leakage_intensity[i2]>frac_leakage_intensity_cut:
-                leakage_weight_2 = 0.
-            pair_fit_weight = pow(intensity[i1] * intensity[i2],1.0) * leakage_weight_1*leakage_weight_2
+
+            pair_fit_weight = 1.
+            if weighting_mode==0:
+                pair_fit_weight = 1.
+            if weighting_mode==1:
+                pair_fit_weight = pow(intensity[i1] * intensity[i2],0.5)
+            if weighting_mode==2:
+                pair_fit_weight = pow(intensity[i1] * intensity[i2],1.0)
             pair_weight += [ pair_fit_weight ]
-            #if run_diagnosis and select_event_id!=0:
+
             if run_diagnosis:
                 print ("=============================================================================================")
+                print (f"tel_id_1 = {list_tel_id[i1]}, tel_id_2 = {list_tel_id[i2]}")
                 print (f"pair_fit_x = {pair_fit_x*180./np.pi:0.3f} deg, pair_fit_y = {pair_fit_y*180./np.pi:0.3f} deg")
                 print (f"pair_weight = {pair_fit_weight / (pair_fit_err*pair_fit_err)}")
                 print (f"pair_fit_err = {pair_fit_err}")
@@ -437,6 +445,8 @@ def find_intersection_multiple_lines(
                 print (f"asymmetry = {asymmetry}")
                 print (f"intensity[i1] = {intensity[i1]}")
                 print (f"intensity[i2] = {intensity[i2]}")
+                print (f"frac_leakage_intensity[i1] = {frac_leakage_intensity[i1]}")
+                print (f"frac_leakage_intensity[i2] = {frac_leakage_intensity[i2]}")
 
     pair_x = np.array(pair_x)
     pair_y = np.array(pair_y)
@@ -449,7 +459,6 @@ def find_intersection_multiple_lines(
     fit_weight = 0.0
     for xing in range(0, len(pair_x)):
         error_sq = pair_err[xing] * pair_err[xing]
-        #weight = 1. / error_sq
         weight = pair_weight[xing] / error_sq
         fit_weight += weight
         fit_x += pair_x[xing] * weight
@@ -462,22 +471,6 @@ def find_intersection_multiple_lines(
     #print (f"fit_x = {fit_x:0.3f}, fit_y = {fit_y:0.3f}")
     #print (f"fit_err = {fit_err*180./np.pi} deg")
 
-    fit_rms = 0.0
-    fit_weight = 0.0
-    for xing in range(0, len(pair_x)):
-        error_sq = pair_err[xing] * pair_err[xing]
-        #weight = 1. / error_sq
-        weight = pair_weight[xing] / error_sq
-        fit_weight += weight
-        fit_rms += (
-            pow(pair_x[xing] - fit_x, 2) + pow(pair_y[xing] - fit_y, 2)
-        ) * weight
-    fit_rms = pow(fit_rms / fit_weight, 0.5)
-    #print (f"fit_rms = {fit_rms*180./np.pi} deg")
-
-    #npairs = float(len(pair_x))
-    #fit_err = (fit_rms*(npairs-1.)/npairs + fit_err*1./npairs)/((npairs-1.)/npairs+1./npairs)
-
     #x_mtx, x_mtx_err, chi2 = least_square_fit(2, a, b, w)
     #fit_x = -x_mtx[1]
     #fit_y = -x_mtx[0]
@@ -489,7 +482,7 @@ def find_intersection_multiple_lines(
 
 
 def find_image_features(
-    tel_id, geometry, input_image_1d, input_time_1d, flip=False, star_cam_xy=None
+    tel_id, geometry, input_image_1d, input_time_1d, frac_leakage_intensity=0., flip=False, star_cam_xy=None
 ):
     image_center_x = 0.0
     image_center_y = 0.0
@@ -585,15 +578,21 @@ def find_image_features(
 
     a_mtx, a_mtx_err, chi2 = least_square_fit(2, pix_coord_x, pix_coord_y, pix_weight)
     a_derot = a_mtx[1]
-    a_err = 1.0 * a_mtx_err[1]
+    a_err = 2.0 * a_mtx_err[1]
     b_derot = a_mtx[0]
-    b_err = 1.0 * a_mtx_err[0]
+    b_err = 2.0 * a_mtx_err[0]
 
-    angle_err = abs(np.arctan(a_err) - np.arctan(-a_err))
+    leakage_scale = np.exp(1.*frac_leakage_intensity/frac_leakage_intensity_cut)
+    angle_err = a_err*leakage_scale
+    #angle_err = abs(np.arctan(a_err) - np.arctan(-a_err))*leakage_scale
 
     if run_diagnosis:
+        print ("=======================================================================================")
+        print (f"tel_id = {tel_id}")
         print (f"eigenvalues = {eigenvalues}")
         print (f"PCA a = {a:0.3f}, a_derot = {a_derot:0.3f}, a_err = {a_err:0.3f}")
+        print (f"frac_leakage_intensity = {frac_leakage_intensity}")
+        print (f"leakage_scale = {leakage_scale}")
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -759,6 +758,52 @@ def keep_main_island(geometry,image_mask):
         else:
             image_mask[pix] = False
 
+def dynamic_cleaning(geometry,event,tel_id):
+
+    boundary, picture, min_neighbors = cleaning_level[geometry.name]
+    image_mask = tailcuts_clean(
+        geometry,
+        event.dl1.tel[tel_id].image,
+        boundary_thresh=boundary,
+        picture_thresh=picture,
+        min_number_picture_neighbors=min_neighbors,
+    )
+    keep_main_island(geometry,image_mask)
+
+    night_sky_pixels = 0.
+    night_sky_mean = 0.
+    night_sky_rms = 0.
+    for pix in range(0, len(image_mask)):
+        if not image_mask[pix]:
+            night_sky_pixels += 1.
+            night_sky_mean += event.dl1.tel[tel_id].image[pix]
+    if night_sky_pixels>0.:
+        night_sky_mean = night_sky_mean/night_sky_pixels
+        for pix in range(0, len(image_mask)):
+            if not image_mask[pix]:
+                night_sky_rms += pow(event.dl1.tel[tel_id].image[pix]-night_sky_mean,2)
+        night_sky_rms = pow(night_sky_rms/night_sky_pixels,0.5)
+
+    if night_sky_rms==0.:
+        return image_mask
+
+    for pix in range(0, len(image_mask)):
+        image_mask[pix] = False
+
+    boundary = 3.5*night_sky_rms
+    picture = 6.0*night_sky_rms
+    image_mask = tailcuts_clean(
+        geometry,
+        event.dl1.tel[tel_id].image,
+        boundary_thresh=boundary,
+        picture_thresh=picture,
+        min_number_picture_neighbors=min_neighbors,
+    )
+    keep_main_island(geometry,image_mask)
+
+    return image_mask
+
+
 def make_standard_movie(
     ctapipe_output,
     telescope_type,
@@ -775,16 +820,8 @@ def make_standard_movie(
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    boundary, picture, min_neighbors = cleaning_level[geometry.name]
-    image_mask = tailcuts_clean(
-        geometry,
-        event.dl1.tel[tel_id].image,
-        boundary_thresh=boundary,
-        picture_thresh=picture,
-        min_number_picture_neighbors=min_neighbors,
-    )
-    keep_main_island(geometry,image_mask)
-    #image_mask = event.dl1.tel[tel_id].image_mask
+
+    image_mask = dynamic_cleaning(geometry,event,tel_id)
 
     for pix in range(0, len(image_mask)):
         if not image_mask[pix]:
@@ -864,10 +901,8 @@ def make_standard_movie(
 
     tic_feature = time.perf_counter()
     image_feature_array = find_image_features(
-        tel_id, geometry, clean_image_1d, clean_time_1d, flip=flip, star_cam_xy=star_cam_xy
+        tel_id, geometry, clean_image_1d, clean_time_1d, frac_leakage_intensity=frac_leakage_intensity, flip=flip, star_cam_xy=star_cam_xy
     )
-    if run_diagnosis and select_event_id != 0:
-        print (f"frac_leakage_intensity = {frac_leakage_intensity}")
     image_feature_array += [frac_leakage_intensity]
     toc_feature = time.perf_counter()
     #print(f"find image feature time: {toc_feature-tic_feature:0.1f} sec")
@@ -1704,37 +1739,37 @@ def box_search(
 
                     try_chi2 = 0.0
 
-                    #try_chi2_image = (
-                    #    sqaure_difference_between_1d_images(
-                    #        try_params,
-                    #        image_latent_space,
-                    #        image_lookup_table,
-                    #        image_eigen_vectors,
-                    #    )
-                    #    / image_norm
-                    #)
-                    #try_chi2 += try_chi2_image
-                    #try_chi2_time = (
-                    #    sqaure_difference_between_1d_images(
-                    #        try_params,
-                    #        time_latent_space,
-                    #        time_lookup_table,
-                    #        time_eigen_vectors,
-                    #    )
-                    #    / time_norm
-                    #)
-                    #try_chi2 += try_chi2_time
-
-                    try_chi2_movie = (
-                       sqaure_difference_between_1d_images(
-                           try_params,
-                           movie_latent_space,
-                           movie_lookup_table,
-                           movie_eigen_vectors,
-                       )
-                       / movie_norm
+                    try_chi2_image = (
+                        sqaure_difference_between_1d_images(
+                            try_params,
+                            image_latent_space,
+                            image_lookup_table,
+                            image_eigen_vectors,
+                        )
+                        / image_norm
                     )
-                    try_chi2 += try_chi2_movie
+                    try_chi2 += try_chi2_image
+                    try_chi2_time = (
+                        sqaure_difference_between_1d_images(
+                            try_params,
+                            time_latent_space,
+                            time_lookup_table,
+                            time_eigen_vectors,
+                        )
+                        / time_norm
+                    )
+                    try_chi2 += try_chi2_time
+
+                    #try_chi2_movie = (
+                    #   sqaure_difference_between_1d_images(
+                    #       try_params,
+                    #       movie_latent_space,
+                    #       movie_lookup_table,
+                    #       movie_eigen_vectors,
+                    #   )
+                    #   / movie_norm
+                    #)
+                    #try_chi2 += try_chi2_movie
 
                     short_list += [(try_chi2, try_arrival, try_impact, try_log_energy)]
 
@@ -1752,9 +1787,9 @@ def box_search(
     fit_impact = short_list[0][2]
     fit_log_energy = short_list[0][3]
 
-    err_arrival = 1e10
-    err_impact = 1e10
-    err_log_energy = 1e10
+    err_arrival = 0.
+    err_impact = 0.
+    err_log_energy = 0.
     if len(short_list) > 1:
         sum_likelihood = 0.0
         for entry in range(0, min(5, len(short_list))):
@@ -1762,15 +1797,19 @@ def box_search(
             arrival = short_list[entry][1]
             impact = short_list[entry][2]
             log_energy = short_list[entry][3]
-            norm_likelihood = 1.0 / chi2
+            norm_likelihood = fit_chi2 / chi2
             err_arrival += pow(arrival - fit_arrival, 2) * norm_likelihood
             err_impact += pow(impact - fit_impact, 2) * norm_likelihood
             err_log_energy += pow(log_energy - fit_log_energy, 2) * norm_likelihood
             sum_likelihood += norm_likelihood
         if sum_likelihood>0.:
-            err_arrival = 0.5 * pow(err_arrival / sum_likelihood, 0.5)
-            err_impact = 0.5 * pow(err_impact / sum_likelihood, 0.5)
-            err_log_energy = 0.5 * pow(err_log_energy / sum_likelihood, 0.5)
+            err_arrival = pow(err_arrival / sum_likelihood, 0.5)
+            err_impact = pow(err_impact / sum_likelihood, 0.5)
+            err_log_energy = pow(err_log_energy / sum_likelihood, 0.5)
+        else:
+            err_arrival = 1e10
+            err_impact = 1e10
+            err_log_energy = 1e10
 
     return (
         short_list,
@@ -1987,87 +2026,28 @@ def single_movie_reconstruction(
     toc_box = time.perf_counter()
     #print(f"box search time: {toc_box-tic_box:0.1f} sec")
 
-    # init_params = [fit_arrival, fit_impact, fit_log_energy]
-    # poisson_chi2 = sqaure_difference_between_1d_images_poisson(
-    #    init_params, input_movie_1d, movie_lookup_table, movie_eigen_vectors
-    # )
-    # to_be_optimized_factor = 0.5
-    # normalized_chi2 = to_be_optimized_factor*(poisson_chi2/image_size)
-    # err_arrival = pow(pow(err_arrival,2)+pow(fit_arrival*normalized_chi2,2),0.5)
-    # err_impact = pow(pow(err_impact,2)+pow(fit_impact*normalized_chi2,2),0.5)
-    # err_log_energy = pow(pow(err_log_energy,2)+pow(fit_log_energy*normalized_chi2,2),0.5)
 
-    tic_poisson = time.perf_counter()
-    init_params = [fit_arrival, fit_impact, fit_log_energy]
-    (
-        fit_arrival,
-        fit_impact,
-        fit_log_energy,
-        err_arrival,
-        err_impact,
-        err_log_energy,
-        poisson_chi2,
-    ) = analyze_short_list(
-        short_list,
-        init_params,
-        input_movie_1d,
-        movie_lookup_table,
-        movie_eigen_vectors,
-    )
-    toc_poisson = time.perf_counter()
+    #tic_poisson = time.perf_counter()
+    #init_params = [fit_arrival, fit_impact, fit_log_energy]
+    #(
+    #    fit_arrival,
+    #    fit_impact,
+    #    fit_log_energy,
+    #    err_arrival,
+    #    err_impact,
+    #    err_log_energy,
+    #    poisson_chi2,
+    #) = analyze_short_list(
+    #    short_list,
+    #    init_params,
+    #    input_movie_1d,
+    #    movie_lookup_table,
+    #    movie_eigen_vectors,
+    #)
+    #fit_chi2 = poisson_chi2
+    #toc_poisson = time.perf_counter()
     #print(f"poisson analysis time: {toc_poisson-tic_poisson:0.1f} sec")
 
-    # param_search_range = 3.0
-    # arrival_range = param_search_range * arrival_step_size
-    # impact_range = param_search_range * impact_step_size
-    # log_energy_range = param_search_range * log_energy_step_size
-
-    # while not found_minimum:
-
-    #    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    #    short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
-    #    try_chi2 = short_list[0][0]
-    #    try_arrival = short_list[0][1]
-    #    try_impact = short_list[0][2]
-    #    try_log_energy = short_list[0][3]
-
-    #    if fit_chi2>try_chi2:
-    #        fit_chi2 = try_chi2
-    #        fit_arrival = try_arrival
-    #        fit_impact = try_impact
-    #        fit_log_energy = try_log_energy
-    #        best_short_list = short_list
-    #    else:
-    #        found_minimum = True
-
-    # init_params = [fit_arrival,fit_impact,fit_log_energy]
-    # fit_arrival, fit_impact, fit_log_energy, err_arrival, err_impact, err_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
-
-    # normalized_chi2 = fit_chi2/image_size
-
-    # chi2_cut = 1.5
-    # is_good_result = True
-    # if normalized_chi2>chi2_cut:
-    #    print ('chi2 is bad.')
-    #    is_good_result = False
-
-    # if not is_good_result:
-
-    #    param_search_range = 100.0
-    #    arrival_range = param_search_range*arrival_step_size
-    #    impact_range = param_search_range*impact_step_size
-    #    log_energy_range = param_search_range*log_energy_step_size
-
-    #    found_minimum = False
-    #    fit_chi2 = 1e10
-    #    fit_arrival = 0.2
-    #    fit_impact = 300.
-    #    fit_log_energy = 0.0
-    #    best_short_list = []
-
-    #    init_params = [fit_arrival,fit_impact,fit_log_energy]
-    #    best_short_list = box_search(init_params,image_latent_space,image_lookup_table,image_eigen_vectors,time_latent_space,time_lookup_table,time_eigen_vectors,arrival_range,impact_range,log_energy_range)
-    #    fit_arrival, fit_impact, fit_log_energy, err_arrival, err_impact, err_log_energy, fit_chi2 = analyze_short_list(best_short_list,init_params,input_movie_1d,movie_lookup_table,movie_eigen_vectors)
 
     return (
         fit_arrival + 0.5 * arrival_step_size,
@@ -2076,7 +2056,7 @@ def single_movie_reconstruction(
         err_arrival,
         err_impact,
         err_log_energy,
-        poisson_chi2,
+        fit_chi2,
     )
 
     # return (
@@ -2240,6 +2220,7 @@ def nominal_to_altaz(source, subarray, run_id, tel_id, star_nom_x, star_nom_y):
 def plot_xing_reconstruction(
     ctapipe_output,
     source,
+    list_telescope_type,
     run_id,
     event,
     list_tel_id,
@@ -2308,15 +2289,7 @@ def plot_xing_reconstruction(
         focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length / u.m
 
         clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
-        boundary, picture, min_neighbors = cleaning_level[geometry.name]
-        image_mask = tailcuts_clean(
-            geometry,
-            event.dl1.tel[tel_id].image,
-            boundary_thresh=boundary,
-            picture_thresh=picture,
-            min_number_picture_neighbors=min_neighbors,
-        )
-        keep_main_island(geometry,image_mask)
+        image_mask = dynamic_cleaning(geometry,event,tel_id)
 
         pix_width = float(geometry.pixel_width[0] / u.m)
         for pix in range(0, len(image_mask)):
@@ -2399,6 +2372,33 @@ def plot_xing_reconstruction(
     plt.close()
 
 
+    list_tel_id = []
+    for tel_idx in range(0, source.subarray.n_tels):
+        tel_id = source.subarray.tel_ids[tel_idx]
+        telescope_type = str(source.subarray.tel[tel_id])
+        if not telescope_type in list_telescope_type:
+            continue
+        list_tel_id += [tel_id]
+    new_subarray = source.subarray.select_subarray(list_tel_id)
+
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+
+    disp = ArrayDisplay(new_subarray)
+    #disp.add_labels()
+
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/run{run_id}_evt{event_id}_array_{tag}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
+
+
 def plot_monotel_reconstruction(
     ctapipe_output,
     subarray,
@@ -2411,6 +2411,7 @@ def plot_monotel_reconstruction(
     fit_cam_x,
     fit_cam_y,
     fit_cam_err,
+    telescope_type,
     tag,
 ):
     event_id = event.index["event_id"]
@@ -2422,16 +2423,7 @@ def plot_monotel_reconstruction(
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    boundary, picture, min_neighbors = cleaning_level[geometry.name]
-    image_mask = tailcuts_clean(
-        geometry,
-        event.dl1.tel[tel_id].image,
-        boundary_thresh=boundary,
-        picture_thresh=picture,
-        min_number_picture_neighbors=min_neighbors,
-    )
-    keep_main_island(geometry,image_mask)
-    #image_mask = event.dl1.tel[tel_id].image_mask
+    image_mask = dynamic_cleaning(geometry,event,tel_id)
 
     mask_size = 0
     for pix in range(0, len(image_mask)):
@@ -2506,7 +2498,7 @@ def plot_monotel_reconstruction(
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
     fig.savefig(
-        f"{ctapipe_output}/output_plots/run{run_id}_evt{event_id}_tel{tel_id}_clean_image_{tag}.png",
+        f"{ctapipe_output}/output_plots/{telescope_type}_run{run_id}_evt{event_id}_tel{tel_id}_clean_image_{tag}.png",
         bbox_inches="tight",
     )
     del fig
@@ -2848,9 +2840,7 @@ def run_monoscopic_analysis(
             print (f"image_fit_chi2 = {image_fit_chi2}")
             print (f"image_fit_chi2_flip = {image_fit_chi2_flip}")
             image_ambiguity = 1.0 / (
-                # abs(image_direction) * abs(image_fit_chi2 - image_fit_chi2_flip) / abs(image_fit_chi2 + image_fit_chi2_flip)
-                #abs(image_direction) * abs(image_fit_chi2 - image_fit_chi2_flip) / 25.0
-                abs(image_fit_chi2 - image_fit_chi2_flip) / 25.0
+                abs(image_fit_chi2 - image_fit_chi2_flip)
             )
             print (f"image_ambiguity = {image_ambiguity}")
             add_ambiguity_unc = image_ambiguity * image_fit_arrival / focal_length
@@ -2990,6 +2980,7 @@ def run_monoscopic_analysis(
                 image_fit_cam_x,
                 image_fit_cam_y,
                 image_method_unc*focal_length,
+                telescope_type,
                 "movie",
             )
             sim_movie = movie_simulation(
@@ -3144,7 +3135,7 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
         #    print (f"image_size = {image_size:0.1f}, failed image_size cut")
         #    continue
 
-        if make_a_plot:
+        if make_a_plot and image_size>plot_image_size_cut_lower and image_size<plot_image_size_cut_upper:
             plot_monotel_reconstruction(
                 ctapipe_output,
                 source.subarray,
@@ -3157,6 +3148,7 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
                 0.,
                 0.,
                 100.,
+                telescope_type,
                 "mono",
             )
 
@@ -3243,6 +3235,7 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
             xing_nom_y,
             xing_err,
         ) = find_intersection_multiple_lines(
+            list_tel_id,
             list_line_x,
             list_line_y,
             list_line_a,
@@ -3267,45 +3260,6 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
                 xing_nom_y * u.rad,
             )
             print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
-
-        #(
-        #    xing_x,
-        #    xing_y,
-        #    xing_err,
-        #) = find_intersection_multiple_lines(
-        #    list_line_x,
-        #    list_line_y,
-        #    list_line_a,
-        #    list_line_b,
-        #    list_line_a_err,
-        #    list_line_b_err,
-        #    list_line_intensity,
-        #    list_line_angle_err,
-        #    list_line_length,
-        #    list_line_width,
-        #    list_pixel_width,
-        #)
-        #print (f"xing_x = {xing_x}, xing_y = {xing_y}")
-        #print (f"xing_off_angle = {pow(xing_x*xing_x+xing_y*xing_y,0.5)/focal_length*180./np.pi} deg")
-        #xing_alt, xing_az = camxy_to_altaz(
-        #    source,
-        #    source.subarray,
-        #    run_id,
-        #    list_tel_id[0],
-        #    xing_x,
-        #    xing_y,
-        #)
-        #xing_err = xing_err/focal_length
-        #print (f"xing_alt = {xing_alt}, xing_az = {xing_az}")
-        #xing_x, xing_y = altaz_to_camxy(
-        #    source,
-        #    source.subarray,
-        #    run_id,
-        #    list_tel_id[0],
-        #    xing_alt * u.rad,
-        #    xing_az * u.rad,
-        #)
-        #print (f"xing_x = {xing_x}, xing_y = {xing_y}")
 
         xing_weight = 1.0 / (xing_err * xing_err)
 
@@ -3333,6 +3287,7 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
             plot_xing_reconstruction(
                 ctapipe_output,
                 source,
+                list_telescope_type,
                 run_id,
                 event,
                 list_tel_id,
@@ -3378,21 +3333,36 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
     global run_diagnosis
     global plot_image_size_cut_lower
     global plot_image_size_cut_upper
-    global truth_energy_cut
+    global truth_energy_cut_lower
+    global truth_energy_cut_upper
     global select_run_id
     global select_event_id
+    global weighting_mode
+    global use_template
 
     if not save_output:
         run_diagnosis = True
-        plot_image_size_cut_lower = 20.
-        plot_image_size_cut_upper = 1000000000.
-        #truth_energy_cut = 0.
-        truth_energy_cut = 1.0
+        plot_image_size_cut_lower = 100.
+        plot_image_size_cut_upper = 1e10
+        truth_energy_cut_lower = 0.
+        truth_energy_cut_upper = 1e10
         n_tel_min = 1
         n_tel_max = 10000
         if not select_evt==None:
             select_run_id = select_evt[0]
             select_event_id = select_evt[1]
+
+    if 'yes' in ana_tag:
+        use_template = True
+    else:
+        use_template = False
+
+    if 'zeroth' in ana_tag:
+        weighting_mode = 0
+    if 'first' in ana_tag:
+        weighting_mode = 1
+    if 'second' in ana_tag:
+        weighting_mode = 2
 
     print("loading svd pickle data... ")
 
@@ -3458,16 +3428,24 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
     print(f"loading file: {training_sample_path}")
     source = SimTelEventSource(training_sample_path, focal_length_choice="EQUIVALENT")
 
+    list_tel_id = []
+    for tel_idx in range(0, source.subarray.n_tels):
+        tel_id = source.subarray.tel_ids[tel_idx]
+        telescope_type = str(source.subarray.tel[tel_id])
+        if not telescope_type in list_telescope_type:
+            continue
+        list_tel_id += [tel_id]
+    new_subarray = source.subarray.select_subarray(list_tel_id)
+
     # Explore the instrument description
-    subarray = source.subarray
-    subarray_table = subarray.to_table()
+    subarray_table = new_subarray.to_table()
     nlines = len(subarray_table) + 10
     subarray_table.pprint(nlines)
-    #print(subarray.to_table())
+    #print(new_subarray.to_table())
 
-    calib = CameraCalibrator(subarray=subarray)
-    image_processor = ImageProcessor(subarray=subarray)
-    shower_processor = ShowerProcessor(subarray=subarray)
+    calib = CameraCalibrator(subarray=source.subarray)
+    image_processor = ImageProcessor(subarray=source.subarray)
+    shower_processor = ShowerProcessor(subarray=source.subarray)
 
     ob_keys = source.observation_blocks.keys()
     run_id = list(ob_keys)[0]
@@ -3517,7 +3495,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         print (f"truth_alt = {truth_alt}, truth_az = {truth_az}")
 
         if run_diagnosis:
-            if truth_energy < truth_energy_cut: continue
+            if truth_energy < truth_energy_cut_lower: continue
+            if truth_energy > truth_energy_cut_upper: continue
 
         calib(event)  # fills in r1, dl0, and dl1
         image_processor(event)
@@ -3543,7 +3522,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         average_intensity = reco_result.average_intensity
         if run_diagnosis:
             if average_intensity<plot_image_size_cut_lower: continue
-            if average_intensity>plot_image_size_cut_upper: continue
+            #if average_intensity>plot_image_size_cut_upper: continue
         if run_diagnosis:
             if n_tels>n_tel_max: continue
             if n_tels<n_tel_min: continue
@@ -3779,7 +3758,8 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                 make_xing_plot = True
             #if xing_off_angle/hillas_off_angle>5. and xing_off_angle/(hillas_err*180./np.pi)>3.0:
             #if xing_off_angle/hillas_off_angle>5.:
-            if xing_off_angle>0.5 and xing_off_angle/(xing_err*180./np.pi)>5.0:
+            #if xing_off_angle>0.5 and xing_off_angle/(xing_err*180./np.pi)>5.0:
+            if xing_off_angle/(xing_err*180./np.pi)>5.0:
                 make_xing_plot = True
                 bad_xing = True
             if select_event_id != 0:

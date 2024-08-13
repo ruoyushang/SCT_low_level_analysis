@@ -25,21 +25,34 @@ figsize_y = 6.4
 fig.set_figheight(figsize_y)
 fig.set_figwidth(figsize_x)
 
-#ana_tag = 'SCT_freepact_selection'
-#ana_tag = 'SCT_loose_selection'
-#ana_tag = 'MIX_loose_selection'
 
-#sim_files = 'sct_onaxis_train.txt'
-#sim_files = 'sct_onaxis_test.txt'
-#sim_files = 'sct_onaxis_all.txt'
-#sim_files = 'sct_diffuse_all.txt'
-#sim_files = 'mst_onaxis_train.txt'
-#sim_files = 'mst_onaxis_test.txt'
-#sim_files = 'mst_onaxis_all.txt'
-#sim_files = 'mst_diffuse_all.txt'
+evt_selection = 'loose'
+#evt_selection = 'freepact'
 
-ana_tag = 'SCT_loose_onaxis'
-#ana_tag = 'SCT_loose_diffuse'
+#array_type = 'SCT'
+array_type = 'LST_Nectar_ASTRI'
+#array_type = 'Nectar'
+#array_type = 'Flash'
+#array_type = 'LST'
+#array_type = 'ASTRI'
+#array_type = 'CHEC'
+#array_type = 'DigiCam'
+#array_type = 'MIX'
+
+#pointing = 'onaxis'
+pointing = 'diffuse'
+
+weighting = 'zeroth'
+#weighting = 'first'
+#weighting = 'second'
+
+#template = 'yes'
+template = 'no'
+
+ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
+#ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}"
+
+
 sim_files = None
 if 'SCT' in ana_tag:
     if 'onaxis' in ana_tag:
@@ -73,22 +86,14 @@ energy_cut = 0.001
 
 ref_name = []
 list_ref_unc_cut = []
-#ref_name += ['default ($\sigma<0.8^{\circ}$)']
-#list_ref_unc_cut += [0.8]
-#ref_name += ['default ($\sigma<0.4^{\circ}$)']
-#list_ref_unc_cut += [0.4]
-#ref_name += ['default ($\sigma<0.2^{\circ}$)']
-#list_ref_unc_cut += [0.2]
-#ref_name += ['default ($\sigma<0.1^{\circ}$)']
-#list_ref_unc_cut += [0.1]
-#ref_name += ['least square ($\sigma<0.8^{\circ}$)']
-#list_ref_unc_cut += [0.8]
-#ref_name += ['least square ($\sigma<0.4^{\circ}$)']
-#list_ref_unc_cut += [0.4]
-ref_name += ['least square ($\sigma<0.2^{\circ}$)']
-list_ref_unc_cut += [0.2]
-#ref_name += ['least square ($\sigma<0.1^{\circ}$)']
-#list_ref_unc_cut += [0.1]
+ref_name += ['default']
+list_ref_unc_cut += [1.0]
+ref_name += ['least square ($\sigma<0.6^{\circ}$)']
+list_ref_unc_cut += [0.6]
+ref_name += ['least square ($\sigma<0.3^{\circ}$)']
+list_ref_unc_cut += [0.3]
+ref_name += ['least square ($\sigma<0.15^{\circ}$)']
+list_ref_unc_cut += [0.15]
 #ref_name += ['least square ($\sigma<0.05^{\circ}$)']
 #list_ref_unc_cut += [0.05]
 #ref_name += ['template result ($\sigma<0.8^{\circ}$)']
@@ -287,7 +292,10 @@ def plot_analysis_result():
     ax.set_xlabel(label_x)
     ax.set_ylabel(label_y)
     for ref in range(0,len(ref_name)):
-        ax.plot(hist_ref_efficiency[ref].bin_centers(0),hist_ref_efficiency[ref].data,label=ref_name[ref])
+        if 'default' in ref_name[ref]:
+            ax.plot(hist_ref_efficiency[ref].bin_centers(0),hist_ref_efficiency[ref].data,c='k',ls='solid',label=ref_name[ref])
+        else:
+            ax.plot(hist_ref_efficiency[ref].bin_centers(0),hist_ref_efficiency[ref].data,ls='dashed',label=ref_name[ref])
     ax.legend(loc='best')
     ax.set_yscale('log')
     fig.savefig(
@@ -308,7 +316,10 @@ def plot_analysis_result():
     ax.set_xlabel(label_x)
     ax.set_ylabel(label_y)
     for ref in range(0,len(ref_name)):
-        ax.errorbar(hist_ref_norm[ref].bin_centers(0),hist_ref_off_angle[ref].data,hist_ref_off_angle_err[ref].data,label=ref_name[ref])
+        if 'default' in ref_name[ref]:
+            ax.errorbar(hist_ref_norm[ref].bin_centers(0),hist_ref_off_angle[ref].data,hist_ref_off_angle_err[ref].data,c='k',ls='solid',label=ref_name[ref])
+        else:
+            ax.errorbar(hist_ref_norm[ref].bin_centers(0),hist_ref_off_angle[ref].data,hist_ref_off_angle_err[ref].data,ls='dashed',label=ref_name[ref])
     ax.legend(loc='best')
     ax.set_yscale('log')
     fig.savefig(
@@ -403,13 +414,14 @@ def plot_analysis_result():
         figsize_y = 6.4
         fig.set_figheight(figsize_y)
         fig.set_figwidth(figsize_x)
-        label_x = "off angle [deg]"
-        label_y = "uncertainty [deg]"
+        label_x = "observed error [deg]"
+        label_y = "estimated uncertainty [deg]"
         ax.set_xlabel(label_x)
         ax.set_ylabel(label_y)
-        #max_unc = np.max(list_ref_unc_pass[ref])
-        #min_unc = np.min(list_ref_unc_pass[ref])
         max_unc = list_ref_unc_cut[ref]
+        if 'default' in ref_name[ref]:
+            mean = np.sqrt(np.mean(list_ref_off_angle_pass[ref]))
+            max_unc = np.max(2.*1.4*mean)
         min_unc = 0.
         ax.scatter(
             np.sqrt(list_ref_off_angle_pass[ref]),
@@ -441,7 +453,7 @@ def plot_analysis_result():
             off_angle_mean += [1.4*mean]
             ax.plot(off_angle_mean,unc_axis,color='k',marker='|')
         ax.set_xlim(0., max_unc)
-        ax.set_ylim(0., max_unc)
+        ax.set_ylim(0., list_ref_unc_cut[ref])
         ax.legend(loc='best')
         fig.savefig(
             f"{ctapipe_output}/output_plots/off_angle_vs_unc_ref{ref}_{ana_tag}.png",
