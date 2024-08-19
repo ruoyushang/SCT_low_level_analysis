@@ -34,6 +34,15 @@ cleaning_level = {
     "NectarCam": (3, 5, 2),
     "SCTCam": (3, 6, 2),
 }
+cleaning_level_significance = {
+    "DigiCam": (4, 8, 2),
+    "ASTRICam": (4, 8, 2),
+    "CHEC": (4, 8, 2),
+    "LSTCam": (4, 8, 2),
+    "FlashCam": (4, 8, 2),
+    "NectarCam": (4, 8, 2),
+    "SCTCam": (6, 10, 2),
+}
 
 image_size_cut = 100.0
 mask_size_cut = 5.0
@@ -367,6 +376,8 @@ def find_intersection_multiple_lines(
     list_width,
     list_pixel_width,
     list_frac_leakage_intensity,
+    list_sum_noise,
+    list_npix,
 ):
     # y = a*x + b, weight = 1./b_err
 
@@ -382,7 +393,11 @@ def find_intersection_multiple_lines(
     width = np.array(list_width)
     pixel_width = np.array(list_pixel_width)
     frac_leakage_intensity = np.array(list_frac_leakage_intensity)
+    sum_noise = np.array(list_sum_noise)
+    npix = np.array(list_npix)
     w = intensity*length/width
+
+    max_significance = np.max(intensity/sum_noise)
 
     pair_weight = []
     pair_x = []
@@ -400,28 +415,43 @@ def find_intersection_multiple_lines(
             #pair_fit_y = -x_mtx[0]
             pair_fit_x = (b[i2]-b[i1]) / (a[i1]-a[i2])
             pair_fit_y = a[i1]*pair_fit_x + b[i1]
-            pair_x += [pair_fit_x]
-            pair_y += [pair_fit_y]
 
             dist_sq_1 = pow(pair_fit_x - x[i1],2) + pow(pair_fit_y - y[i1],2)
             dist_sq_2 = pow(pair_fit_x - x[i2],2) + pow(pair_fit_y - y[i2],2)
             pair_dist_sq = pow(x[i2] - x[i1],2) + pow(y[i2] - y[i1],2)
-            pair_fit_err_sq = dist_sq_1*angle_err[i1]*angle_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
-            pair_fit_err_sq += dist_sq_2*angle_err[i2]*angle_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
+            pair_fit_err_sq = dist_sq_1*a_err[i1]*a_err[i1]/np.pi + b_err[i1]*b_err[i1]/np.pi
+            pair_fit_err_sq += dist_sq_2*a_err[i2]*a_err[i2]/np.pi + b_err[i2]*b_err[i2]/np.pi
             pair_fit_err = pow(pair_fit_err_sq/pow(np.sin(open_angle),1),0.5)
 
-            asymmetry = (length[i1]-width[i1])/(length[i1]+width[i1])*(length[i2]-width[i2])/(length[i2]+width[i2])
             separation = pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
-            ambiguity = 1.
+            asymmetry = min((length[i1]-width[i1])/(length[i1]+width[i1]),(length[i2]-width[i2])/(length[i2]+width[i2]))
+            significance_1 = intensity[i1]/sum_noise[i1]
+            significance_1 = pow(max(0.,significance_1*significance_1-np.log(npix[i1])),0.5)
+            significance_2 = intensity[i2]/sum_noise[i2]
+            significance_2 = pow(max(0.,significance_2*significance_2-np.log(npix[i2])),0.5)
+            significance = min(significance_1,significance_2)
+            if significance<0.3*max_significance:
+                continue
+            if significance<30.:
+                continue
+            if asymmetry<0.3:
+                continue
             if separation<5.0:
-                ambiguity = 1.0
-            elif asymmetry<0.2:
-                ambiguity = 1.0
-            else:
-                ambiguity = 0.
-            fov = pow(45.*np.pi/180.,2)
-            ambiguity_err = pow(fov*ambiguity,0.5)
-            pair_fit_err = max(pair_fit_err,ambiguity_err)
+                continue
+
+            pair_x += [pair_fit_x]
+            pair_y += [pair_fit_y]
+
+            #separation = pow(pair_dist_sq,0.5)/(width[i1]+width[i2])
+            #leakage = max(frac_leakage_intensity[i1],frac_leakage_intensity[i2])
+            #ambiguity = 0.
+            ##if separation<5.0:
+            ##    ambiguity = 1.0
+            #if asymmetry<0.3:
+            #    ambiguity = 1.0
+            #fov = pow(45.*np.pi/180.,2)
+            #ambiguity_err = pow(fov*ambiguity,0.5)
+            #pair_fit_err = max(pair_fit_err,ambiguity_err)
 
             pair_err += [pair_fit_err]
 
@@ -438,11 +468,18 @@ def find_intersection_multiple_lines(
                 print ("=============================================================================================")
                 print (f"tel_id_1 = {list_tel_id[i1]}, tel_id_2 = {list_tel_id[i2]}")
                 print (f"pair_fit_x = {pair_fit_x*180./np.pi:0.3f} deg, pair_fit_y = {pair_fit_y*180./np.pi:0.3f} deg")
-                print (f"pair_weight = {pair_fit_weight / (pair_fit_err*pair_fit_err)}")
-                print (f"pair_fit_err = {pair_fit_err}")
+                print (f"dist_1 = {pow(dist_sq_1,0.5)*180./np.pi:0.3f} deg")
+                print (f"dist_2 = {pow(dist_sq_2,0.5)*180./np.pi:0.3f} deg")
+                print (f"b_err[i1] = {b_err[i1]*180./np.pi:0.3f} deg")
+                print (f"b_err[i2] = {b_err[i2]*180./np.pi:0.3f} deg")
+                print (f"pair_fit_err = {pair_fit_err*180./np.pi:0.3f} deg")
                 print (f"np.sin(open_angle) = {np.sin(open_angle)}")
                 print (f"separation = {separation}")
                 print (f"asymmetry = {asymmetry}")
+                print (f"length[i1] = {length[i1]*180./np.pi:0.3f} deg")
+                print (f"length[i2] = {length[i2]*180./np.pi:0.3f} deg")
+                print (f"significance[i1] = {significance_1}")
+                print (f"significance[i2] = {significance_2}")
                 print (f"intensity[i1] = {intensity[i1]}")
                 print (f"intensity[i2] = {intensity[i2]}")
                 print (f"frac_leakage_intensity[i1] = {frac_leakage_intensity[i1]}")
@@ -452,6 +489,9 @@ def find_intersection_multiple_lines(
     pair_y = np.array(pair_y)
     pair_err = np.array(pair_err)
     pair_weight = np.array(pair_weight)
+
+    if len(pair_weight)<1:
+        return 0., 0., 45.*np.pi/180.
 
     fit_x = 0.0
     fit_y = 0.0
@@ -482,7 +522,7 @@ def find_intersection_multiple_lines(
 
 
 def find_image_features(
-    tel_id, geometry, input_image_1d, input_time_1d, frac_leakage_intensity=0., flip=False, star_cam_xy=None
+    tel_id, geometry, input_image_1d, input_time_1d, avg_noise=0., frac_leakage_intensity=0., flip=False, star_cam_xy=None
 ):
     image_center_x = 0.0
     image_center_y = 0.0
@@ -574,7 +614,12 @@ def find_image_features(
     )
     pix_coord_x = np.array(list_pix_coord_x[0])
     pix_coord_y = np.array(list_pix_coord_y[0])
-    pix_weight = np.array(list_pix_intensity[0])/(pix_width*pix_width)
+    pix_weight = np.array(list_pix_intensity[0])/(4.*pix_width*pix_width)
+    #new_list_pix_intensity = []
+    #boundary_significance, picture_significance, min_neighbors_significance = cleaning_level_significance[geometry.name]
+    #for pix in range(0,len(list_pix_intensity[0])):
+    #    new_list_pix_intensity += [max(0.,list_pix_intensity[0][pix]-boundary_significance*avg_noise)]
+    #pix_weight = np.array(new_list_pix_intensity)/(4.*pix_width*pix_width)
 
     a_mtx, a_mtx_err, chi2 = least_square_fit(2, pix_coord_x, pix_coord_y, pix_weight)
     a_derot = a_mtx[1]
@@ -582,17 +627,18 @@ def find_image_features(
     b_derot = a_mtx[0]
     b_err = 2.0 * a_mtx_err[0]
 
-    leakage_scale = np.exp(1.*frac_leakage_intensity/frac_leakage_intensity_cut)
-    angle_err = a_err*leakage_scale
-    #angle_err = abs(np.arctan(a_err) - np.arctan(-a_err))*leakage_scale
+    #leakage_scale = np.exp(1.*frac_leakage_intensity/frac_leakage_intensity_cut)
+    leakage_err = frac_leakage_intensity
+    a_err = pow(a_err*a_err + leakage_err*leakage_err,0.5)
+    angle_err = a_err
 
     if run_diagnosis:
         print ("=======================================================================================")
         print (f"tel_id = {tel_id}")
         print (f"eigenvalues = {eigenvalues}")
-        print (f"PCA a = {a:0.3f}, a_derot = {a_derot:0.3f}, a_err = {a_err:0.3f}")
-        print (f"frac_leakage_intensity = {frac_leakage_intensity}")
-        print (f"leakage_scale = {leakage_scale}")
+        print (f"avg_noise = {avg_noise}")
+        print (f"PCA a = {a:0.3f}, a_derot = {a_derot:0.5f}, b_derot = {b_derot:0.5f}, a_err = {a_err:0.5f}, b_err = {b_err:0.5f}")
+        print (f"leakage_err = {leakage_err}")
 
     rotation_matrix = np.array(
         [[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]]
@@ -662,9 +708,9 @@ def find_image_features(
         a,
         b,
         truth_projection,
-        2.*a_err,
-        2.*b_err,
-        2.*angle_err,
+        1.*a_err,
+        1.*b_err,
+        1.*angle_err,
         image_size,
     ]
 
@@ -790,18 +836,27 @@ def dynamic_cleaning(geometry,event,tel_id):
     for pix in range(0, len(image_mask)):
         image_mask[pix] = False
 
-    boundary = 3.5*night_sky_rms
-    picture = 6.0*night_sky_rms
+    boundary_significance, picture_significance, min_neighbors_significance = cleaning_level_significance[geometry.name]
+    boundary = boundary_significance*night_sky_rms
+    picture = picture_significance*night_sky_rms
+
     image_mask = tailcuts_clean(
         geometry,
         event.dl1.tel[tel_id].image,
         boundary_thresh=boundary,
         picture_thresh=picture,
-        min_number_picture_neighbors=min_neighbors,
+        min_number_picture_neighbors=min_neighbors_significance,
     )
     keep_main_island(geometry,image_mask)
 
-    return image_mask
+    sum_noise = 0.
+    for pix in range(0, len(image_mask)):
+        if image_mask[pix]:
+            sum_noise += night_sky_rms*night_sky_rms
+    sum_noise = pow(sum_noise,0.5)
+    avg_noise = night_sky_rms
+
+    return image_mask, sum_noise, avg_noise
 
 
 def make_standard_movie(
@@ -821,7 +876,7 @@ def make_standard_movie(
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
 
-    image_mask = dynamic_cleaning(geometry,event,tel_id)
+    image_mask, sum_noise, avg_noise = dynamic_cleaning(geometry,event,tel_id)
 
     for pix in range(0, len(image_mask)):
         if not image_mask[pix]:
@@ -901,9 +956,11 @@ def make_standard_movie(
 
     tic_feature = time.perf_counter()
     image_feature_array = find_image_features(
-        tel_id, geometry, clean_image_1d, clean_time_1d, frac_leakage_intensity=frac_leakage_intensity, flip=flip, star_cam_xy=star_cam_xy
+        tel_id, geometry, clean_image_1d, clean_time_1d, avg_noise=avg_noise, frac_leakage_intensity=frac_leakage_intensity, flip=flip, star_cam_xy=star_cam_xy
     )
     image_feature_array += [frac_leakage_intensity]
+    image_feature_array += [sum_noise]
+    image_feature_array += [n_pix]
     toc_feature = time.perf_counter()
     #print(f"find image feature time: {toc_feature-tic_feature:0.1f} sec")
 
@@ -1739,37 +1796,37 @@ def box_search(
 
                     try_chi2 = 0.0
 
-                    try_chi2_image = (
-                        sqaure_difference_between_1d_images(
-                            try_params,
-                            image_latent_space,
-                            image_lookup_table,
-                            image_eigen_vectors,
-                        )
-                        / image_norm
-                    )
-                    try_chi2 += try_chi2_image
-                    try_chi2_time = (
-                        sqaure_difference_between_1d_images(
-                            try_params,
-                            time_latent_space,
-                            time_lookup_table,
-                            time_eigen_vectors,
-                        )
-                        / time_norm
-                    )
-                    try_chi2 += try_chi2_time
-
-                    #try_chi2_movie = (
-                    #   sqaure_difference_between_1d_images(
-                    #       try_params,
-                    #       movie_latent_space,
-                    #       movie_lookup_table,
-                    #       movie_eigen_vectors,
-                    #   )
-                    #   / movie_norm
+                    #try_chi2_image = (
+                    #    sqaure_difference_between_1d_images(
+                    #        try_params,
+                    #        image_latent_space,
+                    #        image_lookup_table,
+                    #        image_eigen_vectors,
+                    #    )
+                    #    / image_norm
                     #)
-                    #try_chi2 += try_chi2_movie
+                    #try_chi2 += try_chi2_image
+                    #try_chi2_time = (
+                    #    sqaure_difference_between_1d_images(
+                    #        try_params,
+                    #        time_latent_space,
+                    #        time_lookup_table,
+                    #        time_eigen_vectors,
+                    #    )
+                    #    / time_norm
+                    #)
+                    #try_chi2 += try_chi2_time
+
+                    try_chi2_movie = (
+                       sqaure_difference_between_1d_images(
+                           try_params,
+                           movie_latent_space,
+                           movie_lookup_table,
+                           movie_eigen_vectors,
+                       )
+                       / movie_norm
+                    )
+                    try_chi2 += try_chi2_movie
 
                     short_list += [(try_chi2, try_arrival, try_impact, try_log_energy)]
 
@@ -2027,25 +2084,25 @@ def single_movie_reconstruction(
     #print(f"box search time: {toc_box-tic_box:0.1f} sec")
 
 
-    #tic_poisson = time.perf_counter()
-    #init_params = [fit_arrival, fit_impact, fit_log_energy]
-    #(
-    #    fit_arrival,
-    #    fit_impact,
-    #    fit_log_energy,
-    #    err_arrival,
-    #    err_impact,
-    #    err_log_energy,
-    #    poisson_chi2,
-    #) = analyze_short_list(
-    #    short_list,
-    #    init_params,
-    #    input_movie_1d,
-    #    movie_lookup_table,
-    #    movie_eigen_vectors,
-    #)
-    #fit_chi2 = poisson_chi2
-    #toc_poisson = time.perf_counter()
+    tic_poisson = time.perf_counter()
+    init_params = [fit_arrival, fit_impact, fit_log_energy]
+    (
+        fit_arrival,
+        fit_impact,
+        fit_log_energy,
+        err_arrival,
+        err_impact,
+        err_log_energy,
+        poisson_chi2,
+    ) = analyze_short_list(
+        short_list,
+        init_params,
+        input_movie_1d,
+        movie_lookup_table,
+        movie_eigen_vectors,
+    )
+    fit_chi2 = poisson_chi2
+    toc_poisson = time.perf_counter()
     #print(f"poisson analysis time: {toc_poisson-tic_poisson:0.1f} sec")
 
 
@@ -2289,7 +2346,7 @@ def plot_xing_reconstruction(
         focal_length = source.subarray.tel[tel_id].optics.equivalent_focal_length / u.m
 
         clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
-        image_mask = dynamic_cleaning(geometry,event,tel_id)
+        image_mask, sum_noise, avg_noise = dynamic_cleaning(geometry,event,tel_id)
 
         pix_width = float(geometry.pixel_width[0] / u.m)
         for pix in range(0, len(image_mask)):
@@ -2334,10 +2391,10 @@ def plot_xing_reconstruction(
             line_y = line_a * line_x + line_b
             ax.plot(line_x, line_y, color="k", alpha=0.1, linestyle="dashed")
             line_yup = (
-               (line_a + line_a_err) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+               (line_a + abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
             )
             line_ylow = (
-               (line_a - line_a_err) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+               (line_a - abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
             )
             ax.fill_between(line_x,line_ylow,line_yup,alpha=0.05,color='b')
         else:
@@ -2345,10 +2402,10 @@ def plot_xing_reconstruction(
             line_y = line_a * line_x + line_b
             ax.plot(line_x, line_y, color="k", alpha=0.1, linestyle="dashed")
             line_yup = (
-               (line_a + line_a_err) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+               (line_a + abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
             )
             line_ylow = (
-               (line_a - line_a_err) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+               (line_a - abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
             )
             ax.fill_between(line_x,line_ylow,line_yup,alpha=0.05,color='b')
 
@@ -2423,7 +2480,7 @@ def plot_monotel_reconstruction(
 
     clean_image_1d = np.zeros_like(event.dl1.tel[tel_id].image)
     clean_time_1d = np.zeros_like(event.dl1.tel[tel_id].peak_time)
-    image_mask = dynamic_cleaning(geometry,event,tel_id)
+    image_mask, sum_noise, avg_noise = dynamic_cleaning(geometry,event,tel_id)
 
     mask_size = 0
     for pix in range(0, len(image_mask)):
@@ -2478,10 +2535,10 @@ def plot_monotel_reconstruction(
         line_y = line_a * line_x + line_b
         ax.plot(line_x, line_y, color="k", alpha=0.1, linestyle="dashed")
         line_yup = (
-           (line_a + line_a_err) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+           (line_a + abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
         )
         line_ylow = (
-           (line_a - line_a_err) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+           (line_a - abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
         )
         ax.fill_between(line_x,line_ylow,line_yup,alpha=0.05,color='b')
     else:
@@ -2489,10 +2546,10 @@ def plot_monotel_reconstruction(
         line_y = line_a * line_x + line_b
         ax.plot(line_x, line_y, color="k", alpha=0.1, linestyle="dashed")
         line_yup = (
-           (line_a + line_a_err) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+           (line_a + abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b - pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
         )
         line_ylow = (
-           (line_a - line_a_err) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
+           (line_a - abs(line_a_err/np.cos(angle * u.rad))) * line_x + line_b + pow( pow(line_a_err * image_center_x,2) + pow(line_b_err,2),0.5)
         )
         ax.fill_between(line_x,line_ylow,line_yup,alpha=0.05,color='b')
     ax.set_xlim(xmin, xmax)
@@ -2862,6 +2919,7 @@ def run_monoscopic_analysis(
         angle = image_feature_array[3]
         angle_err = image_feature_array[13]
         frac_leakage_intensity = image_feature_array[15]
+        sum_noise = image_feature_array[16]
 
         line_a = image_feature_array[8]
         line_b = image_feature_array[9]
@@ -3083,6 +3141,8 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
     list_image_feature = []
     list_pixel_width = []
     list_frac_leakage_intensity = []
+    list_sum_noise = []
+    list_npix = []
 
     for tel_idx in range(0, len(list(event.dl0.tel.keys()))):
         tel_id = list(event.dl0.tel.keys())[tel_idx]
@@ -3163,6 +3223,8 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
         angle_err = image_feature_array[13]
         image_size = image_feature_array[14]
         frac_leakage_intensity = image_feature_array[15]
+        sum_noise = image_feature_array[16]
+        n_pix = image_feature_array[17]
 
         line_a = image_feature_array[8]
         line_b = image_feature_array[9]
@@ -3210,6 +3272,8 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
         list_line_width += [width/focal_length]
         list_pixel_width += [pixel_width/focal_length]
         list_frac_leakage_intensity += [frac_leakage_intensity]
+        list_sum_noise += [sum_noise]
+        list_npix += [n_pix]
 
         #list_line_x += [image_center_x]
         #list_line_y += [image_center_y]
@@ -3248,6 +3312,8 @@ def run_multiscopic_analysis(ctapipe_output, list_telescope_type, run_id, source
             list_line_width,
             list_pixel_width,
             list_frac_leakage_intensity,
+            list_sum_noise,
+            list_npix,
         )
         print (f"xing_nom_x = {xing_nom_x}, xing_nom_y = {xing_nom_y}")
         if abs(xing_nom_x)<np.pi/2. and abs(xing_nom_y)<np.pi/2.:
@@ -3342,8 +3408,9 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
 
     if not save_output:
         run_diagnosis = True
-        plot_image_size_cut_lower = 100.
+        plot_image_size_cut_lower = 10.
         plot_image_size_cut_upper = 1e10
+        #plot_image_size_cut_upper = 300.
         truth_energy_cut_lower = 0.
         truth_energy_cut_upper = 1e10
         n_tel_min = 1
@@ -3492,7 +3559,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         truth_alt = float(event.simulation.shower.alt / u.rad)
         truth_az = float(event.simulation.shower.az / u.rad)
         truth_energy = event.simulation.shower.energy / u.TeV
-        print (f"truth_alt = {truth_alt}, truth_az = {truth_az}")
+        print (f"truth_alt = {truth_alt}, truth_az = {truth_az}, truth_energy = {truth_energy:0.3f} TeV")
 
         if run_diagnosis:
             if truth_energy < truth_energy_cut_lower: continue
@@ -3522,7 +3589,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
         average_intensity = reco_result.average_intensity
         if run_diagnosis:
             if average_intensity<plot_image_size_cut_lower: continue
-            #if average_intensity>plot_image_size_cut_upper: continue
+            if average_intensity>plot_image_size_cut_upper: continue
         if run_diagnosis:
             if n_tels>n_tel_max: continue
             if n_tels<n_tel_min: continue
@@ -3768,6 +3835,7 @@ def loop_all_events(ana_tag,training_sample_path, ctapipe_output, list_telescope
                 xing_alt, xing_az, xing_weight, xing_n_tel = run_multiscopic_analysis(
                     ctapipe_output, list_telescope_type, run_id, source, event, make_a_plot=True,
                 )
+                #exit()
             if run_diagnosis and bad_xing:
                 exit()
 
