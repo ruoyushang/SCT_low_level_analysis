@@ -13,17 +13,17 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
 #subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 
-diagnosis = False
+#diagnosis = False
 select_evt = []
-#diagnosis = True
-#select_evt = [820, 34708]
+diagnosis = True
+#select_evt = [660, 12001]
 
 evt_selection = 'loose'
 #evt_selection = 'freepact'
 
 #array_type = 'LST_Nectar_ASTRI'
-#array_type = 'SCT'
-array_type = 'Nectar'
+array_type = 'SCT'
+#array_type = 'Nectar'
 #array_type = 'Flash'
 #array_type = 'LST'
 #array_type = 'ASTRI'
@@ -38,16 +38,10 @@ weighting = 'zeroth'
 #weighting = 'first'
 #weighting = 'second'
 
-#template = 'yes'
-template = 'no'
+template = 'yes'
+#template = 'no'
 
 ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
-
-#ana_tag = 'SCT_freepact_onaxis'
-#ana_tag = 'SCT_loose_onaxis'
-#ana_tag = 'SCT_loose_diffuse'
-#ana_tag = 'MIX_loose_onaxis'
-#ana_tag = 'MIX_loose_diffuse'
 
 telescope_type = []
 if 'SCT' in ana_tag:
@@ -83,8 +77,8 @@ if 'SCT' in ana_tag:
 else:
     if 'onaxis' in ana_tag:
         #sim_files = 'mst_onaxis_train.txt'
-        #sim_files = 'mst_onaxis_test.txt'
-        sim_files = 'mst_onaxis_all.txt'
+        sim_files = 'mst_onaxis_test.txt'
+        #sim_files = 'mst_onaxis_all.txt'
     else:
         sim_files = 'mst_diffuse_all.txt'
 
