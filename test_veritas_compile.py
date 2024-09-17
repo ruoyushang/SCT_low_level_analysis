@@ -73,8 +73,10 @@ with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
         for evt in range(0,len(moment_matrix)):
             image_size = moment_matrix[evt][14]
             frac_leakage_intensity = moment_matrix[evt][15]
-            if image_size<image_size_cut_analysis: continue
+            if image_size < image_size_cut_analysis: continue
+            if image_size > image_size_bins[len(image_size_bins)-1]: continue
             if frac_leakage_intensity>frac_leakage_intensity_cut_analysis: continue
+
             image_idx = 0
             for idx in range(0,len(image_size_bins)-1):
                 if image_size>=image_size_bins[idx] and image_size<image_size_bins[idx+1]:

@@ -13,17 +13,20 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
 #subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 
-#diagnosis = False
+diagnosis = False
+#diagnosis = True
+
 select_evt = []
-diagnosis = True
-#select_evt = [660, 12001]
+#run_id = 402
+#event_id = 408805
+#select_evt = [run_id, event_id]
 
 evt_selection = 'loose'
 #evt_selection = 'freepact'
 
 #array_type = 'LST_Nectar_ASTRI'
-array_type = 'SCT'
-#array_type = 'Nectar'
+#array_type = 'SCT'
+array_type = 'Nectar'
 #array_type = 'Flash'
 #array_type = 'LST'
 #array_type = 'ASTRI'

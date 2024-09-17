@@ -57,9 +57,9 @@ template = 'no'
 #plot_name = 'default_vs_ls'
 #pointing = 'onaxis'
 ##pointing = 'diffuse'
-##array_type = 'SCT'
-#array_type = 'Nectar'
-##array_type = 'LST_Nectar_ASTRI'
+#array_type = 'SCT'
+##array_type = 'Nectar'
+##array_type = 'Flash'
 #ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
 #ana_unc_cut = 1.0
 #ana_name = f"{array_type}"+" (default)"
@@ -74,38 +74,40 @@ template = 'no'
 #ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
 #ana_container += [[ana_tag,ana_name,ana_unc_cut]]
 
-ana_container = []
-plot_name = 'sct_vs_nectar'
-pointing = 'onaxis'
-#pointing = 'diffuse'
-ana_unc_cut = 0.1
-array_type = 'SCT'
-ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
-ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
-ana_container += [[ana_tag,ana_name,ana_unc_cut]]
-array_type = 'Nectar'
-ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
-ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
-ana_container += [[ana_tag,ana_name,ana_unc_cut]]
-#array_type = 'LST_Nectar_ASTRI'
+#ana_container = []
+#plot_name = 'sct_vs_nectar'
+#pointing = 'onaxis'
+##pointing = 'diffuse'
+#ana_unc_cut = 0.1
+#array_type = 'SCT'
+#ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
+#ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
+#ana_container += [[ana_tag,ana_name,ana_unc_cut]]
+##array_type = 'Nectar'
+##ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
+##ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
+##ana_container += [[ana_tag,ana_name,ana_unc_cut]]
+#array_type = 'Flash'
 #ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
 #ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
 #ana_container += [[ana_tag,ana_name,ana_unc_cut]]
 
-#ana_container = []
-#plot_name = 'template_improve'
+ana_container = []
+plot_name = 'template_improve'
+pointing = 'onaxis'
 #pointing = 'diffuse'
-##array_type = 'SCT'
-#array_type = 'Nectar'
-#ana_unc_cut = 0.3
-#template = 'yes'
-#ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
-#ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
-#ana_container += [[ana_tag,ana_name,ana_unc_cut]]
-#ana_name = f"{array_type}"+" (template $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
-#ana_container += [[ana_tag,ana_name,ana_unc_cut]]
-#ana_name = f"{array_type}"+" (combined $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
-#ana_container += [[ana_tag,ana_name,ana_unc_cut]]
+#array_type = 'SCT'
+#array_type = 'Flash'
+array_type = 'Nectar'
+ana_unc_cut = 0.5
+template = 'yes'
+ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
+ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
+ana_container += [[ana_tag,ana_name,ana_unc_cut]]
+ana_name = f"{array_type}"+" (template $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
+ana_container += [[ana_tag,ana_name,ana_unc_cut]]
+ana_name = f"{array_type}"+" (combined $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
+ana_container += [[ana_tag,ana_name,ana_unc_cut]]
 
 
 
@@ -139,6 +141,10 @@ def gauss_func(x,A,sigma):
 
 def plot_analysis_result():
 
+    list_mono_off_angle = []
+    list_mono_unc = []
+    #list_mono_chi2 = []
+
     list_all_truth_log_energy = []
     list_ref_truth_log_energy = []
     list_ref_truth_log_energy_pass = []
@@ -150,6 +156,7 @@ def plot_analysis_result():
     list_ref_off_angle_pass = []
     list_ref_off_angle_fail = []
     list_ref_xing_outlier = []
+    list_ref_temp_outlier = []
     for ref in range(0,len(ana_container)):
         list_all_truth_log_energy += [[]]
         list_ref_truth_log_energy += [[]]
@@ -162,6 +169,7 @@ def plot_analysis_result():
         list_ref_off_angle_pass += [[]]
         list_ref_off_angle_fail += [[]]
         list_ref_xing_outlier += [[]]
+        list_ref_temp_outlier += [[]]
 
     for ref in range(0,len(ana_container)):
 
@@ -227,7 +235,7 @@ def plot_analysis_result():
                     list_ref_off_angle[ref] += [off_angle*off_angle]
                     list_ref_unc[ref] += [unc]
                     list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
-                    if unc<ana_cut:
+                    if unc<ana_cut and unc>1e-04:
                         list_ref_off_angle_pass[ref] += [off_angle*off_angle]
                         list_ref_unc_pass[ref] += [unc]
                         list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
@@ -248,7 +256,7 @@ def plot_analysis_result():
                     list_ref_off_angle[ref] += [off_angle*off_angle]
                     list_ref_unc[ref] += [unc]
                     list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
-                    if unc<ana_cut:
+                    if unc<ana_cut and unc>1e-04:
                         list_ref_off_angle_pass[ref] += [off_angle*off_angle]
                         list_ref_unc_pass[ref] += [unc]
                         list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
@@ -258,8 +266,8 @@ def plot_analysis_result():
                         list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
                     run_id = xing_result[evt][6]
                     event_id = xing_result[evt][7]
-                    if off_angle/unc>4.:
-                        list_ref_xing_outlier[ref] += [[run_id,event_id,truth_energy]]
+                    if off_angle/unc>4. and unc>1e-04:
+                        list_ref_xing_outlier[ref] += [[run_id,event_id,off_angle,unc]]
             if 'template' in ana_name:
                 for evt in range(0,len(template_result)):
                     truth_energy = template_result[evt][0].value
@@ -273,7 +281,7 @@ def plot_analysis_result():
                     list_ref_off_angle[ref] += [off_angle*off_angle]
                     list_ref_unc[ref] += [unc]
                     list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
-                    if unc<ana_cut:
+                    if unc<ana_cut and unc>1e-04:
                         list_ref_off_angle_pass[ref] += [off_angle*off_angle]
                         list_ref_unc_pass[ref] += [unc]
                         list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
@@ -281,6 +289,21 @@ def plot_analysis_result():
                         list_ref_off_angle_fail[ref] += [off_angle*off_angle]
                         list_ref_unc_fail[ref] += [unc]
                         list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
+                    if off_angle/unc>4. and unc>1e-04:
+                        list_ref_temp_outlier[ref] += [[run_id,event_id,truth_energy,off_angle,unc]]
+
+                    mono_result = template_result[evt][7]
+                    n_images = len(mono_result[0])
+                    for img in range(0,n_images):
+                        mono_log_energy = mono_result[0][img]
+                        mono_off_angle = mono_result[3][img]
+                        mono_unc = mono_result[4][img]
+                        #mono_chi2 = mono_result[5][img]
+                        #if mono_log_energy<0.: continue
+                        list_mono_off_angle += [mono_off_angle*180./np.pi]
+                        list_mono_unc += [mono_unc*180./np.pi]
+                        #list_mono_chi2 += [mono_chi2]
+
             if 'combined' in ana_name:
                 for evt in range(0,len(combine_result)):
                     truth_energy = combine_result[evt][0].value
@@ -294,7 +317,7 @@ def plot_analysis_result():
                     list_ref_off_angle[ref] += [off_angle*off_angle]
                     list_ref_unc[ref] += [unc]
                     list_ref_truth_log_energy[ref] += [np.log10(truth_energy)]
-                    if unc<ana_cut:
+                    if unc<ana_cut and unc>1e-04:
                         list_ref_off_angle_pass[ref] += [off_angle*off_angle]
                         list_ref_unc_pass[ref] += [unc]
                         list_ref_truth_log_energy_pass[ref] += [np.log10(truth_energy)]
@@ -316,6 +339,7 @@ def plot_analysis_result():
 
     for ref in range(0,len(ana_container)):
         print (f"list_ref_xing_outlier = {list_ref_xing_outlier[ref]}")
+        print (f"list_ref_temp_outlier = {list_ref_temp_outlier[ref]}")
 
     fig, ax = plt.subplots()
     figsize_x = 6.4
@@ -442,6 +466,39 @@ def plot_analysis_result():
     ax.legend(loc='best')
     fig.savefig(
         f"{ctapipe_output}/output_plots/reconstruction_off_angle_fail_{plot_name}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
+
+
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "observed error [deg]"
+    label_y = "estimated uncertainty [deg]"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    max_unc = 2.*ana_cut
+    min_unc = 0.
+    ax.scatter(
+        list_mono_off_angle,
+        list_mono_unc,
+        s=90,
+        facecolors="none",
+        c="r",
+        alpha=0.2,
+        marker="+",
+        label=ana_name,
+    )
+    ax.set_xlim(0., max_unc)
+    ax.set_ylim(0., max_unc)
+    ax.legend(loc='best')
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/off_angle_vs_unc_mono_{plot_name}.png",
         bbox_inches="tight",
     )
     del fig

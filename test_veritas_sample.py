@@ -34,6 +34,9 @@ with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
     for line in file:
         training_sample_path = get_dataset_path(line.strip('\n'))
         print (f'training_sample_path = {training_sample_path}')
+        run_id = line.split("_")[3].strip("run")
+        print (f"run_id = {run_id}")
+        #if run_id!="898": continue
         for tel in range(0,len(list_telescope_type)):
             telescope_type = list_telescope_type[tel]
             run_save_training_matrix(training_sample_path,telescope_type,ctapipe_output)
