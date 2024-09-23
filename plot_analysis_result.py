@@ -99,7 +99,7 @@ pointing = 'onaxis'
 #array_type = 'SCT'
 #array_type = 'Flash'
 array_type = 'Nectar'
-ana_unc_cut = 0.5
+ana_unc_cut = 1.0
 template = 'yes'
 ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
 ana_name = f"{array_type}"+" (least square $\sigma<%0.2f^{\circ}$)"%(ana_unc_cut)
@@ -141,9 +141,9 @@ def gauss_func(x,A,sigma):
 
 def plot_analysis_result():
 
-    list_mono_off_angle = []
-    list_mono_unc = []
-    #list_mono_chi2 = []
+    list_tel_off_angle = []
+    list_tel_unc = []
+    list_tel_correlation = []
 
     list_all_truth_log_energy = []
     list_ref_truth_log_energy = []
@@ -270,12 +270,14 @@ def plot_analysis_result():
                         list_ref_xing_outlier[ref] += [[run_id,event_id,off_angle,unc]]
             if 'template' in ana_name:
                 for evt in range(0,len(template_result)):
-                    truth_energy = template_result[evt][0].value
+                    run_id = template_result[evt][7]
+                    event_id = template_result[evt][8]
+                    truth_energy = pow(10.,template_result[evt][4].value)
                     if truth_energy<energy_cut: continue
-                    off_angle = template_result[evt][1]
+                    off_angle = template_result[evt][0]
                     if math.isnan(off_angle): continue
                     if off_angle>off_angle_cut: continue
-                    unc = template_result[evt][2]
+                    unc = template_result[evt][1]
                     if unc==0.:
                         unc = 0.00001
                     list_ref_off_angle[ref] += [off_angle*off_angle]
@@ -290,19 +292,17 @@ def plot_analysis_result():
                         list_ref_unc_fail[ref] += [unc]
                         list_ref_truth_log_energy_fail[ref] += [np.log10(truth_energy)]
                     if off_angle/unc>4. and unc>1e-04:
-                        list_ref_temp_outlier[ref] += [[run_id,event_id,truth_energy,off_angle,unc]]
+                        list_ref_temp_outlier[ref] += [[run_id,event_id,off_angle,unc]]
 
-                    mono_result = template_result[evt][7]
-                    n_images = len(mono_result[0])
-                    for img in range(0,n_images):
-                        mono_log_energy = mono_result[0][img]
-                        mono_off_angle = mono_result[3][img]
-                        mono_unc = mono_result[4][img]
-                        #mono_chi2 = mono_result[5][img]
-                        #if mono_log_energy<0.: continue
-                        list_mono_off_angle += [mono_off_angle*180./np.pi]
-                        list_mono_unc += [mono_unc*180./np.pi]
-                        #list_mono_chi2 += [mono_chi2]
+                    tel_ana = template_result[evt][9]
+                    tel_off_angle = tel_ana[5]
+                    tel_unc = tel_ana[6]
+                    tel_correlation = tel_ana[7]
+                    for img in range(0,len(tel_off_angle)):
+                        if tel_correlation[img]<0.8: continue
+                        list_tel_off_angle += [float(tel_off_angle[img])*180./np.pi]
+                        list_tel_unc += [float(tel_unc[img])*180./np.pi]
+                        list_tel_correlation += [float(tel_correlation[img])]
 
             if 'combined' in ana_name:
                 for evt in range(0,len(combine_result)):
@@ -472,7 +472,6 @@ def plot_analysis_result():
     del ax
     plt.close()
 
-
     fig, ax = plt.subplots()
     figsize_x = 6.4
     figsize_y = 6.4
@@ -482,23 +481,51 @@ def plot_analysis_result():
     label_y = "estimated uncertainty [deg]"
     ax.set_xlabel(label_x)
     ax.set_ylabel(label_y)
-    max_unc = 2.*ana_cut
+    max_unc = 0.5
     min_unc = 0.
     ax.scatter(
-        list_mono_off_angle,
-        list_mono_unc,
+        list_tel_off_angle,
+        list_tel_unc,
         s=90,
         facecolors="none",
         c="r",
         alpha=0.2,
         marker="+",
-        label=ana_name,
     )
     ax.set_xlim(0., max_unc)
     ax.set_ylim(0., max_unc)
-    ax.legend(loc='best')
     fig.savefig(
-        f"{ctapipe_output}/output_plots/off_angle_vs_unc_mono_{plot_name}.png",
+        f"{ctapipe_output}/output_plots/monotel_off_angle_vs_unc_{plot_name}.png",
+        bbox_inches="tight",
+    )
+    del fig
+    del ax
+    plt.close()
+
+    fig, ax = plt.subplots()
+    figsize_x = 6.4
+    figsize_y = 6.4
+    fig.set_figheight(figsize_y)
+    fig.set_figwidth(figsize_x)
+    label_x = "observed error [deg]"
+    label_y = "correlation"
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    max_unc = 0.5
+    min_unc = 0.
+    ax.scatter(
+        list_tel_off_angle,
+        list_tel_correlation,
+        s=90,
+        facecolors="none",
+        c="r",
+        alpha=0.2,
+        marker="+",
+    )
+    ax.set_xlim(0., max_unc)
+    ax.set_ylim(0., 1.)
+    fig.savefig(
+        f"{ctapipe_output}/output_plots/monotel_off_angle_vs_correlation_{plot_name}.png",
         bbox_inches="tight",
     )
     del fig

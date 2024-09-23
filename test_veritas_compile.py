@@ -18,11 +18,11 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
 subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 
-sim_files = 'sct_onaxis_train.txt'
-telescope_type = 'MST_SCT_SCTCam'
+#sim_files = 'sct_onaxis_train.txt'
+#telescope_type = 'MST_SCT_SCTCam'
 
-#sim_files = 'mst_onaxis_train.txt'
-#telescope_type = 'MST_MST_NectarCam'
+sim_files = 'mst_onaxis_train.txt'
+telescope_type = 'MST_MST_NectarCam'
 #telescope_type = 'MST_MST_FlashCam'
 #telescope_type = 'SST_1M_DigiCam'
 #telescope_type = 'SST_ASTRI_ASTRICam'

@@ -17,8 +17,7 @@ diagnosis = False
 #diagnosis = True
 
 select_evt = []
-#run_id = 402
-#event_id = 408805
+#run_id, event_id = 402, 153506
 #select_evt = [run_id, event_id]
 
 evt_selection = 'loose'

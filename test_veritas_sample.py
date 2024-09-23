@@ -39,5 +39,5 @@ with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
         #if run_id!="898": continue
         for tel in range(0,len(list_telescope_type)):
             telescope_type = list_telescope_type[tel]
-            run_save_training_matrix(training_sample_path,telescope_type,ctapipe_output)
+            run_save_training_matrix(training_sample_path,telescope_type,ctapipe_output,use_star_coord=False)
 
