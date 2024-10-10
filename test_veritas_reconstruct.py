@@ -13,12 +13,16 @@ ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
 
 #subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 
-diagnosis = False
-#diagnosis = True
+#diagnosis = False
+diagnosis = True
 
 select_evt = []
-#run_id, event_id = 402, 153506
-#select_evt = [run_id, event_id]
+#[402, 886208, 1.1188316446304112, 0.16720824735226741]
+#[403, 868404, 2.371480574261248, 0.24881383423026607]
+#[405, 209203, 1.8347507338701627, 0.31281798691756796]
+#[405, 614507, 1.511795814111109, 0.34615395820739164]
+run_id, event_id = 403, 868404
+select_evt = [run_id, event_id]
 
 evt_selection = 'loose'
 #evt_selection = 'freepact'
@@ -36,14 +40,10 @@ array_type = 'Nectar'
 pointing = 'onaxis'
 #pointing = 'diffuse'
 
-weighting = 'zeroth'
-#weighting = 'first'
-#weighting = 'second'
-
 template = 'yes'
 #template = 'no'
 
-ana_tag = f"{array_type}_{evt_selection}_{pointing}_{weighting}_{template}"
+ana_tag = f"{array_type}_{evt_selection}_{pointing}_{template}"
 
 telescope_type = []
 if 'SCT' in ana_tag:

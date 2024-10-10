@@ -18,6 +18,7 @@ list_telescope_type = []
 #list_telescope_type += ['MST_SCT_SCTCam']
 
 sim_files = 'mst_onaxis_train.txt'
+#sim_files = 'mst_mix_train.txt'
 list_telescope_type += ['MST_MST_NectarCam']
 #list_telescope_type += ['MST_MST_FlashCam']
 #list_telescope_type += ['SST_1M_DigiCam']

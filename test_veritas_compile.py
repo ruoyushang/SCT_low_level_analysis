@@ -11,7 +11,9 @@ from ctapipe.reco.veritas_utilities import run_save_training_matrix
 import ctapipe.reco.veritas_utilities as veritas_utilities
 image_size_bins = veritas_utilities.image_size_bins
 image_size_cut_analysis = veritas_utilities.image_size_cut_analysis
+mask_size_cut = veritas_utilities.mask_size_cut
 frac_leakage_intensity_cut_analysis = veritas_utilities.frac_leakage_intensity_cut_analysis
+image_direction_significance_cut = veritas_utilities.image_direction_significance_cut
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
 ctapipe_input = os.environ.get("CTAPIPE_SVC_PATH")
@@ -21,7 +23,8 @@ subprocess.call(f'rm {ctapipe_output}/output_plots/*.png', shell=True)
 #sim_files = 'sct_onaxis_train.txt'
 #telescope_type = 'MST_SCT_SCTCam'
 
-sim_files = 'mst_onaxis_train.txt'
+sim_files = 'mst_mix_train.txt'
+#sim_files = 'mst_diffuse_train.txt'
 telescope_type = 'MST_MST_NectarCam'
 #telescope_type = 'MST_MST_FlashCam'
 #telescope_type = 'SST_1M_DigiCam'
@@ -71,11 +74,19 @@ with open(f'{ctapipe_input}/{sim_files}', 'r') as file:
         movie_matrix = training_sample[4]
 
         for evt in range(0,len(moment_matrix)):
+            mask_size = moment_matrix[evt][0]
             image_size = moment_matrix[evt][14]
             frac_leakage_intensity = moment_matrix[evt][15]
+            if mask_size < mask_size_cut: continue
             if image_size < image_size_cut_analysis: continue
             if image_size > image_size_bins[len(image_size_bins)-1]: continue
             if frac_leakage_intensity>frac_leakage_intensity_cut_analysis: continue
+
+            image_direction_err = moment_matrix[evt][6]
+            image_direction = moment_matrix[evt][7]
+            image_direction_significance = abs(image_direction)/image_direction_err
+            #if image_direction_significance<image_direction_significance_cut: continue
+
 
             image_idx = 0
             for idx in range(0,len(image_size_bins)-1):

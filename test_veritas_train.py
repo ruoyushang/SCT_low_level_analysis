@@ -9,7 +9,6 @@ from ctapipe.io import EventSource, SimTelEventSource, HDF5TableWriter
 from ctapipe.reco.veritas_utilities import BigMatrixSVD
 from ctapipe.reco.veritas_utilities import mapping_physical_params_to_latent_params
 import ctapipe.reco.veritas_utilities as veritas_utilities
-image_size_bins = veritas_utilities.image_size_bins
 matrix_rank = veritas_utilities.matrix_rank
 
 ctapipe_output = os.environ.get("CTAPIPE_OUTPUT_PATH")
@@ -49,6 +48,6 @@ print ('Compute time matrix SVD...')
 time_eigenvectors, physics_eigenvectors, physics_mean_rms = BigMatrixSVD(ctapipe_output,telescope_type,big_time_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'time')
 
 
-#mapping_physical_params_to_latent_params(ctapipe_output,telescope_type,physics_eigenvectors,physics_mean_rms,image_eigenvectors,big_image_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'image')
+#mapping_physical_params_to_latent_params(ctapipe_output,telescope_type,physics_eigenvectors,image_eigenvectors,big_image_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'image')
 mapping_physical_params_to_latent_params(ctapipe_output,telescope_type,physics_eigenvectors,movie_eigenvectors,big_movie_matrix,big_moment_matrix,big_truth_matrix,matrix_rank,'movie')
 
